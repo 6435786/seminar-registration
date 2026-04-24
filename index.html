@@ -3922,6 +3922,7 @@ async function main() {
   try {
     await loadSeasons();      // עונות — קודם, כדי לדעת איזו עונה להציג
     renderSeasonSelector();
+    refreshPendingBadge();    // badge אדום על "הרשאות" אם יש בקשות ממתינות
     await loadLookupLists();  // רשימות ראשונות — לפני הטבלה
     const [girls, regs, plcs, sibs, sems, schools] = await Promise.all([
       loadAll('girls'),
@@ -4188,13 +4189,50 @@ const ROLE_LABELS = {
 const ASSIGNABLE_ROLES = { admin: 'מנהל', editor: 'עורך', seminar_editor: 'עורך סמינרים', viewer: 'צופה' };
 
 async function openManageUsers() {
-  const { data: users, error } = await sb.from('user_profiles')
-    .select('id, email, full_name, role, is_active, last_sign_in')
-    .order('is_active', { ascending: false })
-    .order('role');
+  const [usersRes, reqsRes] = await Promise.all([
+    sb.from('user_profiles')
+      .select('id, email, full_name, role, is_active, last_sign_in')
+      .order('is_active', { ascending: false })
+      .order('role'),
+    sb.from('access_requests')
+      .select('id, email, full_name, requested_at, notes')
+      .eq('status', 'pending')
+      .order('requested_at'),
+  ]);
+  const { data: users, error } = usersRes;
+  const pending = reqsRes.data || [];
   if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
 
   const fmt = (d) => d ? new Date(d).toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' }) : '—';
+
+  // סקציית בקשות ממתינות
+  const pendingHtml = pending.length ? `
+    <div class="form-section" style="background:#fffbea; border:1px solid #fbbf24;">
+      <h3>⏳ בקשות גישה ממתינות — ${pending.length}</h3>
+      <table style="width:100%; font-size:13px;">
+        <thead><tr>
+          <th>מייל</th><th>שם</th><th>הערה</th><th style="width:140px">הוגשה</th><th style="width:200px"></th>
+        </tr></thead>
+        <tbody>
+          ${pending.map(p => `
+            <tr data-req-id="${p.id}">
+              <td><b>${p.email}</b></td>
+              <td>${p.full_name || '—'}</td>
+              <td style="font-size:12px; color:#334155;">${p.notes || '—'}</td>
+              <td style="font-size:11px; color:var(--muted);">${fmt(p.requested_at)}</td>
+              <td style="text-align:center">
+                <select id="role_${p.id}" style="padding:4px 8px; font-family:inherit; font-size:12px; border:1px solid var(--border); border-radius:4px;">
+                  ${Object.entries(ASSIGNABLE_ROLES).map(([k, v]) => `<option value="${k}" ${k === 'viewer' ? 'selected' : ''}>${v}</option>`).join('')}
+                </select>
+                <button class="mini-btn" style="background:#16a34a; color:white;" onclick="approveRequest(${p.id})">✓ אשר</button>
+                <button class="mini-btn danger" onclick="rejectRequest(${p.id})">✗ דחה</button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  ` : '';
 
   const rowsHtml = users.map(u => {
     const isSuperAdminRow = u.role === 'super_admin';
@@ -4229,11 +4267,12 @@ async function openManageUsers() {
     <div class="modal-header">
       <div style="flex:1">
         <h2>👥 ניהול משתמשים</h2>
-        <div class="subtitle">${users.length} משתמשים רשומים</div>
+        <div class="subtitle">${users.length} משתמשים רשומים${pending.length ? ` · ${pending.length} בקשות ממתינות` : ''}</div>
       </div>
       <button class="close" onclick="closeModal()" title="סגור">×</button>
     </div>
     <div class="modal-body">
+      ${pendingHtml}
       <div class="form-section">
         <h3>הוספת משתמש חדש</h3>
         <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
@@ -4261,6 +4300,41 @@ async function openManageUsers() {
   `;
   CURRENT_MODAL = null;
   document.getElementById('modal').classList.add('open');
+}
+
+async function approveRequest(reqId) {
+  const role = document.getElementById(`role_${reqId}`).value;
+  if (!confirm(`לאשר את הבקשה ולצור משתמש עם תפקיד: ${ASSIGNABLE_ROLES[role]}?`)) return;
+  const { error } = await sb.rpc('approve_access_request', { req_id: reqId, assigned_role: role });
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  toast('הבקשה אושרה ✓');
+  openManageUsers();  // רענון
+  refreshPendingBadge();
+}
+
+async function rejectRequest(reqId) {
+  if (!confirm('לדחות את הבקשה?')) return;
+  const { error } = await sb.rpc('reject_access_request', { req_id: reqId });
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  toast('הבקשה נדחתה');
+  openManageUsers();
+  refreshPendingBadge();
+}
+
+async function refreshPendingBadge() {
+  if (!isAdmin()) return;
+  const { count } = await sb.from('access_requests').select('*', { count: 'exact', head: true }).eq('status', 'pending');
+  const btn = document.getElementById('btn_manage_users');
+  if (!btn) return;
+  const existing = btn.querySelector('.pending-badge');
+  if (existing) existing.remove();
+  if (count && count > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'pending-badge';
+    badge.textContent = count;
+    badge.style.cssText = 'background:#dc2626; color:white; font-size:11px; font-weight:700; border-radius:10px; padding:1px 6px; margin-right:4px;';
+    btn.appendChild(badge);
+  }
 }
 
 async function addNewUser() {

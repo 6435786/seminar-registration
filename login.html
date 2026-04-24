@@ -101,8 +101,7 @@
       return;
     }
     if (!data) {
-      showMsg('⛔ המייל שלך (' + user.email + ') לא מורשה במערכת.\nפנה למנהל המערכת.', 'error');
-      await sb.auth.signOut();
+      await showRequestAccess(user);
       return;
     }
     if (!data.is_active) {
@@ -110,8 +109,80 @@
       await sb.auth.signOut();
       return;
     }
-    // הכל תקין — הפנה לעמוד הראשי
     window.location.href = './index.html';
+  }
+
+  async function showRequestAccess(user) {
+    const { data: existing } = await sb.from('access_requests')
+      .select('id, status, requested_at')
+      .ilike('email', user.email).maybeSingle();
+
+    if (existing) {
+      if (existing.status === 'pending') {
+        showMsg(`⏳ בקשתך לגישה הוגשה ב־${String(existing.requested_at).substring(0,10)} וממתינה לאישור מנהל.`, 'info');
+      } else if (existing.status === 'rejected') {
+        showMsg('❌ בקשת הגישה שלך נדחתה. פנה למנהל המערכת.', 'error');
+      }
+      await sb.auth.signOut();
+      return;
+    }
+
+    const fullName = (user.user_metadata && (user.user_metadata.full_name || user.user_metadata.name)) || '';
+    const card = document.querySelector('.card');
+    card.innerHTML = `
+      <div class="logo">🔐</div>
+      <h1>אין לך הרשאה עדיין</h1>
+      <div class="subtitle">${user.email}</div>
+      <div style="text-align:right; margin: 18px 0; color: #334155; font-size: 14px; line-height: 1.6;">
+        המייל שלך לא רשום במערכת. תוכל לבקש גישה — מנהל יקבל את הבקשה, יאשר, ותוכל להיכנס.
+      </div>
+      <label style="display:block; text-align:right; font-weight:600; margin:10px 0 4px; color:#334155; font-size:13px;">השם שלך:</label>
+      <input id="req_name" type="text" value="${String(fullName).replace(/"/g,'&quot;')}" style="width:100%; padding:10px; border:1px solid #dbe4ef; border-radius:8px; font-family:inherit; font-size:14px; text-align:right;">
+      <label style="display:block; text-align:right; font-weight:600; margin:12px 0 4px; color:#334155; font-size:13px;">הערה למנהל (אופציונלי):</label>
+      <textarea id="req_note" rows="2" placeholder="למשל: אני עורך סמינרים של חינוך עצמאי" style="width:100%; padding:10px; border:1px solid #dbe4ef; border-radius:8px; font-family:inherit; font-size:14px; text-align:right; resize:vertical;"></textarea>
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <button id="btn_req_submit" class="google-btn" style="flex:1; background:linear-gradient(135deg,#0ea5e9,#0284c7); color:white; border:none;">שלח בקשה</button>
+        <button id="btn_req_cancel" class="google-btn" style="background:#f1f5f9;">ביטול</button>
+      </div>
+      <div class="msg" id="msg"></div>
+    `;
+
+    document.getElementById('btn_req_cancel').addEventListener('click', async () => {
+      await sb.auth.signOut();
+      location.reload();
+    });
+
+    document.getElementById('btn_req_submit').addEventListener('click', async () => {
+      const name = document.getElementById('req_name').value.trim();
+      const note = document.getElementById('req_note').value.trim();
+      const btn = document.getElementById('btn_req_submit');
+      btn.disabled = true;
+      btn.textContent = 'שולח...';
+
+      const { error } = await sb.from('access_requests').insert({
+        email: user.email,
+        full_name: name || null,
+        notes: note || null,
+      });
+      if (error) {
+        const m = document.getElementById('msg');
+        m.textContent = 'שגיאה: ' + error.message;
+        m.className = 'msg error';
+        btn.disabled = false;
+        btn.textContent = 'שלח בקשה';
+        return;
+      }
+      card.innerHTML = `
+        <div class="logo">✉️</div>
+        <h1>הבקשה נשלחה</h1>
+        <div class="subtitle">${user.email}</div>
+        <div style="text-align:right; margin: 24px 0; color: #0c4a6e; font-size: 15px; line-height: 1.7;">
+          מנהל המערכת יקבל התראה.<br>
+          ברגע שתאושר — תוכל להתחבר שוב.
+        </div>
+      `;
+      await sb.auth.signOut();
+    });
   }
 
   btnGoogle.addEventListener('click', async () => {
