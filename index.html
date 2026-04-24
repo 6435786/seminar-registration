@@ -801,13 +801,13 @@
     .filters .ms-btn { padding: 5px 8px; font-size: 12px; }
     .filters .ms-label { font-size: 10px; }
     .filters input[type=search] { max-width: 180px; font-size: 12px; }
-    /* כשכפתורי btn_cols/btn_problems עוברים ל־hdr-bottom — icon-only בסגנון hdr-btn */
+    /* כשכפתורי btn_cols/btn_problems עוברים ל־hdr-bottom — טקסט קצר */
     .hdr-bottom #btn_cols, .hdr-bottom #btn_problems {
-      padding: 4px 8px; background: white; color: var(--deep);
+      padding: 4px 10px; background: white; color: var(--deep);
       border: 1px solid #bae6fd; border-radius: 6px; font-size: 0;
     }
-    .hdr-bottom #btn_cols::before { content: '⚙'; font-size: 16px; }
-    .hdr-bottom #btn_problems::before { content: '🚨'; font-size: 16px; }
+    .hdr-bottom #btn_cols::before { content: 'עמודות'; font-size: 12px; font-weight: 500; }
+    .hdr-bottom #btn_problems::before { content: 'לטיפול'; font-size: 12px; font-weight: 500; }
     .hdr-bottom #btn_cols:hover, .hdr-bottom #btn_problems:hover { background: #f0f9ff; }
     /* "מצב עריכה" גם מתקצר */
     .edit-toggle { padding: 4px 10px; font-size: 11px; }
@@ -822,16 +822,14 @@
     #btn_restore { font-size: 0; }
     #btn_restore::before { content: '♻'; font-size: 16px; }
     #btn_manage_users { font-size: 0; }
-    #btn_manage_users::before { content: '🔐'; font-size: 16px; }
+    #btn_manage_users::before { content: '👥'; font-size: 16px; }
     #btn_manage_users .pending-badge { font-size: 10px !important; }
     #btn_manage_lists { font-size: 0; }
-    #btn_manage_lists::before { content: '⚙'; font-size: 16px; }
-    #btn_history { font-size: 0; }
-    #btn_history::before { content: '📋'; font-size: 16px; }
+    #btn_manage_lists::before { content: '📂'; font-size: 16px; }
+    #btn_history { font-size: 11px; padding: 4px 8px; } /* טקסט */
     #btn_hdr_views { font-size: 0; }
     #btn_hdr_views::before { content: '💾'; font-size: 16px; }
-    #btn_hdr_print { font-size: 0; }
-    #btn_hdr_print::before { content: '🖨'; font-size: 16px; }
+    #btn_hdr_print { font-size: 11px; padding: 4px 8px; } /* טקסט */
     /* stats — מקוצר */
     .stats { font-size: 11px; gap: 6px; }
   }
@@ -902,7 +900,7 @@
     <button class="hdr-btn" id="btn_load_source">📥 טען מקור</button>
     <button class="hdr-btn" id="btn_backup">💾 גיבוי</button>
     <button class="hdr-btn" id="btn_restore">♻ שחזור</button>
-    <button class="hdr-btn" id="btn_manage_users">🔐 הרשאות</button>
+    <button class="hdr-btn" id="btn_manage_users">👥 הרשאות</button>
   </div>
   <div class="hdr-bottom">
     <button class="edit-toggle" id="btn_edit">
@@ -914,11 +912,11 @@
     <button class="hdr-btn icon-only emphatic" id="btn_undo" disabled title="בטל (Ctrl+Z)">↶</button>
     <button class="hdr-btn icon-only emphatic" id="btn_redo" disabled title="בצע שוב (Ctrl+Y)">↷</button>
     <span class="hdr-gap"></span>
-    <button class="hdr-btn" id="btn_manage_lists">⚙ רשימות</button>
-    <button class="hdr-btn" id="btn_history">📋 היסטוריה</button>
+    <button class="hdr-btn" id="btn_manage_lists">📂 רשימות</button>
+    <button class="hdr-btn" id="btn_history">היסטוריה</button>
     <span class="hdr-sep" style="margin-right:auto;"></span>
     <button class="hdr-btn" id="btn_hdr_views">💾 תצוגות שמורות</button>
-    <button class="hdr-btn" id="btn_hdr_print">🖨 הדפסה</button>
+    <button class="hdr-btn" id="btn_hdr_print">הדפסה</button>
   </div>
   <div class="popover" id="hdr_views_pop"></div>
 </header>
@@ -3357,7 +3355,7 @@ async function renderManageLists() {
   document.getElementById('modal_body').innerHTML = `
     <div class="modal-header">
       <div style="flex:1">
-        <h2>⚙ ניהול רשימות</h2>
+        <h2>📂 רשימות</h2>
         <div class="subtitle">הוספה, עריכה, סידור ומחיקה של ערכי הרשימות</div>
       </div>
       <button class="close" onclick="closeModal()" title="סגור">×</button>
