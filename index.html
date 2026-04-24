@@ -894,7 +894,7 @@
   }
 </style>
 </head>
-<body>
+<body style="visibility: hidden;">
 
 <header>
   <div class="hdr-top">
@@ -4858,7 +4858,9 @@ window.addEventListener('afterprint', () => {
 // אתחול: קודם מבצע אימות, אח"כ מרנדר
 (async () => {
   const ok = await requireAuth();
-  if (!ok) return;
+  if (!ok) return;  // body נשאר hidden, הדפדפן יבצע redirect
+  // רק עכשיו מראים את הדף
+  document.body.style.visibility = 'visible';
   renderUserBadge();       // קודם ה־badge (צריך להיות ב־DOM)
   applyRoleVisibility();    // אח"כ הסתרה/מיזוג שורות
   renderHeader();
