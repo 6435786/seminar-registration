@@ -181,7 +181,9 @@
     position: absolute; z-index: 50;
     background: white; border: 1px solid var(--border); border-radius: 10px;
     padding: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    max-height: 400px; overflow-y: auto; min-width: 200px;
+    max-height: min(400px, calc(100vh - 100px));
+    max-width: calc(100vw - 20px);
+    overflow-y: auto; min-width: 200px;
     display: none;
   }
   .popover.open { display: block; }
@@ -2023,13 +2025,10 @@ function setupMultiSelect(wrap) {
     e.stopPropagation();
     // סגור אחרים
     document.querySelectorAll('.popover.open').forEach(p => { if (p !== pop) p.classList.remove('open'); });
-    // מיקום הפופ־אפ מתחת לכפתור
-    const r = btn.getBoundingClientRect();
-    const pr = wrap.getBoundingClientRect();
-    pop.style.top = (r.bottom - pr.top + 4) + 'px';
-    pop.style.left = (r.left - pr.left) + 'px';
     render();
-    pop.classList.toggle('open');
+    if (pop.classList.contains('open')) { pop.classList.remove('open'); return; }
+    pop.classList.add('open');
+    clampPopoverToViewport(pop, btn);
   });
 
   wrap._updateBtn = updateBtn;
@@ -4063,14 +4062,8 @@ document.getElementById('btn_cols').addEventListener('click', (e) => {
   document.querySelectorAll('.popover.open').forEach(p => { if (p.id !== 'col_picker') p.classList.remove('open'); });
   const cp = document.getElementById('col_picker');
   if (cp.classList.contains('open')) { cp.classList.remove('open'); return; }
-  const btn = e.currentTarget;
-  const r = btn.getBoundingClientRect();
-  cp.style.position = 'fixed';
-  cp.style.top = (r.bottom + 4) + 'px';
-  // מיקום ישר מתחת לכפתור: הקצה הימני של הפופ־אפ מתחיל מהקצה הימני של הכפתור
-  cp.style.right = (window.innerWidth - r.right) + 'px';
-  cp.style.left = 'auto';
   cp.classList.add('open');
+  clampPopoverToViewport(cp, e.currentTarget);
   // הוסף כפתור סגירה X אם עוד אין
   if (!cp.querySelector('.col-picker-close')) {
     const x = document.createElement('button');
@@ -4515,19 +4508,7 @@ function openPrintOptions(btn) {
     <button class="apply-big" data-mode="choose" style="margin-top:0; background:#d97706 !important;">✎ בחר עמודות להדפסה</button>
   `;
   document.body.appendChild(pop);
-  const r = btn.getBoundingClientRect();
-  pop.style.top = (r.bottom + 10) + 'px';
-  // ודא שהפופ־אפ בתוך המסך
-  const popWidth = 260;
-  const rightOffset = window.innerWidth - r.right;
-  if (rightOffset + popWidth > window.innerWidth - 10) {
-    // פופ-אפ יגלוש שמאלה → הצמד לקצה שמאל של הכפתור
-    pop.style.left = Math.max(10, r.left) + 'px';
-    pop.style.right = 'auto';
-  } else {
-    pop.style.right = rightOffset + 'px';
-    pop.style.left = 'auto';
-  }
+  clampPopoverToViewport(pop, btn);
 
   pop.querySelector('.col-picker-close').onclick = () => pop.remove();
   pop.querySelectorAll('[data-mode]').forEach(b => {
@@ -4678,12 +4659,9 @@ function openProblemsPicker(btn, pop) {
     </label>
   `;
 
-  const r = btn.getBoundingClientRect();
-  const pr = btn.parentElement.getBoundingClientRect();
-  pop.style.top = (r.bottom - pr.top + 4) + 'px';
-  pop.style.left = (r.left - pr.left) + 'px';
   pop.style.minWidth = '260px';
   pop.classList.add('open');
+  clampPopoverToViewport(pop, btn);
 
   pop.querySelector('[data-act="all"]').addEventListener('click', () => {
     pop.querySelectorAll('.prob-stat').forEach(cb => cb.checked = true);
@@ -4782,18 +4760,9 @@ function openViewsPicker(btn, pop) {
     }
   `;
 
-  // מיקום קבוע ב־viewport — מונע זליגה מהמסך
-  const r = btn.getBoundingClientRect();
-  pop.style.position = 'fixed';
-  pop.style.top = (r.bottom + 4) + 'px';
-  // מיקום לפי RTL: נצמד לקצה שמאל של הכפתור, אבל לא חורג ממסך
-  const popWidth = 260;
-  let leftPx = r.right - popWidth;
-  if (leftPx < 10) leftPx = 10;
-  pop.style.left = leftPx + 'px';
-  pop.style.right = 'auto';
-  pop.style.minWidth = popWidth + 'px';
+  pop.style.minWidth = '260px';
   pop.classList.add('open');
+  clampPopoverToViewport(pop, btn);
 
   pop.querySelector('[data-act="save"]').addEventListener('click', () => {
     const name = prompt('שם התצוגה:');
@@ -5002,6 +4971,27 @@ document.addEventListener('click', (e) => {
     if (menu) menu.classList.remove('open');
   }
 });
+
+// ממקם popover מתחת לכפתור, אבל מוודא שהוא לא יוצא מגבולות המסך
+function clampPopoverToViewport(pop, btn) {
+  const r = btn.getBoundingClientRect();
+  pop.style.position = 'fixed';
+  pop.style.top = (r.bottom + 4) + 'px';
+  pop.style.right = 'auto';
+  pop.style.left = 'auto';
+  // מוודאים שהוא מוצג כדי למדוד
+  const wasOpen = pop.classList.contains('open');
+  if (!wasOpen) pop.classList.add('open');
+  const popW = pop.offsetWidth;
+  if (!wasOpen) pop.classList.remove('open');
+  // מנסה ליישר את הקצה הימני של הפופ־אפ לקצה הימני של הכפתור (RTL)
+  const desiredLeft = r.right - popW;
+  const clampedLeft = Math.max(10, Math.min(desiredLeft, window.innerWidth - popW - 10));
+  pop.style.left = clampedLeft + 'px';
+  // גובה מקסימלי — שלא יגלוש מלמטה
+  const availH = window.innerHeight - (r.bottom + 4) - 10;
+  pop.style.maxHeight = Math.max(200, availH) + 'px';
+}
 
 // מעביר את כפתורי "עמודות" ו"דרוש טיפול" לפי overflow אמיתי ב־.filters
 function arrangeResponsiveHeader() {
