@@ -792,20 +792,19 @@
 
   /* ===== טאבלט קטן / 11" (<=1024px) — icon-only לכפתורים ארוכים ===== */
   @media (max-width: 1024px) {
-    /* כפתורי פילטרים — מקוצרים */
     #btn_reset { padding: 4px 8px; font-size: 12px; }
-    #btn_cols { font-size: 0; padding: 4px 8px; }
-    #btn_cols::before { content: '⚙'; font-size: 14px; }
-    #btn_cols::after { content: ' עמודות'; font-size: 12px; }
-    #btn_problems { font-size: 0; padding: 4px 8px; }
-    #btn_problems::before { content: '🚨'; font-size: 14px; }
-    #btn_problems::after { content: ' טיפול'; font-size: 12px; }
     /* פילטרים — קטנים וצפופים */
     .filters { gap: 5px; padding: 6px 10px; }
     .filters .ms-wrap { min-width: 0; }
     .filters .ms-btn { padding: 5px 8px; font-size: 12px; }
     .filters .ms-label { font-size: 10px; }
     .filters input[type=search] { max-width: 180px; font-size: 12px; }
+    /* כשכפתורי btn_cols/btn_problems עוברים ל־hdr-bottom — משנה לסגנון hdr-btn */
+    .hdr-bottom #btn_cols, .hdr-bottom #btn_problems {
+      padding: 5px 10px; background: white; color: var(--deep);
+      border: 1px solid #bae6fd; border-radius: 6px; font-size: 12px;
+    }
+    .hdr-bottom #btn_cols:hover, .hdr-bottom #btn_problems:hover { background: #f0f9ff; }
     header h1 { font-size: 15px; }
     /* הסתרת כיתובים בכפתורים עם אייקון — נשאר רק האייקון */
     #btn_load_source { font-size: 0; }
@@ -4017,6 +4016,8 @@ async function main() {
     await loadSeasons();      // עונות — קודם, כדי לדעת איזו עונה להציג
     renderSeasonSelector();
     refreshPendingBadge();    // badge אדום על "הרשאות" אם יש בקשות ממתינות
+    arrangeResponsiveHeader();  // מעביר כפתורים בין שורות לפי רוחב
+    window.addEventListener('resize', arrangeResponsiveHeader);
     await loadLookupLists();  // רשימות ראשונות — לפני הטבלה
     const [girls, regs, plcs, sibs, sems, schools] = await Promise.all([
       loadAll('girls'),
@@ -4995,6 +4996,27 @@ document.addEventListener('click', (e) => {
     if (menu) menu.classList.remove('open');
   }
 });
+
+// מעביר את כפתורי "עמודות" ו"דרוש טיפול" בין .filters ל־.hdr-bottom לפי רוחב
+function arrangeResponsiveHeader() {
+  const isTablet = window.innerWidth <= 1024;
+  const btnCols = document.getElementById('btn_cols');
+  const btnProbs = document.getElementById('btn_problems');
+  const filters = document.querySelector('.filters');
+  const hdrBottom = document.querySelector('.hdr-bottom');
+  if (!btnCols || !btnProbs || !filters || !hdrBottom) return;
+
+  if (isTablet) {
+    // אם עדיין בפילטרים — נעביר ל־hdr-bottom (ממש בסוף, אחרי "הדפסה")
+    if (btnCols.parentElement === filters) hdrBottom.appendChild(btnCols);
+    if (btnProbs.parentElement === filters) hdrBottom.appendChild(btnProbs);
+  } else {
+    // חזרה לפילטרים — לפני הפופאובר של col_picker
+    const colPicker = document.getElementById('col_picker');
+    if (btnCols.parentElement !== filters) filters.insertBefore(btnCols, colPicker);
+    if (btnProbs.parentElement !== filters) filters.insertBefore(btnProbs, colPicker);
+  }
+}
 
 async function doLogout() {
   if (!confirm('להתנתק מהמערכת?')) return;
