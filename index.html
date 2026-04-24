@@ -779,15 +779,40 @@
   .modal .edit-switch.on { background: #f0b433; color: white; }
   .modal .edit-switch input { margin-left: 4px; accent-color: var(--accent); }
 
-  /* ===== רספונסיביות — טאבלט (<=1024px) ===== */
-  @media (max-width: 1024px) {
-    header { padding: 6px 12px; }
-    header h1 { font-size: 18px; }
-    .hdr-top, .hdr-bottom { gap: 8px; }
-    .hdr-btn { padding: 5px 10px; font-size: 12px; }
-    .stats { font-size: 13px; }
-    /* בטבלה — קטין padding */
+  /* ===== רספונסיביות — טאבלט (<=1200px) ===== */
+  @media (max-width: 1200px) {
+    header { padding: 6px 10px; }
+    header h1 { font-size: 16px; }
+    .hdr-top, .hdr-bottom { gap: 6px; }
+    .hdr-btn { padding: 4px 8px; font-size: 12px; }
+    .stats { font-size: 12px; }
+    .view-switch.big .view-btn { padding: 4px 10px; font-size: 12px; }
     th, td { padding: 6px 8px; font-size: 13px; }
+  }
+
+  /* ===== טאבלט קטן / 11" (<=1024px) — icon-only לכפתורים ארוכים ===== */
+  @media (max-width: 1024px) {
+    header h1 { font-size: 15px; }
+    /* הסתרת כיתובים בכפתורים עם אייקון — נשאר רק האייקון */
+    #btn_load_source { font-size: 0; }
+    #btn_load_source::before { content: '📥'; font-size: 16px; }
+    #btn_backup { font-size: 0; }
+    #btn_backup::before { content: '💾'; font-size: 16px; }
+    #btn_restore { font-size: 0; }
+    #btn_restore::before { content: '♻'; font-size: 16px; }
+    #btn_manage_users { font-size: 0; }
+    #btn_manage_users::before { content: '🔐'; font-size: 16px; }
+    #btn_manage_users .pending-badge { font-size: 10px !important; }
+    #btn_manage_lists { font-size: 0; }
+    #btn_manage_lists::before { content: '⚙'; font-size: 16px; }
+    #btn_history { font-size: 0; }
+    #btn_history::before { content: '📋'; font-size: 16px; }
+    #btn_hdr_views { font-size: 0; }
+    #btn_hdr_views::before { content: '💾'; font-size: 16px; }
+    #btn_hdr_print { font-size: 0; }
+    #btn_hdr_print::before { content: '🖨'; font-size: 16px; }
+    /* stats — מקוצר */
+    .stats { font-size: 11px; gap: 6px; }
   }
 
   /* ===== רספונסיביות — מובייל (<=640px) ===== */
