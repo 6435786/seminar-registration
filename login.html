@@ -113,16 +113,13 @@
   }
 
   async function showRequestAccess(user) {
+    // מחפש בקשה ממתינה בלבד — מאושרות/דחויות לא חוסמות הגשה חדשה
     const { data: existing } = await sb.from('access_requests')
       .select('id, status, requested_at')
-      .ilike('email', user.email).maybeSingle();
+      .ilike('email', user.email).eq('status', 'pending').maybeSingle();
 
     if (existing) {
-      if (existing.status === 'pending') {
-        showMsg(`⏳ בקשתך לגישה הוגשה ב־${String(existing.requested_at).substring(0,10)} וממתינה לאישור מנהל.`, 'info');
-      } else if (existing.status === 'rejected') {
-        showMsg('❌ בקשת הגישה שלך נדחתה. פנה למנהל המערכת.', 'error');
-      }
+      showMsg(`⏳ בקשתך לגישה הוגשה ב־${String(existing.requested_at).substring(0,10)} וממתינה לאישור מנהל.`, 'info');
       await sb.auth.signOut();
       return;
     }
