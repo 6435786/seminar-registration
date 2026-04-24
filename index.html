@@ -5003,25 +5003,33 @@ document.addEventListener('click', (e) => {
   }
 });
 
-// מעביר את כפתורי "עמודות" ו"דרוש טיפול" בין .filters ל־.hdr-bottom לפי רוחב
+// מעביר את כפתורי "עמודות" ו"דרוש טיפול" לפי overflow אמיתי ב־.filters
 function arrangeResponsiveHeader() {
-  const isTablet = window.innerWidth <= 1250;
   const btnCols = document.getElementById('btn_cols');
   const btnProbs = document.getElementById('btn_problems');
   const filters = document.querySelector('.filters');
   const hdrBottom = document.querySelector('.hdr-bottom');
-  if (!btnCols || !btnProbs || !filters || !hdrBottom) return;
+  const colPicker = document.getElementById('col_picker');
+  if (!btnCols || !btnProbs || !filters || !hdrBottom || !colPicker) return;
 
-  if (isTablet) {
-    // אם עדיין בפילטרים — נעביר ל־hdr-bottom (ממש בסוף, אחרי "הדפסה")
-    if (btnCols.parentElement === filters) hdrBottom.appendChild(btnCols);
-    if (btnProbs.parentElement === filters) hdrBottom.appendChild(btnProbs);
-  } else {
-    // חזרה לפילטרים — לפני הפופאובר של col_picker
-    const colPicker = document.getElementById('col_picker');
-    if (btnCols.parentElement !== filters) filters.insertBefore(btnCols, colPicker);
-    if (btnProbs.parentElement !== filters) filters.insertBefore(btnProbs, colPicker);
+  // קודם מחזירים למקום הטבעי (.filters) כדי למדוד
+  if (btnCols.parentElement !== filters) filters.insertBefore(btnCols, colPicker);
+  if (btnProbs.parentElement !== filters) filters.insertBefore(btnProbs, colPicker);
+
+  // בודק אם יש wrap — משווה offsetTop של הפריט הראשון לאחרון (חוץ מ־popovers)
+  const items = Array.from(filters.children).filter(el => !el.classList.contains('popover'));
+  if (items.length < 2) return;
+  const firstTop = items[0].offsetTop;
+  const lastTop = items[items.length - 1].offsetTop;
+
+  if (lastTop > firstTop) {
+    // יש wrap — מעבירים ל־hdr-bottom
+    hdrBottom.appendChild(btnCols);
+    hdrBottom.appendChild(btnProbs);
+    // בדיקה חוזרת — האם גם אחרי ההעברה עדיין יש wrap ב־filters?
+    // אם כן — לא עוזר להחזיר; נשאיר כך
   }
+  // אחרת — הם נשארים ב־filters
 }
 
 async function doLogout() {
