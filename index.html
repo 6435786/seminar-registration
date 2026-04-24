@@ -4792,7 +4792,7 @@ function canEditField(col) {
 }
 
 function canDeleteGirls() {
-  return CURRENT_USER && ['admin', 'editor'].includes(CURRENT_USER.role);
+  return CURRENT_USER && ['super_admin', 'admin', 'editor'].includes(CURRENT_USER.role);
 }
 
 function renderUserBadge() {
