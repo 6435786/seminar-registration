@@ -790,8 +790,8 @@
     th, td { padding: 6px 8px; font-size: 13px; }
   }
 
-  /* ===== טאבלט קטן / 11" (<=1024px) — icon-only לכפתורים ארוכים ===== */
-  @media (max-width: 1024px) {
+  /* ===== טאבלט קטן / 11" — icon-only לכפתורים ארוכים ===== */
+  @media (max-width: 1250px) {
     #btn_reset { padding: 4px 8px; font-size: 12px; }
     /* פילטרים — קטנים וצפופים */
     .filters { gap: 5px; padding: 6px 10px; }
@@ -799,12 +799,18 @@
     .filters .ms-btn { padding: 5px 8px; font-size: 12px; }
     .filters .ms-label { font-size: 10px; }
     .filters input[type=search] { max-width: 180px; font-size: 12px; }
-    /* כשכפתורי btn_cols/btn_problems עוברים ל־hdr-bottom — משנה לסגנון hdr-btn */
+    /* כשכפתורי btn_cols/btn_problems עוברים ל־hdr-bottom — icon-only בסגנון hdr-btn */
     .hdr-bottom #btn_cols, .hdr-bottom #btn_problems {
-      padding: 5px 10px; background: white; color: var(--deep);
-      border: 1px solid #bae6fd; border-radius: 6px; font-size: 12px;
+      padding: 4px 8px; background: white; color: var(--deep);
+      border: 1px solid #bae6fd; border-radius: 6px; font-size: 0;
     }
+    .hdr-bottom #btn_cols::before { content: '⚙'; font-size: 16px; }
+    .hdr-bottom #btn_problems::before { content: '🚨'; font-size: 16px; }
     .hdr-bottom #btn_cols:hover, .hdr-bottom #btn_problems:hover { background: #f0f9ff; }
+    /* "מצב עריכה" גם מתקצר */
+    .edit-toggle { padding: 4px 10px; font-size: 11px; }
+    .edit-toggle #edit_label { font-size: 11px; }
+    #btn_add { padding: 4px 10px; font-size: 11px; }
     header h1 { font-size: 15px; }
     /* הסתרת כיתובים בכפתורים עם אייקון — נשאר רק האייקון */
     #btn_load_source { font-size: 0; }
@@ -4999,7 +5005,7 @@ document.addEventListener('click', (e) => {
 
 // מעביר את כפתורי "עמודות" ו"דרוש טיפול" בין .filters ל־.hdr-bottom לפי רוחב
 function arrangeResponsiveHeader() {
-  const isTablet = window.innerWidth <= 1024;
+  const isTablet = window.innerWidth <= 1250;
   const btnCols = document.getElementById('btn_cols');
   const btnProbs = document.getElementById('btn_problems');
   const filters = document.querySelector('.filters');
