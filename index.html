@@ -123,6 +123,11 @@
     overflow: hidden;
   }
   .user-badge .user-menu.open { display: block; }
+  .user-badge .menu-name {
+    padding: 10px 14px; font-size: 13px; font-weight: 600; color: var(--deep);
+    background: #f0f9ff; border-bottom: 1px solid var(--border);
+    white-space: nowrap; max-width: 220px; overflow: hidden; text-overflow: ellipsis;
+  }
   .user-badge .menu-logout {
     width: 100%; padding: 10px 14px; border: 0; background: transparent;
     font-family: inherit; font-size: 13px; cursor: pointer;
@@ -794,6 +799,9 @@
 
   /* ===== טאבלט קטן / 11" — icon-only לכפתורים ארוכים ===== */
   @media (max-width: 1250px) {
+    /* אפסון השם — השאר רק אייקון עגול */
+    .user-badge .uname { display: none; }
+    .user-badge .badge-main { padding: 3px 3px 3px 3px; }
     #btn_reset { padding: 4px 8px; font-size: 12px; }
     /* פילטרים — קטנים וצפופים */
     .filters { gap: 5px; padding: 6px 10px; }
@@ -4952,6 +4960,7 @@ function renderUserBadge() {
       <span class="uname">${CURRENT_USER.full_name}</span>
     </div>
     <div class="user-menu" id="user_menu">
+      <div class="menu-name">${CURRENT_USER.full_name || CURRENT_USER.email}</div>
       <button class="menu-logout" onclick="doLogout()">🔓 התנתק</button>
     </div>
   `;
