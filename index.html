@@ -4027,7 +4027,10 @@ async function main() {
     await loadSeasons();      // עונות — קודם, כדי לדעת איזו עונה להציג
     renderSeasonSelector();
     refreshPendingBadge();    // badge אדום על "הרשאות" אם יש בקשות ממתינות
-    arrangeResponsiveHeader();  // מעביר כפתורים בין שורות לפי רוחב
+    // מעביר כפתורים בין שורות לפי רוחב — קריאות מרובות לוודא שהלייאאוט התייצב
+    arrangeResponsiveHeader();
+    requestAnimationFrame(() => arrangeResponsiveHeader());
+    setTimeout(() => arrangeResponsiveHeader(), 300);
     window.addEventListener('resize', arrangeResponsiveHeader);
     await loadLookupLists();  // רשימות ראשונות — לפני הטבלה
     const [girls, regs, plcs, sibs, sems, schools] = await Promise.all([
@@ -5011,24 +5014,23 @@ function arrangeResponsiveHeader() {
   const colPicker = document.getElementById('col_picker');
   if (!btnCols || !btnProbs || !filters || !hdrBottom || !colPicker) return;
 
+  // במובייל תמיד מעבירים — אין עצם דיון על זה
+  const isMobile = window.innerWidth <= 640;
+
   // קודם מחזירים למקום הטבעי (.filters) כדי למדוד
   if (btnCols.parentElement !== filters) filters.insertBefore(btnCols, colPicker);
   if (btnProbs.parentElement !== filters) filters.insertBefore(btnProbs, colPicker);
 
-  // בודק אם יש wrap — משווה offsetTop של הפריט הראשון לאחרון (חוץ מ־popovers)
+  // בודק אם יש wrap — איזשהו פריט שיורד לשורה השנייה
   const items = Array.from(filters.children).filter(el => !el.classList.contains('popover'));
   if (items.length < 2) return;
   const firstTop = items[0].offsetTop;
-  const lastTop = items[items.length - 1].offsetTop;
+  const wrapped = items.some(el => el.offsetTop > firstTop + 5);
 
-  if (lastTop > firstTop) {
-    // יש wrap — מעבירים ל־hdr-bottom
+  if (isMobile || wrapped) {
     hdrBottom.appendChild(btnCols);
     hdrBottom.appendChild(btnProbs);
-    // בדיקה חוזרת — האם גם אחרי ההעברה עדיין יש wrap ב־filters?
-    // אם כן — לא עוזר להחזיר; נשאיר כך
   }
-  // אחרת — הם נשארים ב־filters
 }
 
 async function doLogout() {
