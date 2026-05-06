@@ -680,6 +680,27 @@
   .feed-when { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .feed-who { color: var(--deep); font-weight: 600; font-size: 13px; }
   .feed-what { color: var(--text); font-size: 13px; line-height: 1.5; }
+  /* Online users pills */
+  .online-user-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: white; padding: 4px 10px 4px 4px; border-radius: 999px;
+    border: 1px solid #86efac; font-size: 12px;
+  }
+  .online-user-pill .online-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: #16a34a;
+    box-shadow: 0 0 0 2px rgba(22,163,74,0.3);
+  }
+  .online-user-pill .online-initial {
+    width: 22px; height: 22px; border-radius: 50%;
+    background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 11px;
+  }
+  .online-user-pill .online-name { color: var(--deep); font-weight: 600; }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
   .hdr-btn:hover { background: #f0f9ff; border-color: var(--accent-alt); }
   .hdr-btn.primary { background: var(--deep); color: white; border-color: var(--deep); }
   .hdr-btn.primary:hover { background: #0a3d5f; }
@@ -3014,6 +3035,60 @@ async function reloadData() {
   }
 }
 
+// =============== Presence — מי מחובר כעת ===============
+let _presenceChannel = null;
+let _onlineUsers = {};  // user_id → { email, full_name, online_at }
+
+function subscribePresence() {
+  if (!CURRENT_USER) return;
+  _presenceChannel = sb.channel('online-users', {
+    config: { presence: { key: CURRENT_USER.id || CURRENT_USER.email } }
+  });
+
+  _presenceChannel
+    .on('presence', { event: 'sync' }, () => {
+      const state = _presenceChannel.presenceState();
+      _onlineUsers = {};
+      Object.entries(state).forEach(([key, presences]) => {
+        if (presences && presences.length) {
+          _onlineUsers[key] = presences[presences.length - 1];
+        }
+      });
+      // עדכון UI אם פתוח (מסך משתמשים)
+      const onlineBox = document.getElementById('online_users_box');
+      if (onlineBox) renderOnlineUsersBox(onlineBox);
+    })
+    .subscribe(async (status) => {
+      if (status === 'SUBSCRIBED') {
+        await _presenceChannel.track({
+          user_id: CURRENT_USER.id,
+          email: CURRENT_USER.email,
+          full_name: CURRENT_USER.full_name,
+          role: CURRENT_USER.role,
+          online_at: new Date().toISOString(),
+        });
+      }
+    });
+}
+
+function renderOnlineUsersBox(container) {
+  const list = Object.values(_onlineUsers);
+  if (!list.length) {
+    container.innerHTML = '<span style="color:var(--muted); font-size:12px;">טוען...</span>';
+    return;
+  }
+  container.innerHTML = list.map(u => {
+    const initial = (u.full_name || u.email || '?').trim().charAt(0).toUpperCase();
+    return `
+      <span class="online-user-pill" title="${u.email}">
+        <span class="online-dot"></span>
+        <span class="online-initial">${initial}</span>
+        <span class="online-name">${u.full_name || u.email}</span>
+      </span>
+    `;
+  }).join('');
+}
+
 // הרשמה ל־Realtime: כל שינוי בטבלאות מרענן את הנתונים
 function subscribeRealtime() {
   let reloadTimer = null;
@@ -4681,6 +4756,7 @@ async function main() {
     updateStats();
     applyFilters();
     subscribeRealtime();
+    subscribePresence();
   } catch (e) {
     console.error(e);
     document.getElementById('tbody').innerHTML =
@@ -5011,6 +5087,15 @@ async function openManageUsers() {
       <button class="close" onclick="closeModal()" title="סגור">×</button>
     </div>
     <div class="modal-body">
+      <div class="form-section" style="background:#ecfdf5; border:1px solid #86efac;">
+        <h3 style="display:flex; align-items:center; gap:8px;">
+          <span style="display:inline-block; width:10px; height:10px; border-radius:50%; background:#16a34a; box-shadow:0 0 0 3px rgba(22,163,74,0.2); animation:pulse 2s infinite;"></span>
+          🟢 מחוברים כעת
+        </h3>
+        <div id="online_users_box" style="display:flex; flex-wrap:wrap; gap:8px;">
+          <span style="color:var(--muted); font-size:12px;">טוען...</span>
+        </div>
+      </div>
       ${pendingHtml}
       <div class="form-section">
         <h3>הוספת משתמש חדש</h3>
@@ -5039,6 +5124,9 @@ async function openManageUsers() {
   `;
   CURRENT_MODAL = null;
   document.getElementById('modal').classList.add('open');
+  // עדכון מיידי של רשימת המחוברים
+  const onlineBox = document.getElementById('online_users_box');
+  if (onlineBox) renderOnlineUsersBox(onlineBox);
 }
 
 async function approveRequest(reqId) {
