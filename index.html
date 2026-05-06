@@ -685,14 +685,88 @@
   #dash_print_pop .cb-row:hover { background: #f0f9ff; }
   #dash_print_pop .cb-row input { margin-left: 6px; }
 
-  /* בעת הדפסה — אם הגרף הוסתר, פאנל הפרטים תופס את כל הרוחב */
+  /* === הדפסת דשבורד — תרחישים שונים === */
   @media print {
-    body.view-dashboard.print-no-chart .dash-row {
-      grid-template-columns: 1fr !important;
-    }
-    /* אם רק הגרף — פאנל מוסתר, גרף תופס רוחב מלא */
+    /* רק הגרף — תופס רוחב מלא */
     body.view-dashboard.print-only-chart .dash-row {
       grid-template-columns: 1fr !important;
+    }
+    body.view-dashboard.print-only-chart .chart-canvas-wrap {
+      height: 165mm !important;
+    }
+
+    /* ללא גרף — פאנל הפרטים מקבל רוחב מלא ופריסה דו־טורית יפה */
+    body.view-dashboard.print-no-chart .dash-row {
+      grid-template-columns: 1fr !important;
+      gap: 0;
+    }
+    body.view-dashboard.print-no-chart .details-panel {
+      padding: 8mm !important;
+    }
+    body.view-dashboard.print-no-chart .details-panel h3 {
+      font-size: 14pt !important;
+      margin: 0 0 8mm !important;
+      padding-bottom: 3mm !important;
+      border-bottom: 2px solid var(--deep) !important;
+    }
+    /* פריסת הפריטים: 2 עמודות, בכל אחת 3 פריטים */
+    body.view-dashboard.print-no-chart .details-panel #details_body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4mm 8mm;
+    }
+    body.view-dashboard.print-no-chart .details-panel .item {
+      display: flex !important;
+      justify-content: space-between !important;
+      align-items: center !important;
+      padding: 4mm 6mm !important;
+      font-size: 13pt !important;
+      border-radius: 6px !important;
+      margin-bottom: 0 !important;
+      background: #f0f9ff !important;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    body.view-dashboard.print-no-chart .details-panel .item:nth-child(even) {
+      background: #f8fafc !important;
+    }
+    body.view-dashboard.print-no-chart .details-panel .item b {
+      font-size: 18pt !important;
+      color: var(--deep) !important;
+    }
+    body.view-dashboard.print-no-chart .details-panel .item.clickable::after {
+      display: none;
+    }
+    /* שורת ה־splits — תופסת את כל הרוחב, side-by-side */
+    body.view-dashboard.print-no-chart .splits-row {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr;
+      gap: 6mm;
+      margin-top: 6mm;
+      grid-column: 1 / -1;
+    }
+    body.view-dashboard.print-no-chart .sector-split {
+      padding: 5mm !important;
+      border-radius: 8px;
+    }
+    body.view-dashboard.print-no-chart .sector-split .title {
+      font-size: 12pt !important;
+      margin-bottom: 4mm !important;
+      padding-bottom: 2mm;
+      border-bottom: 1px solid #cbd5e1;
+    }
+    body.view-dashboard.print-no-chart .bar-row {
+      font-size: 11pt !important;
+      grid-template-columns: 90px 1fr 80px !important;
+      padding: 2mm 0 !important;
+      gap: 4mm;
+    }
+    body.view-dashboard.print-no-chart .bar-row .b-track {
+      height: 14px !important;
+    }
+    /* חלוקה רק (ללא סטטיסטיקות) — splits ימלאו עמוד */
+    body.view-dashboard.print-no-chart .details-panel #details_body:empty + .splits-row {
+      grid-template-columns: 1fr 1fr;
     }
   }
 
