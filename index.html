@@ -1385,7 +1385,7 @@ const ALL_COLS = [
   { group: 'זיהוי', key: 'first_name',       label: 'שם',      width: 110, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'first_name' } },
   // מגזר/קהילה
   { group: 'קבוצה', key: 'sector_bucket',     label: 'קבוצה',   width: 100, default: true,  edit: { type: 'readonly' } },
-  { group: 'קבוצה', key: 'sector',            label: 'שיוך',    width: 80,  default: true,  edit: { type: 'enum', values: ENUM_AFFILIATION, warn: true, table: 'girls', dbField: 'sector' } },
+  { group: 'קבוצה', key: 'sector',            label: 'שיוך',    width: 80,  default: false, edit: { type: 'enum', values: ENUM_AFFILIATION, warn: true, table: 'girls', dbField: 'sector' } },
   { group: 'קבוצה', key: 'community',         label: 'קהילה',   width: 110, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'community' } },
   { group: 'קבוצה', key: 'source_school_name',label: 'יסודי',   width: 140, default: true,  edit: { type: 'source_school', warn: true } },
   { group: 'קבוצה', key: 'source_school_code',label: 'סמל יסודי', width: 70, default: false, edit: { type: 'readonly' } },
@@ -1415,7 +1415,7 @@ const ALL_COLS = [
 ];
 
 // גרסה של ברירות המחדל — מעלים מספר → איפוס חד־פעמי לכל המשתמשים הקיימים
-const COL_PREFS_VERSION = 2;
+const COL_PREFS_VERSION = 3;
 function loadColPrefs() {
   try {
     const storedVersion = parseInt(localStorage.getItem('col_prefs_version') || '0');
