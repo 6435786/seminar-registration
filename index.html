@@ -3220,6 +3220,7 @@ async function auditLog(table_name, record_id, action, old_value, new_value) {
       table_name, record_id, action,
       old_value: old_value ? JSON.parse(JSON.stringify(old_value)) : null,
       new_value: new_value ? JSON.parse(JSON.stringify(new_value)) : null,
+      user_id: CURRENT_USER && CURRENT_USER.id ? CURRENT_USER.id : null,
       season_id: CURRENT_SEASON_ID,
     });
   } catch (e) {
