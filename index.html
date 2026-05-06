@@ -3603,34 +3603,44 @@ function dashDrillDown(metric) {
   Object.values(fs).forEach(set => set.clear());
   Object.keys(COL_FILTERS).forEach(k => COL_FILTERS[k].clear());
   document.getElementById('q').value = '';
+  // אם בחרת בעוגה סמינר ספציפי — שומרים את ההקשר הזה
+  const selectedSem = DASH.selectedSeminar;
+
   switch (metric) {
     case 'registered':
       // בנות שיש להן רישום בכלשהי מההעדפות → any_seminar = הכל (לא ריק)
-      fs.any_seminar.clear();
-      allSemNames.forEach(n => fs.any_seminar.add(n));
+      if (selectedSem) {
+        fs.any_seminar.add(selectedSem);
+      } else {
+        allSemNames.forEach(n => fs.any_seminar.add(n));
+      }
       break;
     case 'pref1':
-      // אין פילטר ספציפי לפר העדפה 1 — נשים any_seminar (קרוב מספיק)
-      fs.any_seminar.clear();
-      allSemNames.forEach(n => fs.any_seminar.add(n));
+      if (selectedSem) {
+        fs.any_seminar.add(selectedSem);
+      } else {
+        allSemNames.forEach(n => fs.any_seminar.add(n));
+      }
       break;
     case 'positive':
-      fs.any_response.clear();
       fs.any_response.add('חיובי');
+      if (selectedSem) fs.placement_seminar.add(selectedSem);
       break;
     case 'placed':
-      fs.placement_seminar.clear();
-      allSemNames.forEach(n => fs.placement_seminar.add(n));
+      if (selectedSem) {
+        fs.placement_seminar.add(selectedSem);
+      } else {
+        allSemNames.forEach(n => fs.placement_seminar.add(n));
+      }
       break;
     case 'muni':
-      fs.placement_status.clear();
-      // כל סטטוס פרט ל־חיובי / תושב חוץ / ריק
       ENUM_STATUS.filter(s => s !== 'חיובי' && s !== 'תושב חוץ')
         .forEach(s => fs.placement_status.add(s));
+      if (selectedSem) fs.placement_seminar.add(selectedSem);
       break;
     case 'sisters':
-      fs.sibling_categories.clear();
       fs.sibling_categories.add('__אחיות_בסמינר__');
+      if (selectedSem) fs.placement_seminar.add(selectedSem);
       break;
   }
   // עדכון תגיות הפילטרים החזותיות
@@ -3695,19 +3705,45 @@ function renderDetailsPanel() {
 }
 
 // helper: קודי סמינר של בת — לפי כל ההעדפות + שיבוץ
+function _girlSeminarNames(r) {
+  return [r.pref_1, r.pref_2, r.advance_seminar, r.placement_seminar].filter(Boolean);
+}
 function _girlSeminarCodes(r) {
-  const names = [r.pref_1, r.pref_2, r.advance_seminar, r.placement_seminar].filter(Boolean);
   const codes = new Set();
-  names.forEach(name => {
+  _girlSeminarNames(r).forEach(name => {
     const sem = (DATA.seminars || []).find(s => s.name === name);
     if (sem && sem.institution_code) codes.add(sem.institution_code);
   });
   return codes;
 }
+// מחזיר את הסט של שמות סמינרים שהוגדרו בפילטרים הקיימים (אם בכלל)
+function _activeSeminarFilterNames() {
+  const names = new Set([
+    ...(FILTER_STATE.any_seminar || []),
+    ...(FILTER_STATE.placement_seminar || []),
+    ...((COL_FILTERS.placement_seminar || new Set())),
+    ...((COL_FILTERS.pref_1 || new Set())),
+    ...((COL_FILTERS.pref_2 || new Set())),
+    ...((COL_FILTERS.advance_seminar || new Set())),
+  ]);
+  return names;
+}
+// בודק האם לבת יש אח/אחות באותו קוד מוסד של אחד מהסמינרים שלה
+// — כשיש פילטר סמינרים: רק הסמינרים של הבת שגם בפילטר
 function _hasSiblingInGirlSeminar(r) {
-  const girlCodes = _girlSeminarCodes(r);
-  if (!girlCodes.size) return false;
-  return (r.siblings || []).some(s => s.institution_code && girlCodes.has(s.institution_code));
+  const filtered = _activeSeminarFilterNames();
+  let relevantNames = _girlSeminarNames(r);
+  if (filtered.size) {
+    relevantNames = relevantNames.filter(n => filtered.has(n));
+  }
+  if (!relevantNames.length) return false;
+  const codes = new Set();
+  relevantNames.forEach(name => {
+    const sem = (DATA.seminars || []).find(s => s.name === name);
+    if (sem && sem.institution_code) codes.add(sem.institution_code);
+  });
+  if (!codes.size) return false;
+  return (r.siblings || []).some(s => s.institution_code && codes.has(s.institution_code));
 }
 
 // סיכום כללי: כל הסמינרים
