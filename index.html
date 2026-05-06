@@ -818,6 +818,25 @@
     font-weight: 700; font-size: 11px;
   }
   .online-user-pill .online-name { color: var(--deep); font-weight: 600; }
+
+  /* Online count pill בכותרת */
+  .online-count-pill {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 4px 10px; border-radius: 999px;
+    background: #ecfdf5; border: 1px solid #86efac;
+    cursor: pointer; transition: all 0.15s;
+    font-size: 12px; font-weight: 700; color: #166534;
+  }
+  .online-count-pill:hover {
+    background: #d1fae5; transform: translateY(-1px);
+    box-shadow: 0 2px 4px rgba(22,163,74,0.2);
+  }
+  .online-count-pill .online-dot-small {
+    width: 8px; height: 8px; border-radius: 50%; background: #16a34a;
+    box-shadow: 0 0 0 2px rgba(22,163,74,0.3);
+    animation: pulse 2s infinite;
+  }
+  .online-count-pill .online-count-num { font-size: 13px; }
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
@@ -1132,6 +1151,10 @@
       <button class="view-btn kanban-mode" id="btn_view_kanban">🗂 לוח</button>
     </div>
     <div class="stats" id="stats"></div>
+    <span class="online-count-pill" id="online_count_pill" style="display:none;" title="לחץ לראות מי מחובר">
+      <span class="online-dot-small"></span>
+      <span class="online-count-num">0</span>
+    </span>
     <button class="hdr-btn" id="btn_load_source">📥 טען מקור</button>
     <button class="hdr-btn" id="btn_backup">💾 גיבוי</button>
     <button class="hdr-btn" id="btn_restore">♻ שחזור</button>
@@ -3164,6 +3187,8 @@ function subscribePresence() {
       // עדכון UI אם פתוח (מסך משתמשים)
       const onlineBox = document.getElementById('online_users_box');
       if (onlineBox) renderOnlineUsersBox(onlineBox);
+      // עדכון ה־badge בכותרת
+      updateOnlineCountPill();
     })
     .subscribe(async (status) => {
       if (status === 'SUBSCRIBED') {
@@ -3176,6 +3201,20 @@ function subscribePresence() {
         });
       }
     });
+}
+
+function updateOnlineCountPill() {
+  const pill = document.getElementById('online_count_pill');
+  if (!pill) return;
+  if (!isAdmin()) { pill.style.display = 'none'; return; }
+  const count = Object.keys(_onlineUsers).length;
+  pill.style.display = count > 0 ? '' : 'none';
+  pill.querySelector('.online-count-num').textContent = count;
+  // tooltip — שמות
+  const names = Object.values(_onlineUsers).map(u => u.full_name || u.email).join('\n');
+  pill.title = `מחוברים כעת:\n${names}`;
+  // לחיצה → פותחת מסך הרשאות
+  pill.onclick = () => openManageUsers();
 }
 
 function renderOnlineUsersBox(container) {
@@ -5279,7 +5318,11 @@ async function openManageUsers() {
     return `
     <tr data-email="${u.email}" class="${u.is_active ? '' : 'inactive'} ${isSuperAdminRow ? 'super-admin-row' : ''}">
       <td>${u.email}</td>
-      <td>${u.full_name || '—'}</td>
+      <td>
+        <span class="user-name-edit" onclick="editUserName('${_esc(u.email)}', this)" style="cursor:pointer; padding:3px 8px; border-radius:4px;" title="לחץ לעריכה">
+          ${u.full_name || '<span style="color:var(--muted)">— לחץ להוספת שם</span>'}
+        </span>
+      </td>
       <td>
         ${isSuperAdminRow
           ? `<span class="pill" style="background:#fef3c7; color:#92400e; font-weight:700;">${ROLE_LABELS.super_admin}</span>`
@@ -5348,6 +5391,17 @@ async function openManageUsers() {
   // עדכון מיידי של רשימת המחוברים
   const onlineBox = document.getElementById('online_users_box');
   if (onlineBox) renderOnlineUsersBox(onlineBox);
+}
+
+async function editUserName(email, span) {
+  const current = span.textContent.trim().replace(/—.*/, '').trim();
+  const newName = prompt('שם המשתמש:', current);
+  if (newName === null) return;
+  const trimmed = newName.trim() || null;
+  const { error } = await sb.from('user_profiles').update({ full_name: trimmed }).ilike('email', email);
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  toast('עודכן ✓');
+  openManageUsers();
 }
 
 async function approveRequest(reqId) {
