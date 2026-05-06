@@ -3008,6 +3008,10 @@ async function reloadData() {
     DASH.data = VIEW.slice();
     renderDashboard();
   }
+  // אם ה־Kanban פתוח — רענן אותו
+  if (document.body.classList.contains('view-kanban')) {
+    renderKanban();
+  }
 }
 
 // הרשמה ל־Realtime: כל שינוי בטבלאות מרענן את הנתונים
