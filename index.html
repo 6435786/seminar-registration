@@ -677,6 +677,27 @@
     background: linear-gradient(#fff7ed, #ffedd5) !important;
     border-bottom: 2px solid #ea580c !important;
   }
+  /* Dashboard print options */
+  #dash_print_pop .cb-row {
+    display: block; padding: 4px 6px; cursor: pointer; font-size: 13px;
+    border-radius: 4px;
+  }
+  #dash_print_pop .cb-row:hover { background: #f0f9ff; }
+  #dash_print_pop .cb-row input { margin-left: 6px; }
+
+  /* בעת הדפסה — נסתיר אלמנטים ריקים בדשבורד; ננקה רוחב גרף שלא יותר ממסך */
+  @media print {
+    body.view-dashboard #dashboard_section .dash-row { gap: 8mm; }
+    body.view-dashboard #dashboard_section .dash-card[data-print-key="chart"][style*="display: none"] {
+      display: none !important;
+    }
+    body.view-dashboard #dashboard_section .splits-row > *[style*="display: none"] {
+      display: none !important;
+    }
+    /* אם רק עוגה — מאפשר רוחב מלא */
+    body.view-dashboard #dashboard_section .dash-card { break-inside: avoid; }
+  }
+
   /* History tabs + feed */
   .hist-tabs {
     display: flex; gap: 6px; padding: 12px 14px 0;
@@ -1147,7 +1168,7 @@
     <div class="kpi-row" id="kpi_row"></div>
 
     <div class="dash-row">
-      <div class="dash-card chart-card">
+      <div class="dash-card chart-card" data-print-key="chart">
         <h3>
           <span>שיבוצים לפי סמינר</span>
           <button class="toggle-btn" id="btn_sector_breakdown">הצג חלוקה למגזר</button>
@@ -3684,19 +3705,19 @@ function renderDetailsPanel() {
   };
 
   body.innerHTML = `
-    <div class="item clickable" onclick="dashDrillDown('registered')"><span>נרשמות</span><b>${metrics.registered.toLocaleString('he-IL')}</b></div>
-    <div class="item clickable" onclick="dashDrillDown('pref1')"><span>בחרו בהעדפה 1</span><b>${metrics.pref1.toLocaleString('he-IL')}</b></div>
-    <div class="item clickable" onclick="dashDrillDown('positive')"><span>תשובה חיובי</span><b>${metrics.positive.toLocaleString('he-IL')}</b></div>
-    <div class="item clickable" onclick="dashDrillDown('placed')"><span>משובצות</span><b>${metrics.placed.toLocaleString('he-IL')}</b></div>
-    <div class="item clickable" onclick="dashDrillDown('muni')"><span>משיבוץ עיריה</span><b>${metrics.muni.toLocaleString('he-IL')}</b></div>
-    <div class="item clickable" onclick="dashDrillDown('sisters')"><span>אחיות באותו מוסד</span><b>${metrics.sisters.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" data-print-key="stat_registered" onclick="dashDrillDown('registered')"><span>נרשמות</span><b>${metrics.registered.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" data-print-key="stat_pref1" onclick="dashDrillDown('pref1')"><span>בחרו בהעדפה 1</span><b>${metrics.pref1.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" data-print-key="stat_positive" onclick="dashDrillDown('positive')"><span>תשובה חיובי</span><b>${metrics.positive.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" data-print-key="stat_placed" onclick="dashDrillDown('placed')"><span>משובצות</span><b>${metrics.placed.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" data-print-key="stat_muni" onclick="dashDrillDown('muni')"><span>משיבוץ עיריה</span><b>${metrics.muni.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" data-print-key="stat_sisters" onclick="dashDrillDown('sisters')"><span>אחיות באותו מוסד</span><b>${metrics.sisters.toLocaleString('he-IL')}</b></div>
 
-    <div class="splits-row">
-      <div class="sector-split">
+    <div class="splits-row" data-print-key="splits_row">
+      <div class="sector-split" data-print-key="split_sectors">
         <div class="title">חלוקה לקבוצות</div>
         ${renderBars(metrics.sectors, metrics.placed)}
       </div>
-      <div class="sector-split" style="background:#fdf4ff;">
+      <div class="sector-split" data-print-key="split_affiliations" style="background:#fdf4ff;">
         <div class="title" style="color:#7c2d92;">חלוקה למגזר</div>
         ${renderBars(metrics.affiliations, metrics.placed)}
       </div>
@@ -5347,9 +5368,9 @@ document.getElementById('btn_hdr_print').addEventListener('click', (e) => {
 });
 
 function openPrintOptions(btn) {
-  // אם בדשבורד — רק מדפיסים, בלי אפשרויות
+  // דשבורד — מסך בחירת רכיבים להדפסה
   if (document.body.classList.contains('view-dashboard')) {
-    window.print();
+    openDashboardPrintOptions(btn);
     return;
   }
   const existing = document.getElementById('print_options_pop');
@@ -5378,6 +5399,177 @@ function openPrintOptions(btn) {
       doPrint(mode);
     };
   });
+}
+
+// ============================================================
+// הדפסת דשבורד עם בחירת רכיבים
+// ============================================================
+const DASH_PRINT_DEFAULTS = {
+  chart: true,
+  stat_registered: true,
+  stat_pref1: true,
+  stat_positive: true,
+  stat_placed: true,
+  stat_muni: true,
+  stat_sisters: true,
+  split_sectors: true,
+  split_affiliations: true,
+};
+
+function getDashPrintSelection() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('dash_print_selection') || 'null');
+    if (saved && typeof saved === 'object') return { ...DASH_PRINT_DEFAULTS, ...saved };
+  } catch {}
+  return { ...DASH_PRINT_DEFAULTS };
+}
+
+function saveDashPrintSelection(sel) {
+  localStorage.setItem('dash_print_selection', JSON.stringify(sel));
+}
+
+function openDashboardPrintOptions(btn) {
+  const existing = document.getElementById('dash_print_pop');
+  if (existing) { existing.remove(); document.getElementById('dash_print_scrim')?.remove(); return; }
+
+  const pop = document.createElement('div');
+  pop.id = 'dash_print_pop';
+  pop.className = 'popover open';
+  pop.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); min-width:340px; max-height:85vh; overflow-y:auto; z-index:1500;';
+  pop.innerHTML = `
+    <button class="col-picker-close" title="סגור">×</button>
+    <div style="font-weight:700; color:var(--deep); margin-bottom:10px; font-size:14px; padding-right:28px;">הדפסת דשבורד</div>
+    <button class="apply-big" data-mode="all" style="margin-top:0; margin-bottom:8px;">🖨 הדפס הכל</button>
+    <div style="font-size:12px; color:var(--muted); margin:10px 0 6px; border-top:1px dashed #cbd5e1; padding-top:10px;">או — בחר נתונים להדפסה:</div>
+
+    <div style="margin-top:10px;">
+      <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#f0f9ff; border-radius:6px; font-weight:700; color:var(--deep); cursor:pointer;">
+        <input type="checkbox" class="grp-toggle" data-grp="chart"> 📊 גרף ראשי
+      </label>
+      <div class="grp-children" data-grp-of="chart" style="margin:4px 14px 8px 0;">
+        <label class="cb-row"><input type="checkbox" data-key="chart"> עוגת השיבוצים / חלוקה למגזר</label>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#f0f9ff; border-radius:6px; font-weight:700; color:var(--deep); cursor:pointer;">
+        <input type="checkbox" class="grp-toggle" data-grp="stats"> 📈 סטטיסטיקות
+      </label>
+      <div class="grp-children" data-grp-of="stats" style="margin:4px 14px 8px 0;">
+        <label class="cb-row"><input type="checkbox" data-key="stat_registered"> נרשמות</label>
+        <label class="cb-row"><input type="checkbox" data-key="stat_pref1"> בחרו בהעדפה 1</label>
+        <label class="cb-row"><input type="checkbox" data-key="stat_positive"> תשובה חיובי</label>
+        <label class="cb-row"><input type="checkbox" data-key="stat_placed"> משובצות</label>
+        <label class="cb-row"><input type="checkbox" data-key="stat_muni"> משיבוץ עיריה</label>
+        <label class="cb-row"><input type="checkbox" data-key="stat_sisters"> אחיות באותו מוסד</label>
+      </div>
+    </div>
+
+    <div style="margin-top:10px;">
+      <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#fdf4ff; border-radius:6px; font-weight:700; color:#7c2d92; cursor:pointer;">
+        <input type="checkbox" class="grp-toggle" data-grp="splits"> 🥧 חלוקה
+      </label>
+      <div class="grp-children" data-grp-of="splits" style="margin:4px 14px 8px 0;">
+        <label class="cb-row"><input type="checkbox" data-key="split_sectors"> חלוקה לקבוצות</label>
+        <label class="cb-row"><input type="checkbox" data-key="split_affiliations"> חלוקה למגזר</label>
+      </div>
+    </div>
+
+    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #cbd5e1; font-size:11px; color:var(--muted);">
+      הערה: השורה העליונה של הסיכום (סה"כ) מודפסת תמיד.
+    </div>
+    <button class="apply-big" data-mode="custom" style="margin-top:14px; background:var(--deep) !important;">🖨 הדפס בחירה</button>
+  `;
+
+  const scrim = document.createElement('div');
+  scrim.id = 'dash_print_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.3); z-index:1499;';
+  scrim.onclick = () => { pop.remove(); scrim.remove(); };
+  document.body.appendChild(scrim);
+  document.body.appendChild(pop);
+
+  // טעינת בחירה אחרונה
+  const saved = getDashPrintSelection();
+  pop.querySelectorAll('input[type=checkbox][data-key]').forEach(cb => {
+    cb.checked = !!saved[cb.dataset.key];
+  });
+  // עדכון מצב ה־group toggles
+  const updateGroupToggle = (grp) => {
+    const toggle = pop.querySelector(`.grp-toggle[data-grp="${grp}"]`);
+    const children = pop.querySelectorAll(`.grp-children[data-grp-of="${grp}"] input[type=checkbox]`);
+    const checked = [...children].filter(c => c.checked).length;
+    toggle.checked = checked === children.length;
+    toggle.indeterminate = checked > 0 && checked < children.length;
+  };
+  ['chart', 'stats', 'splits'].forEach(updateGroupToggle);
+
+  // group toggle ↔ children
+  pop.querySelectorAll('.grp-toggle').forEach(toggle => {
+    toggle.addEventListener('change', () => {
+      const grp = toggle.dataset.grp;
+      pop.querySelectorAll(`.grp-children[data-grp-of="${grp}"] input[type=checkbox]`).forEach(cb => cb.checked = toggle.checked);
+    });
+  });
+  // child changes → update group
+  pop.querySelectorAll('.grp-children input[type=checkbox]').forEach(cb => {
+    cb.addEventListener('change', () => {
+      const grp = cb.closest('.grp-children').dataset.grpOf;
+      updateGroupToggle(grp);
+    });
+  });
+
+  pop.querySelector('.col-picker-close').onclick = () => { pop.remove(); scrim.remove(); };
+
+  pop.querySelector('[data-mode="all"]').onclick = () => {
+    pop.remove(); scrim.remove();
+    doDashboardPrint(null);  // null = הכל
+  };
+  pop.querySelector('[data-mode="custom"]').onclick = () => {
+    const sel = {};
+    pop.querySelectorAll('input[type=checkbox][data-key]').forEach(cb => {
+      sel[cb.dataset.key] = cb.checked;
+    });
+    saveDashPrintSelection(sel);
+    pop.remove(); scrim.remove();
+    doDashboardPrint(sel);
+  };
+}
+
+function doDashboardPrint(selection) {
+  const dashSection = document.getElementById('dashboard_section');
+  if (!dashSection) return;
+  const elements = dashSection.querySelectorAll('[data-print-key]');
+  // שמור מצב מקורי
+  const originalDisplay = new Map();
+  if (selection) {
+    elements.forEach(el => {
+      originalDisplay.set(el, el.style.display);
+      const key = el.dataset.printKey;
+      if (key === 'splits_row') {
+        // הצג רק אם יש לפחות אחד מהילדים
+        const anyChild = selection.split_sectors || selection.split_affiliations;
+        el.style.display = anyChild ? '' : 'none';
+      } else if (selection[key] === false) {
+        el.style.display = 'none';
+      } else {
+        el.style.display = '';
+      }
+    });
+  }
+
+  // אם הגרף הוסתר — מסתיר את ה־.dash-row אם רק הוא היה בה
+  // (פשוט נבסס על מצב טבעי)
+
+  setTimeout(() => {
+    window.print();
+    // שחזור
+    if (selection) {
+      elements.forEach(el => {
+        const v = originalDisplay.get(el);
+        el.style.display = v == null ? '' : v;
+      });
+    }
+  }, 100);
 }
 
 function buildPrintTitle() {
