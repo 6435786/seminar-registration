@@ -183,7 +183,7 @@
 
   /* Popovers (column picker + multi-select filters) */
   .popover {
-    position: absolute; z-index: 50;
+    position: absolute; z-index: 1600;
     background: white; border: 1px solid var(--border); border-radius: 10px;
     padding: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     max-height: min(400px, calc(100vh - 100px));
@@ -6515,21 +6515,61 @@ document.addEventListener('click', (e) => {
 function clampPopoverToViewport(pop, btn) {
   const r = btn.getBoundingClientRect();
   pop.style.position = 'fixed';
-  pop.style.top = (r.bottom + 4) + 'px';
   pop.style.right = 'auto';
   pop.style.left = 'auto';
+  pop.style.maxHeight = '';
+
   // מוודאים שהוא מוצג כדי למדוד
   const wasOpen = pop.classList.contains('open');
   if (!wasOpen) pop.classList.add('open');
   const popW = pop.offsetWidth;
+  const popH = pop.offsetHeight;
   if (!wasOpen) pop.classList.remove('open');
-  // מנסה ליישר את הקצה הימני של הפופ־אפ לקצה הימני של הכפתור (RTL)
-  const desiredLeft = r.right - popW;
-  const clampedLeft = Math.max(10, Math.min(desiredLeft, window.innerWidth - popW - 10));
-  pop.style.left = clampedLeft + 'px';
-  // גובה מקסימלי — שלא יגלוש מלמטה
-  const availH = window.innerHeight - (r.bottom + 4) - 10;
-  pop.style.maxHeight = Math.max(200, availH) + 'px';
+
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+  const spaceBelow = vh - r.bottom - 10;
+  const spaceAbove = r.top - 10;
+
+  // אם בטלפון (≤500) ובפנל סינונים פתוח — נדבק לחלון, רוחב כמעט מלא
+  const isMobileSheet = vw <= 500 && document.body.classList.contains('mobile-filters-open');
+  if (isMobileSheet) {
+    pop.style.left = '8px';
+    pop.style.right = 'auto';
+    pop.style.width = (vw - 16) + 'px';
+    pop.style.maxWidth = (vw - 16) + 'px';
+  } else {
+    // RTL: ליישר את הקצה הימני של הפופ־אפ לקצה הימני של הכפתור
+    const desiredLeft = r.right - popW;
+    const clampedLeft = Math.max(10, Math.min(desiredLeft, vw - popW - 10));
+    pop.style.left = clampedLeft + 'px';
+    pop.style.width = '';
+    pop.style.maxWidth = (vw - 20) + 'px';
+  }
+
+  // גובה: אם הפופ־אפ גבוה ולא נכנס למטה — מציבים אותו מעל הכפתור
+  const fitsBelow = popH <= spaceBelow;
+  const fitsAbove = popH <= spaceAbove;
+  if (fitsBelow) {
+    pop.style.top = (r.bottom + 4) + 'px';
+    pop.style.bottom = 'auto';
+    pop.style.maxHeight = Math.max(200, spaceBelow) + 'px';
+  } else if (fitsAbove) {
+    pop.style.top = 'auto';
+    pop.style.bottom = (vh - r.top + 4) + 'px';
+    pop.style.maxHeight = Math.max(200, spaceAbove) + 'px';
+  } else {
+    // אין מקום בכלל — בוחרים את הצד עם יותר מקום
+    if (spaceBelow >= spaceAbove) {
+      pop.style.top = (r.bottom + 4) + 'px';
+      pop.style.bottom = 'auto';
+      pop.style.maxHeight = Math.max(180, spaceBelow) + 'px';
+    } else {
+      pop.style.top = 'auto';
+      pop.style.bottom = (vh - r.top + 4) + 'px';
+      pop.style.maxHeight = Math.max(180, spaceAbove) + 'px';
+    }
+  }
 }
 
 // יצוא הטבלה הנוכחית לאקסל — לפי הסינון, הסדר, והעמודות הגלויות
