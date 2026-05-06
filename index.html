@@ -460,6 +460,13 @@
       vertical-align: top;
       line-height: 1.2;
     }
+    /* עמודת "הערה" — מוגבלת ברוחב כדי שתתעטף ולא תגדיל את הטבלה */
+    body:not(.view-dashboard) td[data-key="notes"],
+    body:not(.view-dashboard) td[data-key="placement_note"] {
+      max-width: 180px;
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
     /* עמודות קצרות שבאמת לא צריכות רוחב רב */
     body:not(.view-dashboard) td[data-key="national_id"],
     body:not(.view-dashboard) th[style*="min-width:90px"],
