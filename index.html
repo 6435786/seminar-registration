@@ -976,6 +976,7 @@
     <button class="ghost" id="btn_reset">איפוס</button>
     <button class="ghost" id="btn_cols">עמודות ▾</button>
     <button class="ghost" id="btn_problems">🚨 דרוש טיפול</button>
+    <button class="ghost" id="btn_export_table">📤 יצוא לאקסל</button>
     <div class="popover" id="col_picker"></div>
     <div class="popover" id="problems_picker"></div>
   </div>
@@ -4125,6 +4126,7 @@ document.getElementById('btn_manage_users').addEventListener('click', () => {
 
 // כפתור גיבוי נתונים
 document.getElementById('btn_load_source').addEventListener('click', openLoadSourceModal);
+document.getElementById('btn_export_table').addEventListener('click', exportMainTableToExcel);
 document.getElementById('btn_backup').addEventListener('click', backupAllData);
 
 // כפתור שחזור מגיבוי
@@ -5003,6 +5005,50 @@ function clampPopoverToViewport(pop, btn) {
   // גובה מקסימלי — שלא יגלוש מלמטה
   const availH = window.innerHeight - (r.bottom + 4) - 10;
   pop.style.maxHeight = Math.max(200, availH) + 'px';
+}
+
+// יצוא הטבלה הנוכחית לאקסל — לפי הסינון, הסדר, והעמודות הגלויות
+function exportMainTableToExcel() {
+  const visibleCols = COLS.filter(c => c.visible);
+  if (!visibleCols.length || !VIEW.length) {
+    toast('אין נתונים להציג', 'warn');
+    return;
+  }
+
+  const headers = visibleCols.map(c => c.label);
+  const data = VIEW.map(row => {
+    const r = {};
+    visibleCols.forEach(c => {
+      let val = row[c.key];
+      // עמודת "אחים" — רק התצוגה (לא רשימה)
+      if (c.key === 'sibling_inst_display') val = row.sibling_inst_display;
+      // עמודות מערך — חבר עם פסיק
+      if (Array.isArray(val)) val = val.join(', ');
+      // boolean
+      if (typeof val === 'boolean') val = val ? 'כן' : '';
+      r[c.label] = (val == null || val === '') ? '' : String(val);
+    });
+    return r;
+  });
+
+  const ws = XLSX.utils.json_to_sheet(data, { header: headers });
+  ws['!views'] = [{ RTL: true }];
+  ws['!cols'] = visibleCols.map(c => {
+    let maxLen = c.label.length;
+    data.forEach(row => {
+      const v = String(row[c.label] ?? '');
+      if (v.length > maxLen) maxLen = v.length;
+    });
+    return { wch: Math.min(Math.max(maxLen + 4, 10), 60) };
+  });
+
+  const wb = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  const seasonName = (SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name || '';
+  const ts = new Date().toISOString().slice(0, 10);
+  XLSX.utils.book_append_sheet(wb, ws, 'תלמידות');
+  XLSX.writeFile(wb, `רישום סמינרים ${seasonName} ${ts}.xlsx`);
+  toast(`יוצאו ${data.length} תלמידות ✓`);
 }
 
 // מעביר את כפתורי "עמודות" ו"דרוש טיפול" לפי overflow אמיתי ב־.filters
