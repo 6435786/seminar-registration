@@ -3614,10 +3614,14 @@ function renderPlacementChart() {
   }
 }
 
-// קליק על שורה בפאנל הדשבורד → חוזר לטבלה עם פילטר נוסף
+// קליק על שורה בפאנל הדשבורד → חוזר לטבלה עם פילטר חדש (מחליף את כל הקיימים)
 function dashDrillDown(metric) {
   const allSemNames = (DATA.seminars || []).map(s => s.name).filter(Boolean);
   const fs = FILTER_STATE;
+  // מנקה את כל הפילטרים הקיימים — הסינון החדש מחליף הכל
+  Object.values(fs).forEach(set => set.clear());
+  Object.keys(COL_FILTERS).forEach(k => COL_FILTERS[k].clear());
+  document.getElementById('q').value = '';
   switch (metric) {
     case 'registered':
       // בנות שיש להן רישום בכלשהי מההעדפות → any_seminar = הכל (לא ריק)
@@ -3647,12 +3651,6 @@ function dashDrillDown(metric) {
       fs.sibling_categories.clear();
       fs.sibling_categories.add('__אחיות_בסמינר__');
       break;
-  }
-  // אם יש סמינר נבחר בדשבורד — מוסיפים גם אותו כפילטר
-  if (DASH.selectedSeminar) {
-    fs.any_seminar.clear();
-    fs.placement_seminar.clear();
-    fs.placement_seminar.add(DASH.selectedSeminar);
   }
   // עדכון תגיות הפילטרים החזותיות
   document.querySelectorAll('.ms-wrap').forEach(w => w._updateBtn && w._updateBtn());
