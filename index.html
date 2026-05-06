@@ -1372,6 +1372,71 @@
     table thead { position: sticky; top: 0; z-index: 3; background: #e0f2fe; }
     /* אזור גלילה אנכית של הטבלה */
     .table-wrap { max-height: calc(100vh - 280px); overflow-y: auto; }
+
+    /* === דשבורד במובייל — צמצום משמעותי === */
+    body.view-dashboard .mb-search-row,
+    body.view-dashboard .mb-icon-row,
+    body.view-dashboard .mb-large-row {
+      display: none !important;
+    }
+    /* כפתור הדפסה צף לדשבורד */
+    body.view-dashboard .mobile-toolbar { padding: 0 !important; }
+    body.view-dashboard .mobile-toolbar::after {
+      content: ''; display: block;
+    }
+    /* כפתור הדפסה משולב עם view-switch */
+    body.view-dashboard #btn_dash_print_mobile {
+      display: inline-flex !important;
+      background: #075985; color: white; border: 0;
+      padding: 0; min-width: 44px; min-height: 36px;
+      align-items: center; justify-content: center; font-size: 18px;
+    }
+    body.view-dashboard .view-switch.big {
+      display: grid !important;
+      grid-template-columns: 1fr 1fr 1fr 44px;
+      gap: 4px;
+    }
+
+    /* כותרת הדשבורד הפנימית — מוסתרת (יש לנו את stats-bar למעלה) */
+    body.view-dashboard #dashboard_section > div:first-child { display: none !important; }
+
+    /* KPI cards — תיקון פריסה */
+    body.view-dashboard .kpi-row {
+      grid-template-columns: repeat(2, 1fr) !important;
+      gap: 6px !important; margin-bottom: 10px;
+    }
+    body.view-dashboard .kpi-card {
+      padding: 10px !important; min-width: 0;
+    }
+    body.view-dashboard .kpi-card .label { font-size: 11px !important; line-height: 1.2; }
+    body.view-dashboard .kpi-card .value { font-size: 20px !important; font-weight: 800; }
+    body.view-dashboard .kpi-card .value .pct { font-size: 11px !important; }
+
+    /* גרף ראשי */
+    body.view-dashboard .dash-card.chart-card { padding: 8px !important; }
+    body.view-dashboard .dash-card.chart-card h3 { font-size: 14px !important; }
+    body.view-dashboard .chart-canvas-wrap {
+      height: 280px !important;
+      max-height: 50vh;
+    }
+
+    /* פאנל פרטים — דחוס */
+    body.view-dashboard .details-panel { padding: 10px !important; }
+    body.view-dashboard .details-panel h3 { font-size: 14px !important; }
+    body.view-dashboard .details-panel .item {
+      padding: 6px 10px !important; font-size: 13px !important;
+    }
+    body.view-dashboard .details-panel .item b { font-size: 15px !important; }
+    body.view-dashboard .details-panel .splits-row {
+      grid-template-columns: 1fr; gap: 8px;
+    }
+    body.view-dashboard .details-panel .sector-split {
+      padding: 8px 10px !important;
+    }
+    body.view-dashboard .details-panel .bar-row {
+      grid-template-columns: 70px 1fr 60px !important;
+      font-size: 12px !important;
+    }
   }
 </style>
 </head>
@@ -1385,6 +1450,7 @@
       <button class="view-btn table-mode active" id="btn_view_table">📋 טבלה</button>
       <button class="view-btn dash-mode" id="btn_view_dashboard">📊 דשבורד</button>
       <button class="view-btn kanban-mode" id="btn_view_kanban">🗂 לוח</button>
+      <button class="view-btn mobile-only-btn" id="btn_dash_print_mobile" title="הדפסה" style="display:none;">🖨</button>
     </div>
     <div class="stats" id="stats"></div>
     <div class="mobile-stats-bar" id="mobile_stats_bar"></div>
@@ -6332,6 +6398,7 @@ async function deleteView(id) {
 document.getElementById('btn_view_table').addEventListener('click', () => switchView('table'));
 document.getElementById('btn_view_dashboard').addEventListener('click', () => switchView('dashboard'));
 document.getElementById('btn_view_kanban').addEventListener('click', () => switchView('kanban'));
+document.getElementById('btn_dash_print_mobile').addEventListener('click', (e) => openPrintOptions(e.currentTarget));
 
 // כפתור "הצג חלוקה לקבוצות"
 document.getElementById('btn_sector_breakdown').addEventListener('click', (e) => {
