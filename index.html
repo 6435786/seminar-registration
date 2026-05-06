@@ -598,6 +598,37 @@
     background: linear-gradient(#fff7ed, #ffedd5) !important;
     border-bottom: 2px solid #ea580c !important;
   }
+  /* History tabs + feed */
+  .hist-tabs {
+    display: flex; gap: 6px; padding: 12px 14px 0;
+    border-bottom: 1px solid var(--border);
+    background: linear-gradient(to bottom, #fcfcfe, #ffffff);
+  }
+  .hist-tab {
+    padding: 8px 16px; border: 1px solid transparent;
+    border-bottom: 2px solid transparent;
+    background: transparent; cursor: pointer;
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    color: var(--muted); border-radius: 6px 6px 0 0;
+  }
+  .hist-tab:hover { background: #f0f9ff; color: var(--deep); }
+  .hist-tab.active {
+    background: white; color: var(--deep);
+    border-color: var(--border); border-bottom-color: white;
+    margin-bottom: -1px;
+  }
+  .feed-list { padding: 12px 14px; }
+  .feed-item {
+    display: grid;
+    grid-template-columns: 110px 130px 1fr;
+    gap: 12px; padding: 10px 12px;
+    border-bottom: 1px solid #f1f5f9;
+    align-items: start;
+  }
+  .feed-item:hover { background: #f8fafc; }
+  .feed-when { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .feed-who { color: var(--deep); font-weight: 600; font-size: 13px; }
+  .feed-what { color: var(--text); font-size: 13px; line-height: 1.5; }
   .hdr-btn:hover { background: #f0f9ff; border-color: var(--accent-alt); }
   .hdr-btn.primary { background: var(--deep); color: white; border-color: var(--deep); }
   .hdr-btn.primary:hover { background: #0a3d5f; }
@@ -3963,52 +3994,153 @@ async function deleteListItemWithMove(table, id, usedIn, value) {
 // ============================================================
 // היסטוריית שינויים — מודל פשוט עם 200 שינויים אחרונים
 // ============================================================
-async function showHistory() {
-  const { data, error } = await sb.from('audit_log')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(200);
+// טאב פעיל ב־History modal
+let _historyTab = 'today';
+
+async function showHistory(tab) {
+  if (tab) _historyTab = tab;
+
+  let cutoff = null;
+  if (_historyTab === 'today') {
+    const t = new Date(); t.setHours(0,0,0,0);
+    cutoff = t.toISOString();
+  } else if (_historyTab === 'week') {
+    const t = new Date(); t.setDate(t.getDate() - 7); t.setHours(0,0,0,0);
+    cutoff = t.toISOString();
+  }
+
+  let q = sb.from('audit_log').select('*').order('created_at', { ascending: false });
+  if (cutoff) q = q.gte('created_at', cutoff);
+  q = q.limit(_historyTab === 'all' ? 500 : 1000);
+  const { data, error } = await q;
   if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
 
-  const fmt = (v) => {
-    if (!v) return '-';
-    try { return Object.entries(v).map(([k, val]) => `<b>${k}</b>: ${val == null ? '(ריק)' : val}`).join(', '); }
-    catch { return JSON.stringify(v); }
-  };
+  const userIds = [...new Set((data || []).map(d => d.user_id).filter(Boolean))];
+  const userByUid = {};
+  if (userIds.length) {
+    const { data: users } = await sb.from('user_profiles').select('id,full_name,email').in('id', userIds);
+    (users || []).forEach(u => { userByUid[u.id] = u; });
+  }
+
+  const girlByID = {};
+  (DATA.girls || []).forEach(g => { girlByID[g.id] = g; });
+  const semByID = {};
+  (DATA.seminars || []).forEach(s => { semByID[s.id] = s; });
+
   const dt = (s) => {
     const d = new Date(s);
-    return d.toLocaleString('he-IL', { day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+    const today = new Date(); today.setHours(0,0,0,0);
+    const dDay = new Date(d); dDay.setHours(0,0,0,0);
+    const yDay = new Date(today); yDay.setDate(yDay.getDate() - 1);
+    let datePart;
+    if (dDay.getTime() === today.getTime()) datePart = 'היום';
+    else if (dDay.getTime() === yDay.getTime()) datePart = 'אתמול';
+    else datePart = d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' });
+    return datePart + ' ' + d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
   };
 
-  const actionLabel = { insert: 'הוספה', update: 'עדכון', delete: 'מחיקה', undo: 'ביטול' };
+  const FIELD_LABELS = {
+    family_name: 'שם משפחה', first_name: 'שם פרטי', national_id: 'ת.ז',
+    notes: 'הערה', sector: 'שיוך', community: 'קהילה',
+    address_street: 'רחוב', address_number: 'בית',
+    mother_name: 'שם אם', mother_phone: 'טלפון אם',
+    father_name: 'שם אב', father_phone: 'טלפון אב', email: 'מייל',
+    source_school_id: 'בי״ס מוצא',
+    seminar_id: 'סמינר', response: 'תשובה', class_type: 'א-ו',
+    preference_order: 'העדפה', status: 'סטטוס', is_final: 'סופי',
+  };
+  const PREF_LABELS = { pref_1: 'העדפה 1', pref_2: 'העדפה 2', advance: 'מקדמת' };
+
+  const friendlyValue = (key, val) => {
+    if (val == null || val === '') return '(ריק)';
+    if (key === 'seminar_id') return (semByID[val] || {}).name || `סמינר ${val}`;
+    if (key === 'source_school_id') {
+      const s = (DATA.source_schools || []).find(x => x.id === val);
+      return s ? s.name : `מוסד ${val}`;
+    }
+    if (key === 'preference_order') return PREF_LABELS[val] || val;
+    if (typeof val === 'boolean') return val ? '✓ כן' : '— לא';
+    return String(val);
+  };
+
+  const describe = (log) => {
+    const tn = log.table_name;
+    const oldV = log.old_value || {};
+    const newV = log.new_value || {};
+    const all = { ...oldV, ...newV };
+    const changes = Object.keys(all).filter(k => k !== 'id' && k !== 'season_id' && k !== 'girl_id'
+      && JSON.stringify(oldV[k]) !== JSON.stringify(newV[k]));
+
+    let girlContext = '';
+    if (tn === 'girls' && log.record_id && girlByID[log.record_id]) {
+      const g = girlByID[log.record_id];
+      girlContext = ` ל־${g.family_name || ''} ${g.first_name || ''}`;
+    } else if ((tn === 'registrations' || tn === 'placements') && (newV.girl_id || oldV.girl_id) && girlByID[newV.girl_id || oldV.girl_id]) {
+      const g = girlByID[newV.girl_id || oldV.girl_id];
+      girlContext = ` ל־${g.family_name || ''} ${g.first_name || ''}`;
+    }
+
+    if (log.action === 'insert') {
+      if (tn === 'girls') return `<b>הוספת תלמידה${girlContext}</b>`;
+      if (tn === 'registrations') {
+        const order = newV.preference_order;
+        const sem = newV.seminar_id ? semByID[newV.seminar_id] : null;
+        return `<b>הוספת ${PREF_LABELS[order] || 'רישום'}${girlContext}</b>${sem ? ' → ' + sem.name : ''}`;
+      }
+      if (tn === 'placements') {
+        const sem = newV.seminar_id ? semByID[newV.seminar_id] : null;
+        return `<b>שיבוץ${girlContext}</b>${sem ? ' → ' + sem.name : ''}`;
+      }
+      return `<b>הוספה ב־${tn}</b>`;
+    }
+    if (log.action === 'delete') {
+      return `<b>מחיקה${girlContext}</b> מ־${tn}`;
+    }
+    if (changes.length === 0) return `<i>שינוי טכני ב־${tn}${girlContext}</i>`;
+    const lines = changes.slice(0, 4).map(k => {
+      const label = FIELD_LABELS[k] || k;
+      const before = friendlyValue(k, oldV[k]);
+      const after = friendlyValue(k, newV[k]);
+      return `<span style="color:#64748b">${label}:</span> ${before} → <b>${after}</b>`;
+    });
+    if (changes.length > 4) lines.push(`<span style="color:var(--muted)">…ועוד ${changes.length - 4}</span>`);
+    return `<b>שינוי${girlContext}</b><br><span style="font-size:12px">${lines.join(' · ')}</span>`;
+  };
+
+  const tabBtn = (id, label) => `
+    <button class="hist-tab ${_historyTab === id ? 'active' : ''}" onclick="showHistory('${id}')">${label}</button>
+  `;
+
+  const feed = (data || []).map(log => {
+    const u = userByUid[log.user_id];
+    const userName = u ? (u.full_name || u.email) : 'מערכת';
+    return `
+      <div class="feed-item">
+        <div class="feed-when">${dt(log.created_at)}</div>
+        <div class="feed-who">${userName}</div>
+        <div class="feed-what">${describe(log)}</div>
+      </div>
+    `;
+  }).join('');
 
   document.getElementById('modal_body').innerHTML = `
     <div class="modal-header">
       <div style="flex:1">
         <h2>📋 היסטוריית שינויים</h2>
-        <div class="subtitle">${data.length} שינויים אחרונים</div>
+        <div class="subtitle">${data.length} פעולות${cutoff ? '' : ''}</div>
       </div>
       <button class="close" onclick="closeModal()" title="סגור">×</button>
     </div>
     <div class="modal-body">
-      <div class="form-section">
-        <table style="width:100%; font-size:12px;">
-          <thead><tr>
-            <th>תאריך</th><th>פעולה</th><th>טבלה</th><th>מזהה</th><th>לפני</th><th>אחרי</th>
-          </tr></thead>
-          <tbody>
-            ${data.map(log => `
-              <tr>
-                <td style="white-space:nowrap">${dt(log.created_at)}</td>
-                <td><span class="badge ${log.action === 'delete' ? 'bad' : (log.action === 'insert' ? 'good' : 'warn')}">${actionLabel[log.action] || log.action}</span></td>
-                <td>${log.table_name}</td>
-                <td>${log.record_id || '-'}</td>
-                <td style="max-width:300px; white-space:normal">${fmt(log.old_value)}</td>
-                <td style="max-width:300px; white-space:normal">${fmt(log.new_value)}</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
+      <div class="hist-tabs">
+        ${tabBtn('today', '📅 היום')}
+        ${tabBtn('week', '📆 השבוע')}
+        ${tabBtn('all', '🗂 הכל (500 אחרונים)')}
+      </div>
+      <div class="form-section" style="padding:0;">
+        ${data.length === 0
+          ? '<div style="text-align:center; padding:40px; color:var(--muted);">אין פעילות בטווח שבחרת</div>'
+          : `<div class="feed-list">${feed}</div>`}
       </div>
     </div>
   `;
