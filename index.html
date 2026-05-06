@@ -3049,16 +3049,16 @@ function renderModalBody() {
         ${fld('העדפה 2', 'reg_pref_2_seminar',  semNameFromId(p2.seminar_id), { type: 'seminar' })}
         ${fld('תשובה 2', 'reg_pref_2_response', p2.response,                 { type: 'enum', values: ENUM_RESPONSE })}
         ${fld('א-ו 2',   'reg_pref_2_class',    p2.class_type,               { type: 'enum', values: ENUM_CLASS })}
-        ${fld('מקדמת',   'reg_advance_seminar', semNameFromId(pa.seminar_id), { type: 'seminar' })}
-        <span></span>
         ${fld('שיבוץ',   'plc_seminar',  semNameFromId(plc.seminar_id), { type: 'seminar' })}
         ${fld('סטטוס',   'plc_status',   plc.status,                    { type: 'enum', values: ENUM_STATUS })}
         ${fld('סופי',    'plc_is_final', plc.is_final,                  { type: 'checkbox' })}
+        ${fld('מקדמת',   'reg_advance_seminar', semNameFromId(pa.seminar_id), { type: 'seminar' })}
       </div>
-      <div style="margin-top: 14px;">
-        <label style="font-size:12px; color:var(--muted); font-weight:600; display:block; margin-bottom:6px;">הערה:</label>
-        ${editable ? `<textarea data-field="notes" rows="2" style="width:100%; padding:8px 11px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px; resize:vertical;">${r.notes || ''}</textarea>`
-          : `<div class="readonly${!r.notes ? ' empty' : ''}" style="white-space:pre-wrap;">${r.notes || '—'}</div>`}
+      <div style="margin-top: 12px;" class="form-grid compact">
+        <label>הערה</label>
+        ${editable
+          ? `<textarea data-field="notes" rows="2" style="grid-column: 2 / -1; width:100%; padding:5px 9px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:13px; background:white; resize:vertical;">${r.notes || ''}</textarea>`
+          : `<div class="readonly${!r.notes ? ' empty' : ''}" style="grid-column: 2 / -1; white-space:pre-wrap;">${r.notes || '—'}</div>`}
       </div>
     `)}
 
