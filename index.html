@@ -385,6 +385,16 @@
   }
   .details-panel .item:nth-child(odd)  { background: #f0f9ff; }
   .details-panel .item:nth-child(even) { background: #f8fafc; }
+  .details-panel .item.clickable { cursor: pointer; transition: all 0.15s; }
+  .details-panel .item.clickable:hover {
+    background: #bae6fd !important;
+    transform: translateX(-3px);
+    box-shadow: 0 2px 6px rgba(2,132,199,0.15);
+  }
+  .details-panel .item.clickable::after {
+    content: '↩'; color: var(--accent); font-size: 14px; opacity: 0; transition: opacity 0.15s;
+  }
+  .details-panel .item.clickable:hover::after { opacity: 1; }
   .details-panel .item b { color: var(--deep); font-weight: 800; font-size: 17px; }
   .details-panel .splits-row {
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px;
@@ -3604,6 +3614,52 @@ function renderPlacementChart() {
   }
 }
 
+// קליק על שורה בפאנל הדשבורד → חוזר לטבלה עם פילטר נוסף
+function dashDrillDown(metric) {
+  const allSemNames = (DATA.seminars || []).map(s => s.name).filter(Boolean);
+  const fs = FILTER_STATE;
+  switch (metric) {
+    case 'registered':
+      // בנות שיש להן רישום בכלשהי מההעדפות → any_seminar = הכל (לא ריק)
+      fs.any_seminar.clear();
+      allSemNames.forEach(n => fs.any_seminar.add(n));
+      break;
+    case 'pref1':
+      // אין פילטר ספציפי לפר העדפה 1 — נשים any_seminar (קרוב מספיק)
+      fs.any_seminar.clear();
+      allSemNames.forEach(n => fs.any_seminar.add(n));
+      break;
+    case 'positive':
+      fs.any_response.clear();
+      fs.any_response.add('חיובי');
+      break;
+    case 'placed':
+      fs.placement_seminar.clear();
+      allSemNames.forEach(n => fs.placement_seminar.add(n));
+      break;
+    case 'muni':
+      fs.placement_status.clear();
+      fs.placement_status.add('שיבוץ עיריה');
+      break;
+    case 'sisters':
+      fs.sibling_categories.clear();
+      fs.sibling_categories.add('__אחיות_בסמינר__');
+      break;
+  }
+  // אם יש סמינר נבחר בדשבורד — מוסיפים גם אותו כפילטר
+  if (DASH.selectedSeminar) {
+    fs.any_seminar.clear();
+    fs.placement_seminar.clear();
+    fs.placement_seminar.add(DASH.selectedSeminar);
+  }
+  // עדכון תגיות הפילטרים החזותיות
+  document.querySelectorAll('.ms-wrap').forEach(w => w._updateBtn && w._updateBtn());
+  // מעבר לטבלה
+  switchView('table');
+  applyFilters();
+  toast('פילטר הוחל ✓');
+}
+
 function renderDetailsPanel() {
   const title = document.getElementById('details_title');
   const body = document.getElementById('details_body');
@@ -3637,12 +3693,12 @@ function renderDetailsPanel() {
   };
 
   body.innerHTML = `
-    <div class="item"><span>נרשמות</span><b>${metrics.registered.toLocaleString('he-IL')}</b></div>
-    <div class="item"><span>בחרו בהעדפה 1</span><b>${metrics.pref1.toLocaleString('he-IL')}</b></div>
-    <div class="item"><span>תשובה חיובי</span><b>${metrics.positive.toLocaleString('he-IL')}</b></div>
-    <div class="item"><span>משובצות</span><b>${metrics.placed.toLocaleString('he-IL')}</b></div>
-    <div class="item"><span>משיבוץ עיריה</span><b>${metrics.muni.toLocaleString('he-IL')}</b></div>
-    <div class="item"><span>אחיות באותו מוסד</span><b>${metrics.sisters.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" onclick="dashDrillDown('registered')"><span>נרשמות</span><b>${metrics.registered.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" onclick="dashDrillDown('pref1')"><span>בחרו בהעדפה 1</span><b>${metrics.pref1.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" onclick="dashDrillDown('positive')"><span>תשובה חיובי</span><b>${metrics.positive.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" onclick="dashDrillDown('placed')"><span>משובצות</span><b>${metrics.placed.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" onclick="dashDrillDown('muni')"><span>משיבוץ עיריה</span><b>${metrics.muni.toLocaleString('he-IL')}</b></div>
+    <div class="item clickable" onclick="dashDrillDown('sisters')"><span>אחיות באותו מוסד</span><b>${metrics.sisters.toLocaleString('he-IL')}</b></div>
 
     <div class="splits-row">
       <div class="sector-split">
