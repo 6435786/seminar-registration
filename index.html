@@ -920,6 +920,8 @@
     #btn_hdr_views { font-size: 0; }
     #btn_hdr_views::before { content: '🔖'; font-size: 16px; }
     #btn_hdr_print { font-size: 11px; padding: 4px 8px; } /* טקסט */
+    #btn_export_table { font-size: 0; }
+    #btn_export_table::before { content: '📊'; font-size: 16px; }
     /* stats — מקוצר */
     .stats { font-size: 11px; gap: 6px; }
   }
@@ -1008,6 +1010,7 @@
     <span class="hdr-sep" style="margin-right:auto;"></span>
     <button class="hdr-btn" id="btn_hdr_views">🔖 תצוגות שמורות</button>
     <button class="hdr-btn" id="btn_hdr_print">הדפסה</button>
+    <button class="hdr-btn" id="btn_export_table">📊 יצוא</button>
   </div>
   <div class="popover" id="hdr_views_pop"></div>
 </header>
@@ -1059,7 +1062,6 @@
     <button class="ghost" id="btn_reset">איפוס</button>
     <button class="ghost" id="btn_cols">עמודות ▾</button>
     <button class="ghost" id="btn_problems">🚨 דרוש טיפול</button>
-    <button class="ghost" id="btn_export_table">📤 יצוא לאקסל</button>
     <div class="popover" id="col_picker"></div>
     <div class="popover" id="problems_picker"></div>
   </div>
