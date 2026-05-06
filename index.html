@@ -3101,6 +3101,9 @@ function subscribeRealtime() {
     .on('postgres_changes', { event: '*', schema: 'public', table: 'registrations' }, schedule)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'placements' }, schedule)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'siblings' }, schedule)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'saved_views' }, () => {
+      loadSavedViewsFromDB();  // עדכון cache ברגע ששינויי עברו
+    })
     .subscribe();
 }
 
@@ -4757,6 +4760,7 @@ async function main() {
     applyFilters();
     subscribeRealtime();
     subscribePresence();
+    loadSavedViewsFromDB();
   } catch (e) {
     console.error(e);
     document.getElementById('tbody').innerHTML =
@@ -5437,13 +5441,21 @@ function applyProblemsFilter(statuses, includePlaced) {
 }
 
 // ===============================================
-// "תצוגות שמורות" — localStorage
+// "תצוגות שמורות" — Supabase (מסונכרן בין כל המכשירים)
 // ===============================================
-function getSavedViews() {
-  try { return JSON.parse(localStorage.getItem('saved_views') || '[]'); }
-  catch { return []; }
+let _savedViewsCache = null;
+
+async function loadSavedViewsFromDB() {
+  const { data, error } = await sb.from('saved_views')
+    .select('id, user_id, name, state, is_shared, created_at')
+    .order('created_at', { ascending: true });
+  if (error) { console.error(error); return []; }
+  _savedViewsCache = data || [];
+  return _savedViewsCache;
 }
-function saveSavedViews(v) { localStorage.setItem('saved_views', JSON.stringify(v)); }
+
+// תאימות לאחור — קוד ישן שעדיין קורא ל־getSavedViews
+function getSavedViews() { return _savedViewsCache || []; }
 
 function getCurrentFilterState() {
   const out = {
@@ -5475,54 +5487,80 @@ function applyFilterState(state) {
   applyFilters();
 }
 
-function openViewsPicker(btn, pop) {
-  const views = getSavedViews();
+async function openViewsPicker(btn, pop) {
+  // טוען מהמסד פעם ראשונה אם לא נטען עדיין
+  if (_savedViewsCache === null) await loadSavedViewsFromDB();
+  const views = _savedViewsCache || [];
+  // הפרדה: שלי / משותפות (לאחרים)
+  const myViews = views.filter(v => v.user_id === CURRENT_USER.id);
+  const sharedByOthers = views.filter(v => v.user_id !== CURRENT_USER.id);
+
+  const renderRow = (v) => {
+    const canDelete = v.user_id === CURRENT_USER.id || isAdmin();
+    return `
+      <div style="display:flex; align-items:center; gap:4px; padding:4px 6px; border-radius:5px;" class="view-row">
+        <span style="flex:1; cursor:pointer; font-weight:500;" onclick="loadView(${v.id})">${v.name}</span>
+        ${v.is_shared ? '<span style="font-size:10px; color:#0c4a6e; background:#e0f2fe; padding:1px 6px; border-radius:3px;">משותפת</span>' : ''}
+        ${canDelete ? `<button class="mini-btn danger" onclick="deleteView(${v.id})" title="מחק">×</button>` : ''}
+      </div>
+    `;
+  };
+
   pop.innerHTML = `
     <div class="actions">
       <button type="button" class="close-x" data-act="cancel" title="סגור">×</button>
     </div>
     <button type="button" class="apply-big" data-act="save" style="margin-top:0; margin-bottom:10px;">💾 שמור תצוגה נוכחית</button>
-    <div style="font-weight:600; color:var(--deep); margin:6px 0; font-size:13px;">תצוגות שמורות:</div>
-    ${views.length === 0 ? '<div style="color:var(--muted); font-size:12px; padding:8px;">אין תצוגות שמורות עדיין</div>' :
-      `<div class="opts">${views.map((v, i) => `
-        <div style="display:flex; align-items:center; gap:4px; padding:4px 6px; border-radius:5px;" class="view-row" data-idx="${i}">
-          <span style="flex:1; cursor:pointer; font-weight:500;" onclick="loadView(${i})">${v.name}</span>
-          <button class="mini-btn danger" onclick="deleteView(${i})" title="מחק">×</button>
-        </div>
-      `).join('')}</div>`
-    }
+    ${myViews.length || sharedByOthers.length ? '' : '<div style="color:var(--muted); font-size:12px; padding:8px;">אין תצוגות שמורות עדיין</div>'}
+    ${myViews.length ? `
+      <div style="font-weight:600; color:var(--deep); margin:6px 0; font-size:13px;">שלי:</div>
+      <div class="opts">${myViews.map(renderRow).join('')}</div>
+    ` : ''}
+    ${sharedByOthers.length ? `
+      <div style="font-weight:600; color:var(--deep); margin:10px 0 6px; font-size:13px;">משותפות עי אחרים:</div>
+      <div class="opts">${sharedByOthers.map(renderRow).join('')}</div>
+    ` : ''}
   `;
 
-  pop.style.minWidth = '260px';
+  pop.style.minWidth = '280px';
   pop.classList.add('open');
   clampPopoverToViewport(pop, btn);
 
-  pop.querySelector('[data-act="save"]').addEventListener('click', () => {
+  pop.querySelector('[data-act="save"]').addEventListener('click', async () => {
     const name = prompt('שם התצוגה:');
     if (!name) return;
-    const views = getSavedViews();
-    views.push({ name, state: getCurrentFilterState(), created: Date.now() });
-    saveSavedViews(views);
-    openViewsPicker(btn, pop);  // רענון
+    const shareConfirm = confirm('לשתף את התצוגה עם שאר המשתמשים?\n\nאישור = משותפת לכל משתמשי המערכת.\nביטול = רק לך.');
+    const { error } = await sb.from('saved_views').insert({
+      user_id: CURRENT_USER.id,
+      name,
+      state: getCurrentFilterState(),
+      is_shared: shareConfirm,
+    });
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    await loadSavedViewsFromDB();
+    openViewsPicker(btn, pop);
     toast('נשמר ✓');
   });
   pop.querySelector('[data-act="cancel"]').addEventListener('click', () => pop.classList.remove('open'));
 }
 
-function loadView(idx) {
+async function loadView(id) {
   const views = getSavedViews();
-  if (!views[idx]) return;
-  applyFilterState(views[idx].state);
+  const v = views.find(x => x.id === id);
+  if (!v) return;
+  applyFilterState(v.state);
   document.querySelectorAll('.popover.open').forEach(p => p.classList.remove('open'));
-  toast(`נטענה תצוגה: ${views[idx].name}`);
+  toast(`נטענה תצוגה: ${v.name}`);
 }
 
-function deleteView(idx) {
+async function deleteView(id) {
   const views = getSavedViews();
-  if (!views[idx]) return;
-  if (!confirm(`למחוק את התצוגה "${views[idx].name}"?`)) return;
-  views.splice(idx, 1);
-  saveSavedViews(views);
+  const v = views.find(x => x.id === id);
+  if (!v) return;
+  if (!confirm(`למחוק את התצוגה "${v.name}"?`)) return;
+  const { error } = await sb.from('saved_views').delete().eq('id', id);
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  await loadSavedViewsFromDB();
   openViewsPicker(document.getElementById('btn_hdr_views'), document.getElementById('hdr_views_pop'));
 }
 
