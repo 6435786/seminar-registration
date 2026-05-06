@@ -1193,14 +1193,8 @@
       overflow-x: auto; -webkit-overflow-scrolling: touch;
       max-height: calc(100vh - 220px);
     }
-    table { min-width: 900px; font-size: 11px; }
-    th, td { padding: 4px 6px; font-size: 11px; white-space: nowrap; }
-    th:first-child, td:first-child {
-      position: sticky; right: 0; z-index: 2;
-      background: white; border-left: 2px solid #e0f2fe;
-    }
-    th:first-child { background: #e0f2fe !important; }
-    tbody tr:nth-child(even) td:first-child { background: #f8fafc; }
+    .table-wrap table { min-width: 900px; font-size: 11px; }
+    .table-wrap th, .table-wrap td { padding: 4px 6px; font-size: 11px; white-space: nowrap; }
 
     /* פילטרים */
     .filters { gap: 4px; padding: 6px; }
@@ -1400,13 +1394,39 @@
     body:not(.mobile-filters-open) .filters { display: none !important; }
     body.mobile-filters-open .filters {
       display: flex !important;
-      flex-direction: column; gap: 10px;
-      background: white; border: 0; box-shadow: none; padding: 0;
+      flex-direction: column; gap: 12px;
+      background: transparent !important;
+      background-image: none !important;
+      border: 0 !important; box-shadow: none !important; padding: 0 !important;
     }
-    body.mobile-filters-open .filters .ms-wrap { flex: 0 0 auto; }
-    body.mobile-filters-open .filters .ms-btn { width: 100%; padding: 10px 12px; font-size: 14px; }
-    body.mobile-filters-open .filters input[type=search] { padding: 12px; font-size: 14px; }
-    body.mobile-filters-open .filters > button { padding: 10px 14px; font-size: 13px; }
+    body.mobile-filters-open .filters::after { display: none !important; }
+    body.mobile-filters-open .filters .ms-wrap {
+      flex: 0 0 auto;
+      display: grid; grid-template-columns: 100px 1fr; gap: 10px;
+      align-items: center;
+    }
+    body.mobile-filters-open .filters .ms-label {
+      font-size: 13px !important; color: #475569 !important;
+      margin: 0 !important; font-weight: 600 !important;
+      text-transform: none !important; letter-spacing: 0 !important;
+      text-align: right; padding: 0 !important;
+    }
+    body.mobile-filters-open .filters .ms-btn {
+      width: 100%; padding: 10px 14px; font-size: 14px;
+      border-radius: 8px; border: 1px solid #e2e8f0 !important;
+      background: #f7f8fa !important; color: #0f172a !important;
+      box-shadow: none !important;
+    }
+    body.mobile-filters-open .filters .search-wrap { grid-column: 1 / -1; }
+    body.mobile-filters-open .filters input[type=search] {
+      padding: 12px 38px 12px 14px; font-size: 14px;
+      border-radius: 8px; border: 1px solid #e2e8f0;
+      background: #f7f8fa;
+    }
+    body.mobile-filters-open .filters > button {
+      padding: 10px 14px; font-size: 13px;
+      border-radius: 8px; background: #f1f5f9; border: 0; color: #0f172a;
+    }
 
     /* טבלה ראשית — רק 3 עמודות (full_name, placement_seminar, placement_status) */
     .table-wrap th:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]),
@@ -3718,8 +3738,13 @@ function pushUndo(op) {
 }
 
 function updateUndoButtons() {
-  document.getElementById('btn_undo').disabled = !UNDO_STACK.length;
-  document.getElementById('btn_redo').disabled = !REDO_STACK.length;
+  const u = !UNDO_STACK.length, r = !REDO_STACK.length;
+  document.getElementById('btn_undo').disabled = u;
+  document.getElementById('btn_redo').disabled = r;
+  const mbU = document.getElementById('mb_undo');
+  const mbR = document.getElementById('mb_redo');
+  if (mbU) mbU.disabled = u;
+  if (mbR) mbR.disabled = r;
 }
 
 async function doUndo() {
