@@ -422,8 +422,19 @@
   }
   .print-btn:hover { background: var(--deep); transform: translateY(-1px); box-shadow: 0 3px 6px rgba(2,132,199,0.4); }
 
+  /* כותרת הדפסה — מוסתרת על המסך */
+  .print-only { display: none; }
+
   @media print {
     @page { size: A4 landscape; margin: 2mm; }
+    /* כותרת הדפסה — מוצגת רק בהדפסה ומופיעה בכל עמוד דרך thead */
+    .print-only { display: table-row !important; }
+    #print_title_cell {
+      background: white !important; color: #0c4a6e;
+      font-size: 11pt; font-weight: 700; text-align: right;
+      padding: 6px 10px !important; border: 0 !important;
+      border-bottom: 2px solid #0c4a6e !important;
+    }
     /* CSS להדפסת הטבלה הראשית */
     body:not(.view-dashboard) header,
     body:not(.view-dashboard) .filters,
@@ -1089,7 +1100,12 @@
 
   <div class="table-wrap">
     <table>
-      <thead><tr id="thead_row"></tr></thead>
+      <thead>
+        <tr id="print_title_row" class="print-only">
+          <th colspan="100" id="print_title_cell"></th>
+        </tr>
+        <tr id="thead_row"></tr>
+      </thead>
       <tbody id="tbody"></tbody>
     </table>
   </div>
@@ -5257,12 +5273,24 @@ function openPrintOptions(btn) {
   });
 }
 
+function buildPrintTitle() {
+  const seminars = [...new Set(VIEW.map(r => r.placement_seminar).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'he'));
+  const statuses = [...new Set(VIEW.map(r => r.placement_status).filter(Boolean))]
+    .sort((a, b) => a.localeCompare(b, 'he'));
+  const x = seminars.length ? seminars.join(', ') : '—';
+  const y = statuses.length ? statuses.join(', ') : '—';
+  const cell = document.getElementById('print_title_cell');
+  if (cell) cell.textContent = `דוח שיבוץ (${x}) · סטטוס (${y})`;
+}
+
 function doPrint(mode) {
   const saved = COLS.map(c => c.visible);
 
   const run = () => {
     renderHeader();
     applyFilters();
+    buildPrintTitle();
     setTimeout(() => {
       window.print();
       // החזרת המצב הקודם
@@ -5358,6 +5386,7 @@ function openChoosePrintColumns(savedVisibility) {
     pop.remove(); scrim.remove();
     renderHeader();
     applyFilters();
+    buildPrintTitle();
     setTimeout(() => {
       window.print();
       // שחזור
