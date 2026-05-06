@@ -1301,16 +1301,21 @@
     }
     .mb-icon-btn:active { background: #f0f9ff; }
     .mb-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .mb-edit-btn {
+      position: relative; flex: 1.5 1 auto !important;
+      gap: 4px; font-weight: 700; font-size: 13px; color: var(--deep);
+    }
+    .mb-edit-label { font-size: 13px; }
     .mb-edit-on { display: none; }
     body.edit-mode .mb-edit-off { display: none; }
     body.edit-mode .mb-edit-on {
-      display: inline-flex; color: #16a34a; font-size: 22px; font-weight: bold;
+      display: inline-flex; color: #16a34a; font-size: 18px; font-weight: bold;
       opacity: 0.7;
     }
     body:not(.edit-mode) .mb-edit-off {
-      color: #dc2626; font-size: 18px; opacity: 0.5;
+      color: #dc2626; font-size: 16px; opacity: 0.5;
     }
-    body.edit-mode #mb_edit_toggle { background: #d1fae5; border-color: #16a34a; }
+    body.edit-mode #mb_edit_toggle { background: #d1fae5; border-color: #16a34a; color: #166534; }
 
     .mb-large-row {
       display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px;
@@ -1329,8 +1334,17 @@
       background: linear-gradient(135deg, #0c4a6e, #075985);
     }
 
-    /* הסתר filters bar */
-    .filters { display: none !important; }
+    /* הסתר filters bar — אלא אם הופעל ידנית בפופאפ המובייל */
+    body:not(.mobile-filters-open) .filters { display: none !important; }
+    body.mobile-filters-open .filters {
+      display: flex !important;
+      flex-direction: column; gap: 10px;
+      background: white; border: 0; box-shadow: none; padding: 0;
+    }
+    body.mobile-filters-open .filters .ms-wrap { flex: 0 0 auto; }
+    body.mobile-filters-open .filters .ms-btn { width: 100%; padding: 10px 12px; font-size: 14px; }
+    body.mobile-filters-open .filters input[type=search] { padding: 12px; font-size: 14px; }
+    body.mobile-filters-open .filters > button { padding: 10px 14px; font-size: 13px; }
 
     /* טבלה — רק 3 עמודות (full_name, placement_seminar, placement_status) */
     th:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]),
@@ -1394,9 +1408,10 @@
   <div class="mobile-toolbar">
     <button class="mb-large-btn" id="mb_admin_menu">⚙ ניהול</button>
     <div class="mb-icon-row">
-      <button class="mb-icon-btn" id="mb_edit_toggle" title="עריכה">
+      <button class="mb-icon-btn mb-edit-btn" id="mb_edit_toggle" title="עריכה">
         <span class="mb-edit-off">🚫</span>
         <span class="mb-edit-on">✓</span>
+        <span class="mb-edit-label">ערוך</span>
       </button>
       <button class="mb-icon-btn" id="mb_undo" title="בטל">↶</button>
       <button class="mb-icon-btn" id="mb_redo" title="בצע שוב">↷</button>
@@ -6649,7 +6664,7 @@ function openMobileFilters() {
   if (!filters) return;
 
   const existing = document.getElementById('mb_filters_pop');
-  if (existing) { existing.remove(); document.getElementById('mb_filters_scrim')?.remove(); return; }
+  if (existing) { closeMobileFilters(); return; }
 
   const scrim = document.createElement('div');
   scrim.id = 'mb_filters_scrim';
@@ -6659,20 +6674,26 @@ function openMobileFilters() {
   pop.style.cssText = 'position:fixed; bottom:0; left:0; right:0; z-index:1500; background:white; border-radius:14px 14px 0 0; padding:12px; box-shadow:0 -8px 24px rgba(0,0,0,0.2); max-height:85vh; overflow-y:auto;';
   pop.innerHTML = `
     <div style="height:4px; width:50px; background:#cbd5e1; border-radius:2px; margin:0 auto 12px;"></div>
-    <div style="font-weight:700; color:var(--deep); margin-bottom:10px; font-size:15px;">🔍 סינונים</div>
-    <div id="mb_filters_holder" style="display:flex; flex-direction:column; gap:10px;"></div>
-    <button class="mb-menu-row mb-menu-cancel" style="margin-top:14px;">סגור</button>
+    <div style="font-weight:700; color:var(--deep); margin-bottom:10px; font-size:15px; display:flex; justify-content:space-between; align-items:center;">
+      <span>🔍 סינונים</span>
+      <button class="mini-btn" id="mb_filters_reset_btn">איפוס</button>
+    </div>
+    <div id="mb_filters_holder"></div>
+    <button class="mb-menu-row mb-menu-cancel" style="margin-top:14px;">סיים</button>
   `;
   scrim.onclick = () => closeMobileFilters();
   document.body.appendChild(scrim);
   document.body.appendChild(pop);
-  // העברה זמנית של ה־.filters לתוך הפופאפ
-  const holder = pop.querySelector('#mb_filters_holder');
-  filters.dataset.mbReturnTo = 'restore';
-  filters.dataset.mbStyleDisplay = filters.style.display || '';
-  filters.style.display = 'flex';
-  holder.appendChild(filters);
 
+  // הפעלת ה־body class שמאפשר את ה־filters להופיע
+  document.body.classList.add('mobile-filters-open');
+  // העברת ה־.filters לתוך הפופאפ
+  filters.dataset.mbReturnTo = 'restore';
+  pop.querySelector('#mb_filters_holder').appendChild(filters);
+
+  pop.querySelector('#mb_filters_reset_btn').onclick = () => {
+    document.getElementById('btn_reset')?.click();
+  };
   pop.querySelector('.mb-menu-cancel').onclick = closeMobileFilters;
 }
 
@@ -6681,13 +6702,11 @@ function closeMobileFilters() {
   const scrim = document.getElementById('mb_filters_scrim');
   const filters = document.querySelector('.filters');
   if (filters && filters.dataset.mbReturnTo === 'restore') {
-    // החזרה למקום המקורי
     const main = document.querySelector('main');
     main.insertBefore(filters, main.firstChild);
-    filters.style.display = filters.dataset.mbStyleDisplay || '';
     delete filters.dataset.mbReturnTo;
-    delete filters.dataset.mbStyleDisplay;
   }
+  document.body.classList.remove('mobile-filters-open');
   if (pop) pop.remove();
   if (scrim) scrim.remove();
 }
