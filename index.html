@@ -6110,7 +6110,7 @@ function canEditField(col) {
   if (!col || !col.edit || col.edit.type === 'readonly') return false;
   const r = CURRENT_USER.role;
   if (r === 'viewer') return false;
-  if (r === 'admin' || r === 'editor') return true;
+  if (r === 'super_admin' || r === 'admin' || r === 'editor') return true;
   if (r === 'seminar_editor') {
     const allowed = new Set([
       'pref_1', 'pref_1_response', 'pref_1_class',
