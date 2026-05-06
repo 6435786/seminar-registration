@@ -4399,6 +4399,11 @@ async function showHistory(tab) {
   (DATA.girls || []).forEach(g => { girlByID[g.id] = g; });
   const semByID = {};
   (DATA.seminars || []).forEach(s => { semByID[s.id] = s; });
+  // מיפוי registrations.id → girl_id ו־placements.id → girl_id
+  const regToGirl = {};
+  (DATA.registrations || []).forEach(r => { regToGirl[r.id] = r.girl_id; });
+  const plcToGirl = {};
+  (DATA.placements || []).forEach(p => { plcToGirl[p.id] = p.girl_id; });
 
   const dt = (s) => {
     const d = new Date(s);
@@ -4444,13 +4449,17 @@ async function showHistory(tab) {
     const changes = Object.keys(all).filter(k => k !== 'id' && k !== 'season_id' && k !== 'girl_id'
       && JSON.stringify(oldV[k]) !== JSON.stringify(newV[k]));
 
+    let girlId = null;
+    if (tn === 'girls') girlId = log.record_id;
+    else if (tn === 'registrations') girlId = regToGirl[log.record_id] || newV.girl_id || oldV.girl_id;
+    else if (tn === 'placements') girlId = plcToGirl[log.record_id] || newV.girl_id || oldV.girl_id;
+
     let girlContext = '';
-    if (tn === 'girls' && log.record_id && girlByID[log.record_id]) {
-      const g = girlByID[log.record_id];
-      girlContext = ` ל־${g.family_name || ''} ${g.first_name || ''}`;
-    } else if ((tn === 'registrations' || tn === 'placements') && (newV.girl_id || oldV.girl_id) && girlByID[newV.girl_id || oldV.girl_id]) {
-      const g = girlByID[newV.girl_id || oldV.girl_id];
-      girlContext = ` ל־${g.family_name || ''} ${g.first_name || ''}`;
+    if (girlId && girlByID[girlId]) {
+      const g = girlByID[girlId];
+      girlContext = ` — <span style="color:var(--accent-alt); font-weight:600;">${g.family_name || ''} ${g.first_name || ''}</span>`;
+    } else if (girlId) {
+      girlContext = ` — <span style="color:var(--muted)">בת #${girlId}</span>`;
     }
 
     if (log.action === 'insert') {
