@@ -1460,15 +1460,22 @@
     /* כפתור הדפסה משולב עם view-switch */
     body.view-dashboard #btn_dash_print_mobile {
       display: inline-flex !important;
-      background: #075985; color: white; border: 0;
-      padding: 0; min-width: 44px; min-height: 36px;
-      align-items: center; justify-content: center; font-size: 18px;
+      background: #0284c7 !important; color: white !important;
+      border: 0 !important; border-radius: 8px !important;
+      padding: 0 !important; min-width: 44px !important; min-height: 36px !important;
+      align-items: center !important; justify-content: center !important;
+      font-size: 18px !important;
+      border-bottom: 0 !important; margin-bottom: 0 !important;
     }
     body.view-dashboard .view-switch.big {
       display: grid !important;
       grid-template-columns: 1fr 1fr 1fr 44px;
-      gap: 4px;
+      gap: 6px;
+      padding: 6px 8px;
     }
+    /* הסתרת chip print/export בדשבורד — יש כפתור הדפסה ב־view-switch */
+    body.view-dashboard #mb_print,
+    body.view-dashboard #mb_export { display: none !important; }
 
     /* כותרת הדשבורד הפנימית — מוסתרת (יש לנו את stats-bar למעלה) */
     body.view-dashboard #dashboard_section > div:first-child { display: none !important; }
@@ -1493,7 +1500,18 @@
     body.view-dashboard .details-panel { padding: 10px !important; }
     body.view-dashboard .details-panel h3 { font-size: 14px !important; }
     body.view-dashboard .details-panel .item {
-      padding: 6px 10px !important; font-size: 13px !important;
+      padding: 8px 12px !important; font-size: 14px !important;
+      display: grid !important;
+      grid-template-columns: 1fr 80px;
+      align-items: center;
+      gap: 10px;
+    }
+    body.view-dashboard .details-panel .item > span:first-child {
+      text-align: right;
+    }
+    body.view-dashboard .details-panel .item b {
+      text-align: center;
+      justify-self: stretch;
     }
     body.view-dashboard .details-panel .item b { font-size: 15px !important; }
     body.view-dashboard .details-panel .splits-row {
