@@ -2463,6 +2463,164 @@ function openModal(nid) {
   CURRENT_MODAL = { row: r, pending: {}, isNew: false, editing: false };
   renderModalBody();
   document.getElementById('modal').classList.add('open');
+  // טעינה אסינכרונית של ציר זמן
+  loadTimelineForGirl(r);
+}
+
+// =============== Modal sections — siblings + timeline ===============
+function _renderSiblingsSection(r) {
+  const sibs = r.siblings || [];
+  if (!sibs.length) return '<div style="color:var(--muted)">אין רשומות אחים</div>';
+  // קישור מוסד → קטגוריה (לפי source_schools)
+  const schoolByCode = {};
+  const schoolByName = {};
+  (DATA.source_schools || []).forEach(s => {
+    if (s.institution_code) schoolByCode[s.institution_code] = s;
+    if (s.name) schoolByName[s.name] = s;
+  });
+
+  // קיבוץ לפי קטגוריה (אם קיימת)
+  const grouped = {};
+  sibs.forEach(s => {
+    const inst = (s.institution_code && schoolByCode[s.institution_code])
+              || schoolByName[s.institution_name];
+    const cat = (inst && inst.sector) || 'לא מסווג';
+    if (!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push({ ...s, _gender: inst && inst.gender });
+  });
+
+  const cats = Object.keys(grouped).sort();
+  return cats.map(cat => {
+    const list = grouped[cat];
+    return `
+      <div style="margin-bottom:14px;">
+        <div style="font-weight:600; color:var(--deep); margin-bottom:6px; padding:4px 8px; background:#e0f2fe; border-radius:5px; display:inline-block;">
+          ${cat} <span style="color:var(--muted); font-weight:500;">(${list.length})</span>
+        </div>
+        <table style="width:100%; font-size:13px;">
+          <thead><tr><th>שם</th><th>מוסד</th><th>סמל</th><th>כיתה</th><th>מין</th></tr></thead>
+          <tbody>
+            ${list.slice(0, 50).map(s => `<tr>
+              <td>${s.sibling_name || s.raw_text || ''}</td>
+              <td>${s.institution_name || ''}</td>
+              <td style="color:var(--muted)">${s.institution_code || ''}</td>
+              <td>${s.grade || ''}</td>
+              <td>${s._gender ? (s._gender === 'בנים' ? '♂' : '♀') : ''}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }).join('');
+}
+
+async function loadTimelineForGirl(girl) {
+  const container = document.getElementById('timeline_container');
+  if (!container) return;
+
+  // נאסוף את ה־reg/plc IDs
+  const regIds = (girl._regs || []).map(r => r.id).filter(Boolean);
+  const plcIds = girl._plc && girl._plc.id ? [girl._plc.id] : [];
+
+  const queries = [
+    sb.from('audit_log').select('*').eq('table_name', 'girls').eq('record_id', girl.id),
+  ];
+  if (regIds.length) {
+    queries.push(sb.from('audit_log').select('*').eq('table_name', 'registrations').in('record_id', regIds));
+  }
+  if (plcIds.length) {
+    queries.push(sb.from('audit_log').select('*').eq('table_name', 'placements').in('record_id', plcIds));
+  }
+
+  const results = await Promise.all(queries);
+  let entries = [];
+  results.forEach(r => { if (r.data) entries = entries.concat(r.data); });
+  entries.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  entries = entries.slice(0, 30);
+
+  if (!entries.length) {
+    container.innerHTML = '<div style="color:var(--muted); padding:8px;">אין שינויים מתועדים</div>';
+    return;
+  }
+
+  // טעינת שמות משתמשים
+  const userIds = [...new Set(entries.map(e => e.user_id).filter(Boolean))];
+  const userByUid = {};
+  if (userIds.length) {
+    const { data: users } = await sb.from('user_profiles').select('id,full_name,email').in('id', userIds);
+    (users || []).forEach(u => { userByUid[u.id] = u; });
+  }
+
+  const semByID = {};
+  (DATA.seminars || []).forEach(s => { semByID[s.id] = s; });
+
+  const dt = (s) => {
+    const d = new Date(s);
+    return d.toLocaleDateString('he-IL', { day: '2-digit', month: '2-digit', year: '2-digit' }) + ' ' +
+           d.toLocaleTimeString('he-IL', { hour: '2-digit', minute: '2-digit' });
+  };
+
+  const FIELD_LABELS = {
+    family_name: 'שם משפחה', first_name: 'שם פרטי', notes: 'הערה',
+    sector: 'שיוך', community: 'קהילה',
+    address_street: 'רחוב', address_number: 'בית',
+    mother_name: 'שם אם', mother_phone: 'טלפון אם',
+    father_name: 'שם אב', father_phone: 'טלפון אב', email: 'מייל',
+    source_school_id: 'בי״ס מוצא',
+    seminar_id: 'סמינר', response: 'תשובה', class_type: 'א-ו',
+    preference_order: 'העדפה', status: 'סטטוס', is_final: 'סופי',
+  };
+  const PREF_LABELS = { pref_1: 'העדפה 1', pref_2: 'העדפה 2', advance: 'מקדמת' };
+
+  const friendlyValue = (key, val) => {
+    if (val == null || val === '') return '(ריק)';
+    if (key === 'seminar_id') return (semByID[val] || {}).name || `#${val}`;
+    if (key === 'source_school_id') {
+      const s = (DATA.source_schools || []).find(x => x.id === val);
+      return s ? s.name : `#${val}`;
+    }
+    if (key === 'preference_order') return PREF_LABELS[val] || val;
+    if (typeof val === 'boolean') return val ? '✓ כן' : '— לא';
+    return String(val);
+  };
+
+  container.innerHTML = entries.map(log => {
+    const u = userByUid[log.user_id];
+    const userName = u ? (u.full_name || u.email) : 'מערכת';
+    const oldV = log.old_value || {};
+    const newV = log.new_value || {};
+    const all = { ...oldV, ...newV };
+    const changes = Object.keys(all).filter(k => k !== 'id' && k !== 'season_id' && k !== 'girl_id'
+      && JSON.stringify(oldV[k]) !== JSON.stringify(newV[k]));
+
+    let what;
+    if (log.action === 'insert') {
+      if (log.table_name === 'girls') what = '<b>הוספה למערכת</b>';
+      else if (log.table_name === 'registrations') {
+        const sem = newV.seminar_id ? semByID[newV.seminar_id] : null;
+        what = `<b>הוספת ${PREF_LABELS[newV.preference_order] || 'רישום'}</b>${sem ? ' → ' + sem.name : ''}`;
+      } else if (log.table_name === 'placements') {
+        const sem = newV.seminar_id ? semByID[newV.seminar_id] : null;
+        what = `<b>שיבוץ נוצר</b>${sem ? ' → ' + sem.name : ''}`;
+      }
+    } else if (log.action === 'delete') {
+      what = `<b>מחיקה</b> מ־${log.table_name}`;
+    } else {
+      const lines = changes.map(k => {
+        const label = FIELD_LABELS[k] || k;
+        return `<span style="color:#64748b">${label}:</span> ${friendlyValue(k, oldV[k])} → <b>${friendlyValue(k, newV[k])}</b>`;
+      });
+      what = lines.join(' · ') || '<i>שינוי טכני</i>';
+    }
+
+    return `
+      <div style="display:grid; grid-template-columns:130px 110px 1fr; gap:10px; padding:8px 10px; border-bottom:1px solid #f1f5f9; font-size:12px; align-items:start;">
+        <div style="color:var(--muted)">${dt(log.created_at)}</div>
+        <div style="color:var(--deep); font-weight:600">${userName}</div>
+        <div>${what}</div>
+      </div>
+    `;
+  }).join('');
 }
 
 function openAddModal() {
@@ -2655,17 +2813,9 @@ function renderModalBody() {
       </div>
     `)}
 
-    ${!isNew ? section('siblings', `אחים/אחיות (${(r.siblings || []).length})`, `
-      ${(r.siblings || []).length ? `<table style="width:100%; font-size:13px;">
-        <thead><tr><th>שם</th><th>מוסד</th><th>סמל</th><th>כיתה</th></tr></thead>
-        <tbody>${(r.siblings).slice(0, 30).map(s => `<tr>
-          <td>${s.sibling_name || s.raw_text || ''}</td>
-          <td>${s.institution_name || ''}</td>
-          <td>${s.institution_code || ''}</td>
-          <td>${s.grade || ''}</td>
-        </tr>`).join('')}</tbody>
-      </table>` : '<div style="color:var(--muted)">אין רשומות אחים</div>'}
-    `) : ''}
+    ${!isNew ? section('siblings', `אחים/אחיות (${(r.siblings || []).length})`, _renderSiblingsSection(r)) : ''}
+
+    ${!isNew ? section('timeline', '📅 ציר זמן', '<div id="timeline_container" style="color:var(--muted); padding:8px;">טוען...</div>') : ''}
 
     ${editable ? `
       <div class="form-actions">
