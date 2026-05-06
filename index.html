@@ -276,7 +276,58 @@
   #dashboard_section { display: none; padding: 0 4px; }
   body.view-dashboard #dashboard_section { display: block; }
   body.view-dashboard .filters,
-  body.view-dashboard .table-wrap { display: none !important; }
+  body.view-dashboard .table-wrap,
+  body.view-dashboard #kanban_section { display: none !important; }
+
+  /* Kanban */
+  #kanban_section { display: none; padding: 0 4px; }
+  body.view-kanban #kanban_section { display: block; }
+  body.view-kanban .table-wrap,
+  body.view-kanban #dashboard_section { display: none !important; }
+  body.view-kanban .filters { display: flex; }  /* פילטרים נשארים */
+  #kanban_board {
+    display: flex; gap: 12px; overflow-x: auto;
+    padding-bottom: 16px; min-height: calc(100vh - 240px);
+  }
+  .kanban-col {
+    flex: 0 0 280px;
+    background: #f1f5f9; border-radius: 10px; padding: 10px;
+    border: 1px solid #e2e8f0;
+    display: flex; flex-direction: column;
+    max-height: calc(100vh - 240px);
+  }
+  .kanban-col.drag-over { background: #dbeafe; border-color: var(--accent); }
+  .kanban-col h3 {
+    margin: 0 0 10px; padding: 6px 8px;
+    font-size: 14px; color: var(--deep); font-weight: 700;
+    display: flex; justify-content: space-between; align-items: center;
+    background: white; border-radius: 6px;
+  }
+  .kanban-col h3 .count {
+    background: var(--deep); color: white;
+    padding: 2px 8px; border-radius: 10px; font-size: 11px;
+  }
+  .kanban-col .cards { flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  .kanban-card {
+    background: white; padding: 8px 10px; border-radius: 6px;
+    border: 1px solid #e2e8f0; cursor: grab;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+    font-size: 12px; line-height: 1.4;
+    transition: box-shadow 0.15s;
+  }
+  .kanban-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.08); border-color: var(--accent-alt); }
+  .kanban-card.dragging { opacity: 0.5; }
+  .kanban-card .name { font-weight: 700; color: var(--deep); }
+  .kanban-card .meta { color: var(--muted); font-size: 11px; margin-top: 2px; }
+  .kanban-card .placement {
+    margin-top: 4px; padding: 2px 6px; border-radius: 4px;
+    background: #e0f2fe; color: #0c4a6e; font-size: 11px; font-weight: 600;
+    display: inline-block;
+  }
+  .view-btn.kanban-mode.active {
+    background: linear-gradient(135deg, #f97316, #ea580c);
+    color: white; border-color: transparent;
+  }
 
   .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px; }
   .kpi-card {
@@ -934,6 +985,7 @@
     <div class="view-switch big">
       <button class="view-btn table-mode active" id="btn_view_table">📋 טבלה</button>
       <button class="view-btn dash-mode" id="btn_view_dashboard">📊 דשבורד</button>
+      <button class="view-btn kanban-mode" id="btn_view_kanban">🗂 לוח</button>
     </div>
     <div class="stats" id="stats"></div>
     <button class="hdr-btn" id="btn_load_source">📥 טען מקור</button>
@@ -1017,6 +1069,15 @@
       <thead><tr id="thead_row"></tr></thead>
       <tbody id="tbody"></tbody>
     </table>
+  </div>
+
+  <!-- Kanban section -->
+  <div id="kanban_section">
+    <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px;">
+      <h2 style="margin:0; color:var(--deep); font-size:18px;">🗂 לוח סטטוסים</h2>
+      <span id="kanban_info" style="color:var(--muted); font-size:12px;"></span>
+    </div>
+    <div id="kanban_board"></div>
   </div>
 
   <!-- Dashboard section -->
@@ -2886,14 +2947,120 @@ let DASH = {
 
 function switchView(view) {
   document.body.classList.toggle('view-dashboard', view === 'dashboard');
+  document.body.classList.toggle('view-kanban', view === 'kanban');
   document.getElementById('btn_view_table').classList.toggle('active', view === 'table');
   document.getElementById('btn_view_dashboard').classList.toggle('active', view === 'dashboard');
+  document.getElementById('btn_view_kanban').classList.toggle('active', view === 'kanban');
   if (view === 'dashboard') {
-    // צילום של VIEW הנוכחית לשימוש פנימי
     DASH.data = VIEW.slice();
     DASH.selectedSeminar = null;
     renderDashboard();
   }
+  if (view === 'kanban') {
+    renderKanban();
+  }
+}
+
+// =============== Kanban ===============
+const KANBAN_NO_STATUS = '__nostatus__';
+
+function renderKanban() {
+  const statuses = ENUM_STATUS.slice();
+  // ארגון: בנות לפי placement_status
+  const byStatus = {};
+  statuses.forEach(s => byStatus[s] = []);
+  byStatus[KANBAN_NO_STATUS] = [];
+  VIEW.forEach(r => {
+    const s = r.placement_status;
+    if (s && byStatus[s]) byStatus[s].push(r);
+    else byStatus[KANBAN_NO_STATUS].push(r);
+  });
+
+  const orderedCols = [KANBAN_NO_STATUS, ...statuses];
+  const colLabels = { [KANBAN_NO_STATUS]: 'ללא סטטוס' };
+
+  const board = document.getElementById('kanban_board');
+  board.innerHTML = orderedCols.map(s => {
+    const items = byStatus[s] || [];
+    const label = colLabels[s] || s;
+    return `
+      <div class="kanban-col" data-status="${_esc(s)}">
+        <h3><span>${label}</span><span class="count">${items.length}</span></h3>
+        <div class="cards">
+          ${items.map(r => `
+            <div class="kanban-card" draggable="true" data-nid="${r.national_id}">
+              <div class="name">${[r.family_name, r.first_name].filter(Boolean).join(' ')}</div>
+              <div class="meta">${r.sector_bucket || ''} · ${r.source_school_name || ''}</div>
+              ${r.placement_seminar ? `<div class="placement">📍 ${r.placement_seminar}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // עדכון מידע
+  document.getElementById('kanban_info').textContent = `${VIEW.length} תלמידות מוצגות`;
+
+  // Drag & drop
+  let draggedNid = null;
+  board.querySelectorAll('.kanban-card').forEach(card => {
+    card.addEventListener('dragstart', (e) => {
+      draggedNid = card.dataset.nid;
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    // לחיצה — פתח מודל
+    card.addEventListener('click', () => {
+      const row = ROWS.find(r => r.national_id === card.dataset.nid);
+      if (row) openEditModal(row);
+    });
+  });
+  board.querySelectorAll('.kanban-col').forEach(col => {
+    col.addEventListener('dragover', (e) => { e.preventDefault(); col.classList.add('drag-over'); });
+    col.addEventListener('dragleave', () => col.classList.remove('drag-over'));
+    col.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      col.classList.remove('drag-over');
+      if (!draggedNid) return;
+      const newStatus = col.dataset.status === KANBAN_NO_STATUS ? null : col.dataset.status;
+      const row = ROWS.find(r => r.national_id === draggedNid);
+      if (!row) return;
+      if (row.placement_status === newStatus) return;
+      // עדכון במסד
+      try {
+        await updateGirlPlacementStatus(row, newStatus);
+        toast('סטטוס עודכן ✓');
+        await reloadData();
+        renderKanban();
+      } catch (err) {
+        toast('שגיאה: ' + err.message, 'warn');
+      }
+      draggedNid = null;
+    });
+  });
+}
+
+async function updateGirlPlacementStatus(row, newStatus) {
+  if (!canEditSeminarData()) throw new Error('אין לך הרשאה לערוך');
+  const existing = row._plc && row._plc.id ? row._plc : null;
+  if (existing) {
+    const { error } = await sb.from('placements').update({ status: newStatus }).eq('id', existing.id);
+    if (error) throw error;
+    await auditLog('placements', existing.id, 'update', { status: existing.status }, { status: newStatus });
+  } else {
+    const { data, error } = await sb.from('placements').insert({
+      girl_id: row.id, status: newStatus, season_id: CURRENT_SEASON_ID
+    }).select().single();
+    if (error) throw error;
+    await auditLog('placements', data.id, 'insert', null, { girl_id: row.id, status: newStatus });
+  }
+}
+
+// פתיחת מודל מ־Kanban — משתמש ב־openModal הקיים
+function openEditModal(row) {
+  if (typeof openModal === 'function') return openModal(row.national_id);
 }
 
 function renderDashboard() {
@@ -4939,6 +5106,7 @@ function deleteView(idx) {
 // מעבר בין טבלה לדשבורד
 document.getElementById('btn_view_table').addEventListener('click', () => switchView('table'));
 document.getElementById('btn_view_dashboard').addEventListener('click', () => switchView('dashboard'));
+document.getElementById('btn_view_kanban').addEventListener('click', () => switchView('kanban'));
 
 // כפתור "הצג חלוקה לקבוצות"
 document.getElementById('btn_sector_breakdown').addEventListener('click', (e) => {
