@@ -3639,7 +3639,9 @@ function dashDrillDown(metric) {
       break;
     case 'muni':
       fs.placement_status.clear();
-      fs.placement_status.add('שיבוץ עיריה');
+      // כל סטטוס פרט ל־חיובי / תושב חוץ / ריק
+      ENUM_STATUS.filter(s => s !== 'חיובי' && s !== 'תושב חוץ')
+        .forEach(s => fs.placement_status.add(s));
       break;
     case 'sisters':
       fs.sibling_categories.clear();
@@ -3721,7 +3723,9 @@ function computeAggregateMetrics(data) {
   // חיובי — תלמידות שיש להן לפחות תשובה חיובית
   const positive = data.filter(r => (r._regs || []).some(x => x.response === 'חיובי')).length;
   const placed = data.filter(r => r.placement_seminar && !['עדיין לא שובץ','מקדמת',''].includes(r.placement_seminar)).length;
-  const muni = data.filter(r => r.placement_status === 'שיבוץ עיריה').length;
+  // "משיבוץ עיריה" = כל סטטוס שאינו ריק / חיובי / תושב חוץ
+  const MUNI_EXCLUDE = new Set(['חיובי', 'תושב חוץ']);
+  const muni = data.filter(r => r.placement_status && !MUNI_EXCLUDE.has(r.placement_status)).length;
   const sisters = data.filter(r => (r.siblings || []).some(s => s.institution_code && seminarCodes.has(s.institution_code))).length;
   // חלוקה לקבוצות של משובצות
   const sectors = {};
@@ -3750,7 +3754,8 @@ function computeSeminarMetrics(data, seminarName) {
   })).length;
   const placedList = data.filter(r => r.placement_seminar === seminarName);
   const placed = placedList.length;
-  const muni = placedList.filter(r => r.placement_status === 'שיבוץ עיריה').length;
+  const MUNI_EXCLUDE = new Set(['חיובי', 'תושב חוץ']);
+  const muni = placedList.filter(r => r.placement_status && !MUNI_EXCLUDE.has(r.placement_status)).length;
   const sisters = semCode
     ? data.filter(r => (r.siblings || []).some(s => s.institution_code === semCode)).length
     : 0;
