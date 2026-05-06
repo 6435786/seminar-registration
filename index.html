@@ -3071,6 +3071,35 @@ async function doUndo() {
   updateUndoButtons();
 }
 
+// ביטול רשומת audit_log ספציפית — שיחזור הערכים הישנים
+async function undoAuditEntry(logId) {
+  const { data: log, error } = await sb.from('audit_log').select('*').eq('id', logId).single();
+  if (error || !log) { toast('שגיאה בטעינת הרשומה', 'warn'); return; }
+  if (log.action !== 'update' || !log.old_value || !log.new_value) {
+    toast('לא ניתן לבטל סוג פעולה זה', 'warn'); return;
+  }
+  // מציג למשתמש מה הולך לקרות
+  const fields = Object.keys(log.old_value).filter(k => JSON.stringify(log.old_value[k]) !== JSON.stringify(log.new_value[k]));
+  const summary = fields.map(k => `  ${k}: ${log.new_value[k]} → ${log.old_value[k]}`).join('\n');
+  if (!confirm(`לבטל את הפעולה?\n\nישוחזרו הערכים הישנים:\n${summary}`)) return;
+
+  try {
+    // בנה payload להחזרה
+    const restore = {};
+    fields.forEach(k => { restore[k] = log.old_value[k]; });
+    const { error: upErr } = await sb.from(log.table_name).update(restore).eq('id', log.record_id);
+    if (upErr) throw upErr;
+    // רישום audit להחזרה
+    await auditLog(log.table_name, log.record_id, 'undo', log.new_value, log.old_value);
+    toast('הפעולה בוטלה ✓');
+    await reloadData();
+    showHistory();  // רענון הפיד
+  } catch (e) {
+    console.error(e);
+    toast('ביטול נכשל: ' + (e.message || e), 'warn');
+  }
+}
+
 async function doRedo() {
   if (!REDO_STACK.length) return;
   const op = REDO_STACK.pop();
@@ -3178,18 +3207,39 @@ function renderKanban() {
       if (!draggedNid) return;
       const newStatus = col.dataset.status === KANBAN_NO_STATUS ? null : col.dataset.status;
       const row = ROWS.find(r => r.national_id === draggedNid);
+      const nid = draggedNid;
+      draggedNid = null;
       if (!row) return;
-      if (row.placement_status === newStatus) return;
-      // עדכון במסד
+      const oldStatus = row.placement_status || null;
+      if (oldStatus === newStatus) return;
+      // אישור
+      const girlName = [row.family_name, row.first_name].filter(Boolean).join(' ');
+      const fromLabel = oldStatus || 'ללא סטטוס';
+      const toLabel = newStatus || 'ללא סטטוס';
+      if (!confirm(`לשנות את הסטטוס של ${girlName}\n\nמ־"${fromLabel}" ל־"${toLabel}"?`)) {
+        return;
+      }
       try {
         await updateGirlPlacementStatus(row, newStatus);
+        // push undo
+        const girlId = row.id;
+        pushUndo({
+          description: `סטטוס של ${girlName}: "${fromLabel}" → "${toLabel}"`,
+          undo: async () => {
+            const fresh = ROWS.find(r => r.id === girlId);
+            if (fresh) await updateGirlPlacementStatus(fresh, oldStatus);
+          },
+          redo: async () => {
+            const fresh = ROWS.find(r => r.id === girlId);
+            if (fresh) await updateGirlPlacementStatus(fresh, newStatus);
+          },
+        });
         toast('סטטוס עודכן ✓');
         await reloadData();
         renderKanban();
       } catch (err) {
         toast('שגיאה: ' + err.message, 'warn');
       }
-      draggedNid = null;
     });
   });
 }
@@ -4430,14 +4480,24 @@ async function showHistory(tab) {
     <button class="hist-tab ${_historyTab === id ? 'active' : ''}" onclick="showHistory('${id}')">${label}</button>
   `;
 
+  const canUndo = (log) => {
+    // מאפשר ביטול רק על update פשוט (פחות סיכון cascade)
+    if (log.action !== 'update') return false;
+    if (!log.old_value || !log.new_value) return false;
+    return ['girls', 'registrations', 'placements'].includes(log.table_name);
+  };
+
   const feed = (data || []).map(log => {
     const u = userByUid[log.user_id];
     const userName = u ? (u.full_name || u.email) : 'מערכת';
+    const undoBtn = canUndo(log)
+      ? `<button class="mini-btn" style="margin-top:4px;" onclick="undoAuditEntry(${log.id})">↶ בטל פעולה זו</button>`
+      : '';
     return `
-      <div class="feed-item">
+      <div class="feed-item" id="feed_item_${log.id}">
         <div class="feed-when">${dt(log.created_at)}</div>
         <div class="feed-who">${userName}</div>
-        <div class="feed-what">${describe(log)}</div>
+        <div class="feed-what">${describe(log)}${undoBtn}</div>
       </div>
     `;
   }).join('');
