@@ -677,6 +677,65 @@
     background: linear-gradient(#fff7ed, #ffedd5) !important;
     border-bottom: 2px solid #ea580c !important;
   }
+
+  /* Compact form: 4 columns label/value in same row, denser */
+  .modal .form-grid.compact {
+    grid-template-columns: 80px 1fr 80px 1fr 80px 1fr;
+    gap: 6px 10px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .modal .form-grid.compact > label {
+    font-size: 11px; padding-right: 6px;
+    border-right: 2px solid #e8edf5;
+  }
+  .modal .form-grid.compact input,
+  .modal .form-grid.compact select,
+  .modal .form-grid.compact .readonly {
+    padding: 5px 9px; font-size: 13px; min-height: 28px;
+  }
+  @media (max-width: 1100px) {
+    .modal .form-grid.compact { grid-template-columns: 80px 1fr 80px 1fr; }
+  }
+  @media (max-width: 700px) {
+    .modal .form-grid.compact { grid-template-columns: 90px 1fr; }
+  }
+
+  /* Side action buttons in modal header */
+  .modal-side-actions { display: flex; gap: 6px; margin-left: 12px; }
+  .modal-side-actions .side-btn {
+    padding: 6px 12px; border: 1px solid #bae6fd; border-radius: 6px;
+    background: white; color: var(--deep); font-family: inherit;
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: all 0.15s; white-space: nowrap;
+  }
+  .modal-side-actions .side-btn:hover {
+    background: #f0f9ff; border-color: var(--accent);
+    box-shadow: 0 1px 3px rgba(2,132,199,0.15);
+  }
+
+  /* Side panel: slides in from left over the modal */
+  .modal-side-panel {
+    position: fixed; top: 0; bottom: 0; left: 0;
+    width: min(500px, 90vw); background: white; z-index: 1100;
+    box-shadow: 4px 0 20px rgba(0,0,0,0.18);
+    transform: translateX(-100%); transition: transform 0.25s ease;
+    overflow-y: auto; display: flex; flex-direction: column;
+  }
+  .modal-side-panel.open { transform: translateX(0); }
+  .modal-side-panel .sp-header {
+    padding: 14px 18px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px;
+    background: linear-gradient(to bottom, #fafcff, #ffffff);
+    position: sticky; top: 0;
+  }
+  .modal-side-panel .sp-header h3 { margin: 0; color: var(--deep); font-size: 15px; flex: 1; }
+  .modal-side-panel .sp-header .sp-close {
+    border: 0; background: transparent; font-size: 22px; cursor: pointer;
+    color: var(--muted); padding: 0 6px; border-radius: 4px;
+  }
+  .modal-side-panel .sp-header .sp-close:hover { background: #fbe9e9; color: var(--bad); }
+  .modal-side-panel .sp-body { padding: 14px 18px; flex: 1; }
   /* Dashboard print options */
   #dash_print_pop .cb-row {
     display: block; padding: 4px 6px; cursor: pointer; font-size: 13px;
@@ -1281,6 +1340,14 @@
     </div>
   </div>
 </main>
+
+<div class="modal-side-panel" id="side_panel">
+  <div class="sp-header">
+    <h3 id="side_panel_title">—</h3>
+    <button class="sp-close" onclick="closeSidePanel()" title="סגור">×</button>
+  </div>
+  <div class="sp-body" id="side_panel_body"></div>
+</div>
 
 <div class="modal-bg" id="modal">
   <div class="modal">
@@ -2625,8 +2692,28 @@ function openModal(nid) {
   CURRENT_MODAL = { row: r, pending: {}, isNew: false, editing: false };
   renderModalBody();
   document.getElementById('modal').classList.add('open');
-  // טעינה אסינכרונית של ציר זמן
-  loadTimelineForGirl(r);
+}
+
+// פאנל צידי לתצוגה משנית — אחים / ציר זמן
+function openSidePanel(kind) {
+  if (!CURRENT_MODAL || !CURRENT_MODAL.row) return;
+  const r = CURRENT_MODAL.row;
+  const panel = document.getElementById('side_panel');
+  const title = document.getElementById('side_panel_title');
+  const body = document.getElementById('side_panel_body');
+  if (kind === 'siblings') {
+    title.textContent = `👨‍👩‍👧 אחים/אחיות (${(r.siblings || []).length})`;
+    body.innerHTML = _renderSiblingsSection(r);
+  } else if (kind === 'timeline') {
+    title.textContent = '📅 ציר זמן';
+    body.innerHTML = '<div id="timeline_container" style="color:var(--muted); padding:8px;">טוען...</div>';
+    loadTimelineForGirl(r);
+  }
+  panel.classList.add('open');
+}
+
+function closeSidePanel() {
+  document.getElementById('side_panel').classList.remove('open');
 }
 
 // =============== Modal sections — siblings + timeline ===============
@@ -2811,6 +2898,7 @@ function toggleModalEdit() {
 function closeModal() {
   CURRENT_MODAL = null;
   document.getElementById('modal').classList.remove('open');
+  closeSidePanel();
 }
 
 function _esc(v) { return String(v == null ? '' : v).replace(/"/g, '&quot;'); }
@@ -2913,18 +3001,27 @@ function renderModalBody() {
     </div>`;
   };
 
+  // כפתורים ל"אחים" ו"ציר זמן" — פותחים פאנל צידי
+  const sideBtns = !isNew ? `
+    <div class="modal-side-actions">
+      <button class="side-btn" onclick="openSidePanel('siblings')">👨‍👩‍👧 אחים (${(r.siblings || []).length})</button>
+      <button class="side-btn" onclick="openSidePanel('timeline')">📅 ציר זמן</button>
+    </div>
+  ` : '';
+
   const body = `
     <div class="modal-header">
       <div style="flex:1">
         <h2>${title}</h2>
         <div class="subtitle">${subtitle}</div>
       </div>
+      ${sideBtns}
       ${editSwitch}
       <button class="close" onclick="closeModal()" title="סגור">×</button>
     </div>
     <div class="modal-body">
     ${section('personal', 'פרטים אישיים', `
-      <div class="form-grid">
+      <div class="form-grid compact">
         ${fld('משפחה', 'family_name', r.family_name)}
         ${fld('שם', 'first_name', r.first_name)}
         ${fld('ת.ז', 'national_id', r.national_id)}
@@ -2934,11 +3031,6 @@ function renderModalBody() {
         ${fld('קהילה', 'community', r.community)}
         ${fld('רחוב', 'address_street', r.address_street)}
         ${fld('מס\' בית', 'address_number', r.address_number)}
-      </div>
-    `)}
-
-    ${section('parents', 'הורים', `
-      <div class="form-grid">
         ${fld('שם אם', 'mother_name', r.mother_name)}
         ${fld('ת.ז אם', 'mother_national_id', r.mother_national_id)}
         ${fld('טלפון אם', 'mother_phone', r.mother_phone)}
@@ -2949,8 +3041,8 @@ function renderModalBody() {
       </div>
     `)}
 
-    ${section('registration', 'רישום / העדפות', `
-      <div class="form-grid">
+    ${section('reg_plc', 'רישום ושיבוץ', `
+      <div class="form-grid compact">
         ${fld('העדפה 1', 'reg_pref_1_seminar',  semNameFromId(p1.seminar_id), { type: 'seminar' })}
         ${fld('תשובה 1', 'reg_pref_1_response', p1.response,                 { type: 'enum', values: ENUM_RESPONSE })}
         ${fld('א-ו 1',   'reg_pref_1_class',    p1.class_type,               { type: 'enum', values: ENUM_CLASS })}
@@ -2958,26 +3050,17 @@ function renderModalBody() {
         ${fld('תשובה 2', 'reg_pref_2_response', p2.response,                 { type: 'enum', values: ENUM_RESPONSE })}
         ${fld('א-ו 2',   'reg_pref_2_class',    p2.class_type,               { type: 'enum', values: ENUM_CLASS })}
         ${fld('מקדמת',   'reg_advance_seminar', semNameFromId(pa.seminar_id), { type: 'seminar' })}
+        <span></span>
+        ${fld('שיבוץ',   'plc_seminar',  semNameFromId(plc.seminar_id), { type: 'seminar' })}
+        ${fld('סטטוס',   'plc_status',   plc.status,                    { type: 'enum', values: ENUM_STATUS })}
+        ${fld('סופי',    'plc_is_final', plc.is_final,                  { type: 'checkbox' })}
+      </div>
+      <div style="margin-top: 14px;">
+        <label style="font-size:12px; color:var(--muted); font-weight:600; display:block; margin-bottom:6px;">הערה:</label>
+        ${editable ? `<textarea data-field="notes" rows="2" style="width:100%; padding:8px 11px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px; resize:vertical;">${r.notes || ''}</textarea>`
+          : `<div class="readonly${!r.notes ? ' empty' : ''}" style="white-space:pre-wrap;">${r.notes || '—'}</div>`}
       </div>
     `)}
-
-    ${section('placement', 'שיבוץ', `
-      <div class="form-grid">
-        ${fld('סמינר',  'plc_seminar',  semNameFromId(plc.seminar_id), { type: 'seminar' })}
-        ${fld('סטטוס',  'plc_status',   plc.status,                    { type: 'enum', values: ENUM_STATUS })}
-        ${fld('סופי',   'plc_is_final', plc.is_final,                  { type: 'checkbox' })}
-      </div>
-    `)}
-
-    ${section('note', 'הערה', `
-      <div class="form-grid">
-        ${fld('', 'notes', r.notes, { type: 'textarea' })}
-      </div>
-    `)}
-
-    ${!isNew ? section('siblings', `אחים/אחיות (${(r.siblings || []).length})`, _renderSiblingsSection(r)) : ''}
-
-    ${!isNew ? section('timeline', '📅 ציר זמן', '<div id="timeline_container" style="color:var(--muted); padding:8px;">טוען...</div>') : ''}
 
     ${editable ? `
       <div class="form-actions">
