@@ -685,17 +685,15 @@
   #dash_print_pop .cb-row:hover { background: #f0f9ff; }
   #dash_print_pop .cb-row input { margin-left: 6px; }
 
-  /* בעת הדפסה — נסתיר אלמנטים ריקים בדשבורד; ננקה רוחב גרף שלא יותר ממסך */
+  /* בעת הדפסה — אם הגרף הוסתר, פאנל הפרטים תופס את כל הרוחב */
   @media print {
-    body.view-dashboard #dashboard_section .dash-row { gap: 8mm; }
-    body.view-dashboard #dashboard_section .dash-card[data-print-key="chart"][style*="display: none"] {
-      display: none !important;
+    body.view-dashboard.print-no-chart .dash-row {
+      grid-template-columns: 1fr !important;
     }
-    body.view-dashboard #dashboard_section .splits-row > *[style*="display: none"] {
-      display: none !important;
+    /* אם רק הגרף — פאנל מוסתר, גרף תופס רוחב מלא */
+    body.view-dashboard.print-only-chart .dash-row {
+      grid-template-columns: 1fr !important;
     }
-    /* אם רק עוגה — מאפשר רוחב מלא */
-    body.view-dashboard #dashboard_section .dash-card { break-inside: avoid; }
   }
 
   /* History tabs + feed */
@@ -5444,11 +5442,8 @@ function openDashboardPrintOptions(btn) {
 
     <div style="margin-top:10px;">
       <label style="display:flex; align-items:center; gap:8px; padding:8px 10px; background:#f0f9ff; border-radius:6px; font-weight:700; color:var(--deep); cursor:pointer;">
-        <input type="checkbox" class="grp-toggle" data-grp="chart"> 📊 גרף ראשי
+        <input type="checkbox" data-key="chart"> 📊 גרף ראשי <span id="chart_label_hint" style="font-size:11px; color:var(--muted); font-weight:500;"></span>
       </label>
-      <div class="grp-children" data-grp-of="chart" style="margin:4px 14px 8px 0;">
-        <label class="cb-row"><input type="checkbox" data-key="chart"> עוגת השיבוצים / חלוקה למגזר</label>
-      </div>
     </div>
 
     <div style="margin-top:10px;">
@@ -5475,9 +5470,6 @@ function openDashboardPrintOptions(btn) {
       </div>
     </div>
 
-    <div style="margin-top:6px; padding-top:6px; border-top:1px dashed #cbd5e1; font-size:11px; color:var(--muted);">
-      הערה: השורה העליונה של הסיכום (סה"כ) מודפסת תמיד.
-    </div>
     <button class="apply-big" data-mode="custom" style="margin-top:14px; background:var(--deep) !important;">🖨 הדפס בחירה</button>
   `;
 
@@ -5488,29 +5480,32 @@ function openDashboardPrintOptions(btn) {
   document.body.appendChild(scrim);
   document.body.appendChild(pop);
 
+  // עדכון "תיוג קטן" של הגרף הראשי (עוגה / מגזר)
+  const chartHint = pop.querySelector('#chart_label_hint');
+  if (chartHint) chartHint.textContent = DASH.sectorBreakdown ? '— חלוקה למגזר' : '— עוגת שיבוצים';
+
   // טעינת בחירה אחרונה
   const saved = getDashPrintSelection();
   pop.querySelectorAll('input[type=checkbox][data-key]').forEach(cb => {
     cb.checked = !!saved[cb.dataset.key];
   });
-  // עדכון מצב ה־group toggles
+  // עדכון מצב ה־group toggles (רק stats/splits — chart הוא עצמאי)
   const updateGroupToggle = (grp) => {
     const toggle = pop.querySelector(`.grp-toggle[data-grp="${grp}"]`);
+    if (!toggle) return;
     const children = pop.querySelectorAll(`.grp-children[data-grp-of="${grp}"] input[type=checkbox]`);
     const checked = [...children].filter(c => c.checked).length;
     toggle.checked = checked === children.length;
     toggle.indeterminate = checked > 0 && checked < children.length;
   };
-  ['chart', 'stats', 'splits'].forEach(updateGroupToggle);
+  ['stats', 'splits'].forEach(updateGroupToggle);
 
-  // group toggle ↔ children
   pop.querySelectorAll('.grp-toggle').forEach(toggle => {
     toggle.addEventListener('change', () => {
       const grp = toggle.dataset.grp;
       pop.querySelectorAll(`.grp-children[data-grp-of="${grp}"] input[type=checkbox]`).forEach(cb => cb.checked = toggle.checked);
     });
   });
-  // child changes → update group
   pop.querySelectorAll('.grp-children input[type=checkbox]').forEach(cb => {
     cb.addEventListener('change', () => {
       const grp = cb.closest('.grp-children').dataset.grpOf;
@@ -5539,14 +5534,16 @@ function doDashboardPrint(selection) {
   const dashSection = document.getElementById('dashboard_section');
   if (!dashSection) return;
   const elements = dashSection.querySelectorAll('[data-print-key]');
-  // שמור מצב מקורי
   const originalDisplay = new Map();
+  const detailsPanel = dashSection.querySelector('.details-panel');
+  let detailsPanelOriginalDisplay = '';
+
   if (selection) {
+    // הסתרת/הצגה לפי הבחירה
     elements.forEach(el => {
       originalDisplay.set(el, el.style.display);
       const key = el.dataset.printKey;
       if (key === 'splits_row') {
-        // הצג רק אם יש לפחות אחד מהילדים
         const anyChild = selection.split_sectors || selection.split_affiliations;
         el.style.display = anyChild ? '' : 'none';
       } else if (selection[key] === false) {
@@ -5555,21 +5552,35 @@ function doDashboardPrint(selection) {
         el.style.display = '';
       }
     });
-  }
 
-  // אם הגרף הוסתר — מסתיר את ה־.dash-row אם רק הוא היה בה
-  // (פשוט נבסס על מצב טבעי)
+    // אם כל הסטטיסטיקות והחלוקות מוסתרות — מסתיר את כל פאנל הפרטים
+    const anyStat = ['stat_registered','stat_pref1','stat_positive','stat_placed','stat_muni','stat_sisters']
+      .some(k => selection[k]);
+    const anySplit = selection.split_sectors || selection.split_affiliations;
+    const detailsAnyContent = anyStat || anySplit;
+    if (detailsPanel) {
+      detailsPanelOriginalDisplay = detailsPanel.style.display;
+      detailsPanel.style.display = detailsAnyContent ? '' : 'none';
+    }
+
+    // CSS layout classes — אם רק עוגה או רק פאנל, נותנים רוחב מלא
+    const onlyChart = selection.chart && !detailsAnyContent;
+    const noChart = !selection.chart && detailsAnyContent;
+    document.body.classList.toggle('print-only-chart', onlyChart);
+    document.body.classList.toggle('print-no-chart', noChart);
+  }
 
   setTimeout(() => {
     window.print();
-    // שחזור
     if (selection) {
       elements.forEach(el => {
         const v = originalDisplay.get(el);
         el.style.display = v == null ? '' : v;
       });
+      if (detailsPanel) detailsPanel.style.display = detailsPanelOriginalDisplay;
+      document.body.classList.remove('print-only-chart', 'print-no-chart');
     }
-  }, 100);
+  }, 200);
 }
 
 function buildPrintTitle() {
