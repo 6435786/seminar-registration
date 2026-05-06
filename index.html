@@ -1406,24 +1406,20 @@
     /* כותרת הדשבורד הפנימית — מוסתרת (יש לנו את stats-bar למעלה) */
     body.view-dashboard #dashboard_section > div:first-child { display: none !important; }
 
-    /* KPI cards — תיקון פריסה */
-    body.view-dashboard .kpi-row {
-      grid-template-columns: repeat(2, 1fr) !important;
-      gap: 6px !important; margin-bottom: 10px;
-    }
-    body.view-dashboard .kpi-card {
-      padding: 10px !important; min-width: 0;
-    }
-    body.view-dashboard .kpi-card .label { font-size: 11px !important; line-height: 1.2; }
-    body.view-dashboard .kpi-card .value { font-size: 20px !important; font-weight: 800; }
-    body.view-dashboard .kpi-card .value .pct { font-size: 11px !important; }
+    /* KPI cards — לא צריך, יש את stats-bar למעלה */
+    body.view-dashboard .kpi-row { display: none !important; }
 
-    /* גרף ראשי */
+    /* גרף ראשי — חישוב גובה דינמי שלא יחתוך תוויות */
     body.view-dashboard .dash-card.chart-card { padding: 8px !important; }
-    body.view-dashboard .dash-card.chart-card h3 { font-size: 14px !important; }
+    body.view-dashboard .dash-card.chart-card h3 { font-size: 14px !important; margin-bottom: 8px !important; }
     body.view-dashboard .chart-canvas-wrap {
-      height: 280px !important;
-      max-height: 50vh;
+      height: auto !important;
+      min-height: 320px;
+      padding: 30px 0;  /* מקום לתוויות מסביב לעוגה */
+    }
+    body.view-dashboard #chart_placements {
+      max-width: 100% !important;
+      max-height: 320px !important;
     }
 
     /* פאנל פרטים — דחוס */
@@ -3990,6 +3986,8 @@ function renderPlacementChart() {
     const counts = entries.map(e => e[1]);
     const colors = labels.map((_, i) => DASH_COLORS[i % DASH_COLORS.length]);
 
+    const isMobile = window.innerWidth <= 500;
+
     DASH.chart = new Chart(canvas, {
       type: 'doughnut',
       data: {
@@ -3998,11 +3996,13 @@ function renderPlacementChart() {
       },
       options: {
         responsive: true, maintainAspectRatio: false,
-        layout: { padding: { top: 6, bottom: 45, left: 40, right: 40 } },
+        layout: isMobile
+          ? { padding: { top: 6, bottom: 6, left: 6, right: 6 } }
+          : { padding: { top: 6, bottom: 45, left: 40, right: 40 } },
         plugins: {
           legend: {
-            position: 'left',
-            labels: { font: { family: 'Heebo', size: 11 }, boxWidth: 12, padding: 6 },
+            position: isMobile ? 'bottom' : 'left',
+            labels: { font: { family: 'Heebo', size: isMobile ? 10 : 11 }, boxWidth: 10, padding: 4 },
           },
           tooltip: {
             callbacks: {
@@ -4011,9 +4011,11 @@ function renderPlacementChart() {
             bodyFont: { family: 'Heebo' }, titleFont: { family: 'Heebo' },
           },
           datalabels: {
+            // במובייל — מסתיר תוויות חיצוניות לגמרי (יותר מדי חפיפות)
+            display: isMobile
+              ? false
+              : (ctx) => (ctx.dataset.data[ctx.dataIndex] / total) >= 0.03,
             clip: false,
-            // סף 3% אמיתי
-            display: (ctx) => (ctx.dataset.data[ctx.dataIndex] / total) >= 0.03,
             anchor: 'end',
             align: 'end',
             offset: 10,
