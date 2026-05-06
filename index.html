@@ -6887,25 +6887,15 @@ function showInstallBanner() {
 function _mb(id) { return document.getElementById(id); }
 
 function setupMobileToolbar() {
-  const e = _mb('mb_edit_toggle');
-  if (e) e.addEventListener('click', () => setEditMode(!EDIT_MODE));
-  const u = _mb('mb_undo');     if (u) u.addEventListener('click', doUndo);
-  const r = _mb('mb_redo');     if (r) r.addEventListener('click', doRedo);
-  const p = _mb('mb_print');    if (p) p.addEventListener('click', () => openPrintOptions(p));
-  const x = _mb('mb_export');   if (x) x.addEventListener('click', exportMainTableToExcel);
-  const a = _mb('mb_admin_menu'); if (a) a.addEventListener('click', openMobileAdminMenu);
-  const f = _mb('mb_filters');  if (f) f.addEventListener('click', openMobileFilters);
-  const v = _mb('mb_views');    if (v) v.addEventListener('click', openMobileViews);
-
-  // סנכרון חיפוש מובייל ↔ חיפוש ראשי
-  const mbSearch = _mb('mb_search');
+  // הכפתורים עצמם מוגדרים עם onclick inline ב־HTML — אמין יותר
+  // כאן רק סנכרון חיפוש מובייל ↔ חיפוש ראשי
+  const mbSearch = document.getElementById('mb_search');
   const mainSearch = document.getElementById('q');
   if (mbSearch && mainSearch) {
     mbSearch.addEventListener('input', () => {
       mainSearch.value = mbSearch.value;
       mainSearch.dispatchEvent(new Event('input'));
     });
-    // אם ה־q הראשי השתנה (למשל מאיפוס) — לעדכן גם את המובייל
     mainSearch.addEventListener('input', () => {
       if (document.activeElement !== mbSearch) mbSearch.value = mainSearch.value;
     });
