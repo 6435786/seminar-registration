@@ -1408,21 +1408,17 @@
     body.mobile-filters-open .filters input[type=search] { padding: 12px; font-size: 14px; }
     body.mobile-filters-open .filters > button { padding: 10px 14px; font-size: 13px; }
 
-    /* טבלה — רק 3 עמודות (full_name, placement_seminar, placement_status) */
-    th:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]),
-    td:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]) {
+    /* טבלה ראשית — רק 3 עמודות (full_name, placement_seminar, placement_status) */
+    .table-wrap th:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]),
+    .table-wrap td:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]) {
       display: none !important;
     }
-    /* ביטול ה־min-width של הטבלה — לא צריך גלילה */
-    table { min-width: 0 !important; width: 100%; }
-    th, td { white-space: normal; padding: 8px 6px; font-size: 12px; }
-    /* ביטול ה־sticky על העמודה הראשונה — לא צריך אופקית */
-    th:first-child, td:first-child {
+    .table-wrap table { min-width: 0 !important; width: 100%; }
+    .table-wrap th, .table-wrap td { white-space: normal; padding: 8px 6px; font-size: 12px; }
+    .table-wrap th:first-child, .table-wrap td:first-child {
       position: static; border-left: 0;
     }
-    /* sticky על כותרת בלבד (גלילה אנכית) */
-    table thead { position: sticky; top: 0; z-index: 3; background: #e0f2fe; }
-    /* אזור גלילה אנכית של הטבלה */
+    .table-wrap thead { position: sticky; top: 0; z-index: 3; background: #e0f2fe; }
     .table-wrap { max-height: calc(100vh - 280px); overflow-y: auto; }
 
     /* === דשבורד במובייל — צמצום משמעותי === */
