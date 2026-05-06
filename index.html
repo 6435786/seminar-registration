@@ -1927,7 +1927,7 @@ function render() {
         startEdit(td, tr.dataset.nid);
         return;
       }
-      if (EDIT_MODE && td && td.classList.contains('readonly-field')) return;
+      // תא readonly גם במצב עריכה — פותח את המודל (כמו במצב כבוי)
       openModal(tr.dataset.nid);
     });
   });
