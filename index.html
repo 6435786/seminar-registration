@@ -3756,8 +3756,15 @@ function computeAggregateMetrics(data) {
   // "משיבוץ עיריה" = כל סטטוס שאינו ריק / חיובי / תושב חוץ
   const MUNI_EXCLUDE = new Set(['חיובי', 'תושב חוץ']);
   const muni = data.filter(r => r.placement_status && !MUNI_EXCLUDE.has(r.placement_status)).length;
-  // אחיות באותו מוסד — בנות שיש להן אחות בסמינר של הבת עצמה
-  const sisters = data.filter(_hasSiblingInGirlSeminar).length;
+  // אחיות באותו מוסד — רק בנות שמשובצות לסמינר ויש להן אחות באותו סמינר
+  const semByName = {};
+  (DATA.seminars || []).forEach(s => { semByName[s.name] = s; });
+  const sisters = data.filter(r => {
+    if (!r.placement_seminar) return false;
+    const sem = semByName[r.placement_seminar];
+    if (!sem || !sem.institution_code) return false;
+    return (r.siblings || []).some(s => s.institution_code === sem.institution_code);
+  }).length;
   // חלוקה לקבוצות של משובצות
   const sectors = {};
   const affiliations = {};
