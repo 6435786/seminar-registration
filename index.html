@@ -1276,79 +1276,125 @@
     .hdr-top .stats { display: none !important; }
     /* user badge בקצה */
     .user-badge { margin-right: auto; }
-    /* view switch תחת הכותרת */
+    /* בר עליון נקי */
+    header { background: white !important; border-bottom: 1px solid #e2e8f0 !important; box-shadow: none !important; }
+    header h1 { font-size: 16px !important; font-weight: 600; color: #0f172a; }
+    .hdr-top { padding: 8px 12px !important; gap: 10px; min-height: 48px; }
+
+    /* טאבים אמיתיים — קו תחתון */
     .view-switch.big {
       flex: 0 0 100% !important; order: 5;
-      display: flex !important; gap: 4px;
+      display: flex !important; gap: 0;
+      background: white; border-bottom: 1px solid #e2e8f0;
+      border-radius: 0; box-shadow: none; padding: 0;
     }
     .view-switch.big .view-btn {
-      flex: 1 1 auto !important; padding: 8px !important; font-size: 13px !important;
+      flex: 1 1 0 !important; padding: 10px 0 !important;
+      background: transparent !important; color: #64748b !important;
+      border: 0 !important; border-radius: 0 !important;
+      font-size: 14px !important; font-weight: 500 !important;
+      box-shadow: none !important;
+      border-bottom: 2px solid transparent !important;
+      margin-bottom: -1px;
     }
-    /* sticky-stats — בר דק עם המספרים */
-    .mobile-stats-bar {
-      flex: 0 0 100% !important; order: 6;
-      display: flex !important; justify-content: space-around;
-      font-size: 11px; padding: 4px 0; color: var(--deep);
-      background: #f0f9ff; border-radius: 6px; gap: 4px;
+    .view-switch.big .view-btn.active {
+      color: #0284c7 !important; font-weight: 700 !important;
+      border-bottom-color: #0284c7 !important;
+      background: transparent !important;
     }
-    .mobile-stats-bar span b { color: var(--deep); margin-right: 3px; }
+    /* שורת סטטיסטיקה הישנה — מוסתרת (יש סטטים חדשים) */
+    .mobile-stats-bar { display: none !important; }
 
-    /* הצג את ה־mobile-toolbar */
-    .mobile-toolbar { display: block; padding: 6px 8px 8px; }
+    /* mobile-toolbar */
+    .mobile-toolbar {
+      display: block; padding: 12px 16px 8px;
+      background: white;
+    }
+
+    /* מספרי סטטים בולטים */
+    .mb-stats {
+      display: grid; grid-template-columns: 1fr 1fr 1fr;
+      gap: 8px; margin-bottom: 14px;
+      padding: 12px 0; border-bottom: 1px solid #e2e8f0;
+    }
+    .mb-stat { text-align: center; }
+    .mb-stat-value {
+      font-size: 26px; font-weight: 700;
+      color: #0f172a; line-height: 1.1;
+    }
+    .mb-stat[data-tone="good"] .mb-stat-value { color: #16a34a; }
+    .mb-stat[data-tone="warn"] .mb-stat-value { color: #d97706; }
+    .mb-stat-label {
+      font-size: 12px; color: #64748b; font-weight: 500;
+      margin-top: 2px;
+    }
+
+    /* שורת חיפוש */
     .mb-search-row {
-      display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-bottom: 6px;
+      display: flex; gap: 8px; margin-bottom: 10px;
+      align-items: center;
+    }
+    .mb-search-wrap {
+      flex: 1 1 auto; position: relative;
+    }
+    .mb-search-icon {
+      position: absolute; right: 12px; top: 50%; transform: translateY(-50%);
+      color: #94a3b8; pointer-events: none;
     }
     .mb-search-row input[type=search] {
-      padding: 10px 12px; border: 1px solid #bae6fd; border-radius: 8px;
-      font-family: inherit; font-size: 14px; min-height: 42px;
+      width: 100%; padding: 10px 38px 10px 14px;
+      border: 1px solid #e2e8f0; border-radius: 8px;
+      font-family: inherit; font-size: 15px; min-height: 42px;
+      background: #f7f8fa; color: #0f172a;
     }
-    .mb-search-row .mb-large-btn {
-      width: auto; padding: 10px 16px;
+    .mb-search-row input[type=search]:focus {
+      outline: none; border-color: #0284c7; background: white;
+      box-shadow: 0 0 0 3px rgba(2,132,199,0.1);
     }
-    .mb-icon-row {
-      display: flex; gap: 6px; margin-top: 6px;
-    }
-    .mb-icon-btn {
-      flex: 1 1 auto; min-height: 40px; min-width: 40px;
-      padding: 6px; border: 1px solid #bae6fd; border-radius: 6px;
-      background: white; cursor: pointer; font-size: 18px;
+    .mb-icon-btn-solid {
+      flex: 0 0 42px; min-height: 42px; min-width: 42px;
+      background: #0f172a !important; color: white !important;
+      border: 0 !important; border-radius: 8px !important;
       display: inline-flex; align-items: center; justify-content: center;
-      font-family: inherit;
+      cursor: pointer;
     }
-    .mb-icon-btn:active { background: #f0f9ff; }
-    .mb-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
-    .mb-edit-btn {
-      position: relative; flex: 1.5 1 auto !important;
-      gap: 4px; font-weight: 700; font-size: 13px; color: var(--deep);
-    }
-    .mb-edit-label { font-size: 13px; }
-    .mb-edit-on { display: none; }
-    body.edit-mode .mb-edit-off { display: none; }
-    body.edit-mode .mb-edit-on {
-      display: inline-flex; color: #16a34a; font-size: 18px; font-weight: bold;
-      opacity: 0.7;
-    }
-    body:not(.edit-mode) .mb-edit-off {
-      color: #dc2626; font-size: 16px; opacity: 0.5;
-    }
-    body.edit-mode #mb_edit_toggle { background: #d1fae5; border-color: #16a34a; color: #166534; }
+    .mb-icon-btn-solid:active { background: #1e293b !important; }
 
-    .mb-large-row {
-      display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px;
+    /* Chip toolbar — אופקי גוללת */
+    .mb-chip-row {
+      display: flex; gap: 6px; padding-bottom: 4px;
+      overflow-x: auto; -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
     }
-    .mb-large-btn {
-      width: 100%; padding: 10px; min-height: 42px;
-      border: 1px solid var(--accent-alt); border-radius: 8px;
-      background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white;
-      font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer;
-      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    .mb-chip-row::-webkit-scrollbar { display: none; }
+    .mb-chip {
+      flex: 0 0 auto; min-height: 36px;
+      display: inline-flex; align-items: center; gap: 6px;
+      padding: 6px 12px; border: 1px solid #e2e8f0; border-radius: 8px;
+      background: white; color: #0f172a;
+      font-family: inherit; font-size: 13px; font-weight: 500;
+      cursor: pointer;
+      transition: background 0.12s;
     }
-    .mb-large-btn:active { transform: scale(0.97); }
-    /* "ניהול" — בולט יותר */
-    #mb_admin_menu {
-      width: 100%;
-      background: linear-gradient(135deg, #0c4a6e, #075985);
+    .mb-chip:active { background: #f7f8fa; }
+    .mb-chip:disabled { opacity: 0.35; cursor: not-allowed; }
+    .mb-chip svg { color: #475569; flex: 0 0 auto; }
+
+    /* chip עריכה — נקודת אינדיקציה */
+    .mb-edit-chip { padding: 6px 14px; }
+    .mb-edit-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #cbd5e1; transition: all 0.15s;
     }
+    body.edit-mode .mb-edit-dot {
+      background: #16a34a;
+      box-shadow: 0 0 0 3px rgba(22,163,74,0.2);
+    }
+    body.edit-mode .mb-edit-chip {
+      background: #ecfdf5; color: #166534;
+      border-color: #86efac;
+    }
+    body.edit-mode .mb-edit-chip svg { color: #16a34a; }
 
     /* הסתר filters bar — אלא אם הופעל ידנית בפופאפ המובייל */
     body:not(.mobile-filters-open) .filters { display: none !important; }
@@ -1482,28 +1528,61 @@
     <button class="hdr-btn" id="btn_hdr_print">הדפסה</button>
     <button class="hdr-btn" id="btn_export_table">📊 יצוא</button>
   </div>
-  <!-- שורות מובייל בלבד -->
+  <!-- מובייל בלבד -->
   <div class="mobile-toolbar">
+    <!-- מספרי סטטים בולטים -->
+    <div class="mb-stats">
+      <div class="mb-stat" data-tone="neutral">
+        <div class="mb-stat-value" id="mb_stat_total">—</div>
+        <div class="mb-stat-label">סה״כ</div>
+      </div>
+      <div class="mb-stat" data-tone="good">
+        <div class="mb-stat-value" id="mb_stat_placed">—</div>
+        <div class="mb-stat-label">שובצו</div>
+      </div>
+      <div class="mb-stat" data-tone="warn">
+        <div class="mb-stat-value" id="mb_stat_unplaced">—</div>
+        <div class="mb-stat-label">לא שובצו</div>
+      </div>
+    </div>
+
+    <!-- חיפוש + ניהול -->
     <div class="mb-search-row">
-      <input type="search" id="mb_search" placeholder="🔎 חיפוש..." autocomplete="off">
-      <button class="mb-large-btn" id="mb_admin_menu">⚙ ניהול</button>
-    </div>
-    <div class="mb-icon-row">
-      <button class="mb-icon-btn mb-edit-btn" id="mb_edit_toggle" title="עריכה">
-        <span class="mb-edit-off">🚫</span>
-        <span class="mb-edit-on">✓</span>
-        <span class="mb-edit-label">ערוך</span>
-      </button>
-      <button class="mb-icon-btn" id="mb_undo" title="בטל">↶</button>
-      <button class="mb-icon-btn" id="mb_redo" title="בצע שוב">↷</button>
-      <button class="mb-icon-btn" id="mb_print" title="הדפסה">🖨</button>
-      <button class="mb-icon-btn" id="mb_export" title="יצוא לאקסל">
-        <span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; background:#107c41; color:white; font-weight:800; border-radius:4px; font-size:14px;">X</span>
+      <div class="mb-search-wrap">
+        <svg class="mb-search-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input type="search" id="mb_search" placeholder="חיפוש" autocomplete="off">
+      </div>
+      <button class="mb-icon-btn mb-icon-btn-solid" id="mb_admin_menu" title="ניהול">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
       </button>
     </div>
-    <div class="mb-large-row">
-      <button class="mb-large-btn" id="mb_filters">🔍 סינונים</button>
-      <button class="mb-large-btn" id="mb_views">🔖 תצוגות שמורות</button>
+
+    <!-- שורת chips -->
+    <div class="mb-chip-row">
+      <button class="mb-chip mb-edit-chip" id="mb_edit_toggle" title="עריכה">
+        <span class="mb-edit-dot"></span>
+        <span>ערוך</span>
+      </button>
+      <button class="mb-chip" id="mb_undo" title="בטל">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></svg>
+      </button>
+      <button class="mb-chip" id="mb_redo" title="בצע שוב">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 14 20 9 15 4"/><path d="M4 20v-7a4 4 0 0 1 4-4h12"/></svg>
+      </button>
+      <button class="mb-chip" id="mb_filters" title="סינונים">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+        <span>סינונים</span>
+      </button>
+      <button class="mb-chip" id="mb_views" title="תצוגות שמורות">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+        <span>תצוגות</span>
+      </button>
+      <button class="mb-chip" id="mb_print" title="הדפסה">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 6 2 18 2 18 9"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></svg>
+      </button>
+      <button class="mb-chip" id="mb_export" title="יצוא לאקסל">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+      </button>
     </div>
   </div>
   <div class="popover" id="hdr_views_pop"></div>
@@ -6960,18 +7039,17 @@ function closeMobileFilters() {
   if (scrim) scrim.remove();
 }
 
-// בר סטטיסטיקה דק במובייל
+// סטטיסטיקה במובייל — מספרים בולטים בראש
 function updateMobileStatsBar() {
-  const bar = document.getElementById('mobile_stats_bar');
-  if (!bar) return;
   const total = ROWS.length;
   const placed = ROWS.filter(r => r.placement_seminar && !['עדיין לא שובץ','מקדמת',''].includes(r.placement_seminar)).length;
   const unplaced = total - placed;
-  bar.innerHTML = `
-    <span>סה״כ <b>${total}</b></span>
-    <span>שובצו <b>${placed}</b></span>
-    <span>לא שובצו <b>${unplaced}</b></span>
-  `;
+  const t = document.getElementById('mb_stat_total');
+  const p = document.getElementById('mb_stat_placed');
+  const u = document.getElementById('mb_stat_unplaced');
+  if (t) t.textContent = total.toLocaleString('he-IL');
+  if (p) p.textContent = placed.toLocaleString('he-IL');
+  if (u) u.textContent = unplaced.toLocaleString('he-IL');
 }
 
 // ============================================================
