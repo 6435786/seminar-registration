@@ -1146,8 +1146,26 @@
     .stats { font-size: 11px; gap: 6px; }
   }
 
-  /* ===== רספונסיביות — מובייל (<=640px) ===== */
-  @media (max-width: 640px) {
+  /* כברירת מחדל — אלמנטי המובייל מוסתרים */
+  .mobile-toolbar { display: none; }
+  .mobile-stats-bar { display: none; }
+
+  /* Bottom-sheet menu */
+  .mb-menu-row {
+    display: block; width: 100%;
+    padding: 14px 16px; margin-bottom: 6px;
+    background: #f0f9ff; border: 1px solid #e0f2fe; border-radius: 8px;
+    color: var(--deep); font-size: 15px; font-weight: 600; font-family: inherit;
+    text-align: right; cursor: pointer;
+  }
+  .mb-menu-row:hover, .mb-menu-row:active { background: #bae6fd; }
+  .mb-menu-cancel {
+    background: #fef2f2 !important; color: var(--bad) !important;
+    border-color: #fecaca !important; margin-top: 10px;
+  }
+
+  /* ===== רספונסיביות — מובייל (<=500px) ===== */
+  @media (max-width: 500px) {
     body { -webkit-text-size-adjust: 100%; }
     main { padding: 6px; }
 
@@ -1238,6 +1256,98 @@
     .popover { min-width: 240px; padding: 8px; max-height: 70vh; }
 
     .kv { grid-template-columns: 100px 1fr; }
+
+    /* === סידור מחדש לפי סקיצה === */
+    /* הסתר את כל ה־hdr-bottom — נחליף ב־mobile-toolbar */
+    .hdr-bottom { display: none !important; }
+    /* hdr-top — רק כותרת, season, view-switch ו־user badge */
+    .hdr-top #btn_load_source,
+    .hdr-top #btn_backup,
+    .hdr-top #btn_restore,
+    .hdr-top #btn_manage_users,
+    .hdr-top #online_count_pill,
+    .hdr-top .season-selector,
+    .hdr-top .stats { display: none !important; }
+    /* user badge בקצה */
+    .user-badge { margin-right: auto; }
+    /* view switch תחת הכותרת */
+    .view-switch.big {
+      flex: 0 0 100% !important; order: 5;
+      display: flex !important; gap: 4px;
+    }
+    .view-switch.big .view-btn {
+      flex: 1 1 auto !important; padding: 8px !important; font-size: 13px !important;
+    }
+    /* sticky-stats — בר דק עם המספרים */
+    .mobile-stats-bar {
+      flex: 0 0 100% !important; order: 6;
+      display: flex !important; justify-content: space-around;
+      font-size: 11px; padding: 4px 0; color: var(--deep);
+      background: #f0f9ff; border-radius: 6px; gap: 4px;
+    }
+    .mobile-stats-bar span b { color: var(--deep); margin-right: 3px; }
+
+    /* הצג את ה־mobile-toolbar */
+    .mobile-toolbar { display: block; padding: 6px 8px 8px; }
+    .mb-icon-row {
+      display: flex; gap: 6px; margin-top: 6px;
+    }
+    .mb-icon-btn {
+      flex: 1 1 auto; min-height: 40px; min-width: 40px;
+      padding: 6px; border: 1px solid #bae6fd; border-radius: 6px;
+      background: white; cursor: pointer; font-size: 18px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-family: inherit;
+    }
+    .mb-icon-btn:active { background: #f0f9ff; }
+    .mb-icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .mb-edit-on { display: none; }
+    body.edit-mode .mb-edit-off { display: none; }
+    body.edit-mode .mb-edit-on {
+      display: inline-flex; color: #16a34a; font-size: 22px; font-weight: bold;
+      opacity: 0.7;
+    }
+    body:not(.edit-mode) .mb-edit-off {
+      color: #dc2626; font-size: 18px; opacity: 0.5;
+    }
+    body.edit-mode #mb_edit_toggle { background: #d1fae5; border-color: #16a34a; }
+
+    .mb-large-row {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-top: 8px;
+    }
+    .mb-large-btn {
+      width: 100%; padding: 10px; min-height: 42px;
+      border: 1px solid var(--accent-alt); border-radius: 8px;
+      background: linear-gradient(135deg, #0ea5e9, #0284c7); color: white;
+      font-size: 14px; font-weight: 700; font-family: inherit; cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    .mb-large-btn:active { transform: scale(0.97); }
+    /* "ניהול" — בולט יותר */
+    #mb_admin_menu {
+      width: 100%;
+      background: linear-gradient(135deg, #0c4a6e, #075985);
+    }
+
+    /* הסתר filters bar */
+    .filters { display: none !important; }
+
+    /* טבלה — רק 3 עמודות (full_name, placement_seminar, placement_status) */
+    th:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]),
+    td:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]) {
+      display: none !important;
+    }
+    /* ביטול ה־min-width של הטבלה — לא צריך גלילה */
+    table { min-width: 0 !important; width: 100%; }
+    th, td { white-space: normal; padding: 8px 6px; font-size: 12px; }
+    /* ביטול ה־sticky על העמודה הראשונה — לא צריך אופקית */
+    th:first-child, td:first-child {
+      position: static; border-left: 0;
+    }
+    /* sticky על כותרת בלבד (גלילה אנכית) */
+    table thead { position: sticky; top: 0; z-index: 3; background: #e0f2fe; }
+    /* אזור גלילה אנכית של הטבלה */
+    .table-wrap { max-height: calc(100vh - 280px); overflow-y: auto; }
   }
 </style>
 </head>
@@ -1253,6 +1363,7 @@
       <button class="view-btn kanban-mode" id="btn_view_kanban">🗂 לוח</button>
     </div>
     <div class="stats" id="stats"></div>
+    <div class="mobile-stats-bar" id="mobile_stats_bar"></div>
     <span class="online-count-pill" id="online_count_pill" style="display:none;" title="לחץ לראות מי מחובר">
       <span class="online-dot-small"></span>
       <span class="online-count-num">0</span>
@@ -1278,6 +1389,26 @@
     <button class="hdr-btn" id="btn_hdr_views">🔖 תצוגות שמורות</button>
     <button class="hdr-btn" id="btn_hdr_print">הדפסה</button>
     <button class="hdr-btn" id="btn_export_table">📊 יצוא</button>
+  </div>
+  <!-- שורות מובייל בלבד -->
+  <div class="mobile-toolbar">
+    <button class="mb-large-btn" id="mb_admin_menu">⚙ ניהול</button>
+    <div class="mb-icon-row">
+      <button class="mb-icon-btn" id="mb_edit_toggle" title="עריכה">
+        <span class="mb-edit-off">🚫</span>
+        <span class="mb-edit-on">✓</span>
+      </button>
+      <button class="mb-icon-btn" id="mb_undo" title="בטל">↶</button>
+      <button class="mb-icon-btn" id="mb_redo" title="בצע שוב">↷</button>
+      <button class="mb-icon-btn" id="mb_print" title="הדפסה">🖨</button>
+      <button class="mb-icon-btn" id="mb_export" title="יצוא לאקסל">
+        <span style="display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; background:#107c41; color:white; font-weight:800; border-radius:4px; font-size:14px;">X</span>
+      </button>
+    </div>
+    <div class="mb-large-row">
+      <button class="mb-large-btn" id="mb_filters">🔍 סינונים</button>
+      <button class="mb-large-btn" id="mb_views">🔖 תצוגות שמורות</button>
+    </div>
   </div>
   <div class="popover" id="hdr_views_pop"></div>
 </header>
@@ -1888,7 +2019,7 @@ function renderHeader() {
   let html = visible.map(c => {
     const sortArrow = sortKey === c.key ? (sortDir > 0 ? ' ▲' : ' ▼') : '';
     const active = COL_FILTERS[c.key] && COL_FILTERS[c.key].size ? ' active' : '';
-    return `<th>
+    return `<th data-key="${c.key}">
       <span class="th-label" data-sort="${c.key}">${c.label}${sortArrow}</span>
       <span class="th-filter${active}" data-filter-col="${c.key}" title="סינון בעמודה">▼</span>
     </th>`;
@@ -2254,6 +2385,7 @@ function applyFilters() {
   });
   render();
   updateStats(); // הסטטיסטיקה מתייחסת לעמודה הנבחרת
+  if (typeof updateMobileStatsBar === 'function') updateMobileStatsBar();
 }
 
 const EMPTY_MARKER = '<ריקים>';
@@ -5136,6 +5268,7 @@ async function main() {
     requestAnimationFrame(() => arrangeResponsiveHeader());
     setTimeout(() => arrangeResponsiveHeader(), 300);
     window.addEventListener('resize', arrangeResponsiveHeader);
+    setupMobileToolbar();
     await loadLookupLists();  // רשימות ראשונות — לפני הטבלה
     const [girls, regs, plcs, sibs, sems, schools] = await Promise.all([
       loadAll('girls'),
@@ -6447,6 +6580,130 @@ async function doLogout() {
   if (!confirm('להתנתק מהמערכת?')) return;
   await sb.auth.signOut();
   window.location.href = './login.html';
+}
+
+// ============================================================
+// Mobile UI — toolbar buttons
+// ============================================================
+function _mb(id) { return document.getElementById(id); }
+
+function setupMobileToolbar() {
+  const e = _mb('mb_edit_toggle');
+  if (e) e.addEventListener('click', () => setEditMode(!EDIT_MODE));
+  const u = _mb('mb_undo');     if (u) u.addEventListener('click', doUndo);
+  const r = _mb('mb_redo');     if (r) r.addEventListener('click', doRedo);
+  const p = _mb('mb_print');    if (p) p.addEventListener('click', () => openPrintOptions(p));
+  const x = _mb('mb_export');   if (x) x.addEventListener('click', exportMainTableToExcel);
+  const a = _mb('mb_admin_menu'); if (a) a.addEventListener('click', openMobileAdminMenu);
+  const f = _mb('mb_filters');  if (f) f.addEventListener('click', openMobileFilters);
+  const v = _mb('mb_views');    if (v) v.addEventListener('click', () => {
+    const pop = document.getElementById('hdr_views_pop');
+    openViewsPicker(v, pop);
+  });
+}
+
+function openMobileAdminMenu(e) {
+  const items = [];
+  if (isAdmin()) {
+    items.push({ label: '👥 הרשאות', fn: openManageUsers });
+    items.push({ label: '📂 רשימות', fn: openManageLists });
+    items.push({ label: '📋 היסטוריה', fn: showHistory });
+    items.push({ label: '📥 טען מקור', fn: openLoadSourceModal });
+    items.push({ label: '💾 גיבוי', fn: backupAllData });
+    items.push({ label: '♻ שחזור', fn: triggerRestore });
+  }
+  if (!items.length) { toast('אין פעולות זמינות', 'warn'); return; }
+
+  // overlay תפריט
+  const existing = document.getElementById('mb_admin_pop');
+  if (existing) { existing.remove(); document.getElementById('mb_admin_scrim')?.remove(); return; }
+
+  const scrim = document.createElement('div');
+  scrim.id = 'mb_admin_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1499;';
+  const pop = document.createElement('div');
+  pop.id = 'mb_admin_pop';
+  pop.style.cssText = 'position:fixed; bottom:0; left:0; right:0; z-index:1500; background:white; border-radius:14px 14px 0 0; padding:12px; box-shadow:0 -8px 24px rgba(0,0,0,0.2); max-height:80vh; overflow-y:auto;';
+  pop.innerHTML = `
+    <div style="height:4px; width:50px; background:#cbd5e1; border-radius:2px; margin:0 auto 12px;"></div>
+    <div style="font-weight:700; color:var(--deep); margin-bottom:10px; font-size:15px; text-align:center;">⚙ ניהול</div>
+    ${items.map((it, i) => `<button data-i="${i}" class="mb-menu-row">${it.label}</button>`).join('')}
+    <button class="mb-menu-row mb-menu-cancel">סגור</button>
+  `;
+  scrim.onclick = () => { pop.remove(); scrim.remove(); };
+  document.body.appendChild(scrim);
+  document.body.appendChild(pop);
+
+  pop.querySelectorAll('.mb-menu-row[data-i]').forEach(btn => {
+    btn.onclick = () => {
+      const i = parseInt(btn.dataset.i);
+      pop.remove(); scrim.remove();
+      items[i].fn();
+    };
+  });
+  pop.querySelector('.mb-menu-cancel').onclick = () => { pop.remove(); scrim.remove(); };
+}
+
+function openMobileFilters() {
+  const filters = document.querySelector('.filters');
+  if (!filters) return;
+
+  const existing = document.getElementById('mb_filters_pop');
+  if (existing) { existing.remove(); document.getElementById('mb_filters_scrim')?.remove(); return; }
+
+  const scrim = document.createElement('div');
+  scrim.id = 'mb_filters_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1499;';
+  const pop = document.createElement('div');
+  pop.id = 'mb_filters_pop';
+  pop.style.cssText = 'position:fixed; bottom:0; left:0; right:0; z-index:1500; background:white; border-radius:14px 14px 0 0; padding:12px; box-shadow:0 -8px 24px rgba(0,0,0,0.2); max-height:85vh; overflow-y:auto;';
+  pop.innerHTML = `
+    <div style="height:4px; width:50px; background:#cbd5e1; border-radius:2px; margin:0 auto 12px;"></div>
+    <div style="font-weight:700; color:var(--deep); margin-bottom:10px; font-size:15px;">🔍 סינונים</div>
+    <div id="mb_filters_holder" style="display:flex; flex-direction:column; gap:10px;"></div>
+    <button class="mb-menu-row mb-menu-cancel" style="margin-top:14px;">סגור</button>
+  `;
+  scrim.onclick = () => closeMobileFilters();
+  document.body.appendChild(scrim);
+  document.body.appendChild(pop);
+  // העברה זמנית של ה־.filters לתוך הפופאפ
+  const holder = pop.querySelector('#mb_filters_holder');
+  filters.dataset.mbReturnTo = 'restore';
+  filters.dataset.mbStyleDisplay = filters.style.display || '';
+  filters.style.display = 'flex';
+  holder.appendChild(filters);
+
+  pop.querySelector('.mb-menu-cancel').onclick = closeMobileFilters;
+}
+
+function closeMobileFilters() {
+  const pop = document.getElementById('mb_filters_pop');
+  const scrim = document.getElementById('mb_filters_scrim');
+  const filters = document.querySelector('.filters');
+  if (filters && filters.dataset.mbReturnTo === 'restore') {
+    // החזרה למקום המקורי
+    const main = document.querySelector('main');
+    main.insertBefore(filters, main.firstChild);
+    filters.style.display = filters.dataset.mbStyleDisplay || '';
+    delete filters.dataset.mbReturnTo;
+    delete filters.dataset.mbStyleDisplay;
+  }
+  if (pop) pop.remove();
+  if (scrim) scrim.remove();
+}
+
+// בר סטטיסטיקה דק במובייל
+function updateMobileStatsBar() {
+  const bar = document.getElementById('mobile_stats_bar');
+  if (!bar) return;
+  const total = ROWS.length;
+  const placed = ROWS.filter(r => r.placement_seminar && !['עדיין לא שובץ','מקדמת',''].includes(r.placement_seminar)).length;
+  const unplaced = total - placed;
+  bar.innerHTML = `
+    <span>סה״כ <b>${total}</b></span>
+    <span>שובצו <b>${placed}</b></span>
+    <span>לא שובצו <b>${unplaced}</b></span>
+  `;
 }
 
 // ============================================================
