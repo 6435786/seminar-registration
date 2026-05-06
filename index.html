@@ -4550,41 +4550,52 @@ async function showHistory(tab) {
     });
 
     const lines = [];
-    if (counts.girls_added) lines.push(`<b>${counts.girls_added}</b> תלמידות נוספו`);
-    if (counts.girls_deleted) lines.push(`<b>${counts.girls_deleted}</b> תלמידות נמחקו`);
     const totalRegsAdded = counts.regs_added.pref_1 + counts.regs_added.pref_2 + counts.regs_added.advance;
     if (totalRegsAdded) lines.push(`<b>${totalRegsAdded}</b> רישומי העדפות חדשים`);
     if (counts.regs_updated_seminar) lines.push(`<b>${counts.regs_updated_seminar}</b> שינויי סמינר בהעדפות`);
     if (counts.regs_updated_response) lines.push(`<b>${counts.regs_updated_response}</b> תשובות עודכנו`);
     if (counts.regs_updated_class) lines.push(`<b>${counts.regs_updated_class}</b> ערכי "א-ו" עודכנו`);
-    if (counts.regs_deleted) lines.push(`<b>${counts.regs_deleted}</b> רישומים נמחקו`);
     if (counts.plc_added) lines.push(`<b>${counts.plc_added}</b> שיבוצים חדשים`);
     if (counts.plc_updated_seminar) lines.push(`<b>${counts.plc_updated_seminar}</b> שינויי סמינר שיבוץ`);
     if (counts.plc_updated_status) lines.push(`<b>${counts.plc_updated_status}</b> שינויי סטטוס`);
     if (counts.plc_updated_final) lines.push(`<b>${counts.plc_updated_final}</b> שינויי "סופי"`);
-    if (counts.plc_deleted) lines.push(`<b>${counts.plc_deleted}</b> שיבוצים נמחקו`);
     if (counts.notes_updated) lines.push(`<b>${counts.notes_updated}</b> הערות עודכנו`);
     if (counts.personal_updated) lines.push(`<b>${counts.personal_updated}</b> שינויי פרטים אישיים`);
 
-    // top 3 סמינרים שאליהם הוסיפו השמך
-    const topSemList = Object.entries(topPlacements).sort((a,b) => b[1]-a[1]).slice(0, 3);
-    let extra = '';
-    if (topSemList.length) {
-      const top = topSemList.map(([sid, n]) => {
-        const sem = semByID[sid];
-        return `<span style="color:var(--accent-alt); font-weight:600">${sem ? sem.name : '#'+sid}</span> (${n})`;
-      }).join(', ');
-      extra = `<div style="margin-top:8px; padding-top:8px; border-top:1px dashed #cbd5e1; color:var(--text); font-size:12px;">סמינרים שעודכנו הכי הרבה: ${top}</div>`;
+    // מצב נוכחי — נספר מ־ROWS
+    let currentLine = '';
+    const rows = ROWS || [];
+    if (rows.length) {
+      // בנות עם רישום העדפה אבל בלי תשובה
+      const noResponse = rows.filter(r => {
+        const regs = r._regs || [];
+        return regs.some(reg => reg.seminar_id && !reg.response);
+      }).length;
+      // בנות שמחכות לשיבוץ — אין שיבוץ או שיש סטטוס שאינו "סופי" וגם לא חיובי
+      const POSITIVE = new Set(['חיובי', 'שיבוץ בהסכמה']);
+      const waitingPlacement = rows.filter(r => {
+        const plc = r._plc;
+        if (!plc || !plc.seminar_id) return true;  // אין שיבוץ
+        return !POSITIVE.has(plc.status);  // יש שיבוץ אבל לא חיובי
+      }).length;
+      const parts = [];
+      if (noResponse) parts.push(`<b>${noResponse}</b> בנות ללא תשובה`);
+      if (waitingPlacement) parts.push(`<b>${waitingPlacement}</b> בנות מחכות לשיבוץ`);
+      if (parts.length) {
+        currentLine = `<div style="margin-top:10px; padding-top:8px; border-top:1px dashed #cbd5e1; color:var(--text); font-size:13px;">⏳ נכון לעכשיו: ${parts.join(' · ')}</div>`;
+      }
     }
 
-    if (!lines.length) return '';
+    if (!lines.length && !currentLine) return '';
     return `
       <div style="background:linear-gradient(to left, #f0f9ff, #e0f2fe); padding:14px 18px; border-radius:10px; border:1px solid #bae6fd; margin:12px 14px;">
-        <div style="font-weight:700; color:var(--deep); font-size:14px; margin-bottom:8px;">📊 סיכום פעילות (${entries.length} פעולות)</div>
-        <div style="display:flex; flex-wrap:wrap; gap:6px 16px; font-size:13px; color:var(--text);">
-          ${lines.map(l => `<span>• ${l}</span>`).join('')}
-        </div>
-        ${extra}
+        ${lines.length ? `
+          <div style="font-weight:700; color:var(--deep); font-size:14px; margin-bottom:8px;">📊 סיכום פעילות (${entries.length} פעולות)</div>
+          <div style="display:flex; flex-wrap:wrap; gap:6px 16px; font-size:13px; color:var(--text);">
+            ${lines.map(l => `<span>• ${l}</span>`).join('')}
+          </div>
+        ` : ''}
+        ${currentLine}
       </div>
     `;
   }
