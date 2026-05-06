@@ -1956,27 +1956,8 @@ function applyFilters() {
         else if (sibCats.some(c => regularSet.has(c))) matches = true;
       }
       if (hasSpecial && !matches) {
-        const selectedSeminarNames = new Set([
-          ...(FILTER_STATE.any_seminar || []),
-          ...(FILTER_STATE.placement_seminar || []),
-          ...((COL_FILTERS.placement_seminar || new Set())),
-          ...((COL_FILTERS.pref_1 || new Set())),
-          ...((COL_FILTERS.pref_2 || new Set())),
-          ...((COL_FILTERS.advance_seminar || new Set())),
-        ]);
-        // אם נבחר סמינר — הקודים שלו; אחרת — של כל הסמינרים
-        const seminarCodes = new Set();
-        if (selectedSeminarNames.size) {
-          DATA.seminars.forEach(s => {
-            if (selectedSeminarNames.has(s.name) && s.institution_code) seminarCodes.add(s.institution_code);
-          });
-        } else {
-          DATA.seminars.forEach(s => {
-            if (s.institution_code) seminarCodes.add(s.institution_code);
-          });
-        }
-        const sibCodes = (r.siblings || []).map(s => s.institution_code).filter(Boolean);
-        if (sibCodes.some(c => seminarCodes.has(c))) matches = true;
+        // לוגיקה חדשה: בודקים האם לבת יש אחות בסמינר ש**היא עצמה** מקושרת אליו
+        if (_hasSiblingInGirlSeminar(r)) matches = true;
       }
       if (!matches) return false;
     }
@@ -3713,9 +3694,24 @@ function renderDetailsPanel() {
   `;
 }
 
+// helper: קודי סמינר של בת — לפי כל ההעדפות + שיבוץ
+function _girlSeminarCodes(r) {
+  const names = [r.pref_1, r.pref_2, r.advance_seminar, r.placement_seminar].filter(Boolean);
+  const codes = new Set();
+  names.forEach(name => {
+    const sem = (DATA.seminars || []).find(s => s.name === name);
+    if (sem && sem.institution_code) codes.add(sem.institution_code);
+  });
+  return codes;
+}
+function _hasSiblingInGirlSeminar(r) {
+  const girlCodes = _girlSeminarCodes(r);
+  if (!girlCodes.size) return false;
+  return (r.siblings || []).some(s => s.institution_code && girlCodes.has(s.institution_code));
+}
+
 // סיכום כללי: כל הסמינרים
 function computeAggregateMetrics(data) {
-  const seminarCodes = new Set(DATA.seminars.map(s => s.institution_code).filter(Boolean));
   const registered = data.filter(r => (r._regs || []).length > 0).length;
   const pref1 = data.filter(r => r.pref_1).length;
   // חיובי — תלמידות שיש להן לפחות תשובה חיובית
@@ -3724,7 +3720,8 @@ function computeAggregateMetrics(data) {
   // "משיבוץ עיריה" = כל סטטוס שאינו ריק / חיובי / תושב חוץ
   const MUNI_EXCLUDE = new Set(['חיובי', 'תושב חוץ']);
   const muni = data.filter(r => r.placement_status && !MUNI_EXCLUDE.has(r.placement_status)).length;
-  const sisters = data.filter(r => (r.siblings || []).some(s => s.institution_code && seminarCodes.has(s.institution_code))).length;
+  // אחיות באותו מוסד — בנות שיש להן אחות בסמינר של הבת עצמה
+  const sisters = data.filter(_hasSiblingInGirlSeminar).length;
   // חלוקה לקבוצות של משובצות
   const sectors = {};
   const affiliations = {};
@@ -3754,8 +3751,9 @@ function computeSeminarMetrics(data, seminarName) {
   const placed = placedList.length;
   const MUNI_EXCLUDE = new Set(['חיובי', 'תושב חוץ']);
   const muni = placedList.filter(r => r.placement_status && !MUNI_EXCLUDE.has(r.placement_status)).length;
+  // אחיות באותו מוסד — רק בנות שמשובצות לסמינר הזה ויש להן אחות בו
   const sisters = semCode
-    ? data.filter(r => (r.siblings || []).some(s => s.institution_code === semCode)).length
+    ? placedList.filter(r => (r.siblings || []).some(s => s.institution_code === semCode)).length
     : 0;
   const sectors = {};
   const affiliations = {};
