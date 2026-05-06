@@ -1289,6 +1289,16 @@
 
     /* הצג את ה־mobile-toolbar */
     .mobile-toolbar { display: block; padding: 6px 8px 8px; }
+    .mb-search-row {
+      display: grid; grid-template-columns: 1fr auto; gap: 6px; margin-bottom: 6px;
+    }
+    .mb-search-row input[type=search] {
+      padding: 10px 12px; border: 1px solid #bae6fd; border-radius: 8px;
+      font-family: inherit; font-size: 14px; min-height: 42px;
+    }
+    .mb-search-row .mb-large-btn {
+      width: auto; padding: 10px 16px;
+    }
     .mb-icon-row {
       display: flex; gap: 6px; margin-top: 6px;
     }
@@ -1406,7 +1416,10 @@
   </div>
   <!-- שורות מובייל בלבד -->
   <div class="mobile-toolbar">
-    <button class="mb-large-btn" id="mb_admin_menu">⚙ ניהול</button>
+    <div class="mb-search-row">
+      <input type="search" id="mb_search" placeholder="🔎 חיפוש..." autocomplete="off">
+      <button class="mb-large-btn" id="mb_admin_menu">⚙ ניהול</button>
+    </div>
     <div class="mb-icon-row">
       <button class="mb-icon-btn mb-edit-btn" id="mb_edit_toggle" title="עריכה">
         <span class="mb-edit-off">🚫</span>
@@ -6611,10 +6624,82 @@ function setupMobileToolbar() {
   const x = _mb('mb_export');   if (x) x.addEventListener('click', exportMainTableToExcel);
   const a = _mb('mb_admin_menu'); if (a) a.addEventListener('click', openMobileAdminMenu);
   const f = _mb('mb_filters');  if (f) f.addEventListener('click', openMobileFilters);
-  const v = _mb('mb_views');    if (v) v.addEventListener('click', () => {
-    const pop = document.getElementById('hdr_views_pop');
-    openViewsPicker(v, pop);
-  });
+  const v = _mb('mb_views');    if (v) v.addEventListener('click', openMobileViews);
+
+  // סנכרון חיפוש מובייל ↔ חיפוש ראשי
+  const mbSearch = _mb('mb_search');
+  const mainSearch = document.getElementById('q');
+  if (mbSearch && mainSearch) {
+    mbSearch.addEventListener('input', () => {
+      mainSearch.value = mbSearch.value;
+      mainSearch.dispatchEvent(new Event('input'));
+    });
+    // אם ה־q הראשי השתנה (למשל מאיפוס) — לעדכן גם את המובייל
+    mainSearch.addEventListener('input', () => {
+      if (document.activeElement !== mbSearch) mbSearch.value = mainSearch.value;
+    });
+  }
+}
+
+function openMobileViews() {
+  const existing = document.getElementById('mb_views_pop');
+  if (existing) { existing.remove(); document.getElementById('mb_views_scrim')?.remove(); return; }
+
+  const views = (typeof getSavedViews === 'function') ? getSavedViews() : [];
+  const myViews = views.filter(v => v.user_id === CURRENT_USER.id);
+  const sharedByOthers = views.filter(v => v.user_id !== CURRENT_USER.id);
+
+  const renderRow = (v) => {
+    const canDelete = v.user_id === CURRENT_USER.id || isAdmin();
+    return `
+      <div style="display:flex; align-items:center; gap:6px; padding:10px 12px; background:#f0f9ff; border:1px solid #e0f2fe; border-radius:8px; margin-bottom:6px;">
+        <span style="flex:1; font-weight:600; cursor:pointer;" onclick="loadView(${v.id}); document.getElementById('mb_views_pop')?.remove(); document.getElementById('mb_views_scrim')?.remove();">${v.name}</span>
+        ${v.is_shared ? '<span style="font-size:10px; color:#0c4a6e; background:#bae6fd; padding:2px 6px; border-radius:3px;">משותפת</span>' : ''}
+        ${canDelete ? `<button class="mini-btn danger" onclick="deleteView(${v.id})">×</button>` : ''}
+      </div>
+    `;
+  };
+
+  const scrim = document.createElement('div');
+  scrim.id = 'mb_views_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:1499;';
+  const pop = document.createElement('div');
+  pop.id = 'mb_views_pop';
+  pop.style.cssText = 'position:fixed; bottom:0; left:0; right:0; z-index:1500; background:white; border-radius:14px 14px 0 0; padding:12px; box-shadow:0 -8px 24px rgba(0,0,0,0.2); max-height:85vh; overflow-y:auto;';
+  pop.innerHTML = `
+    <div style="height:4px; width:50px; background:#cbd5e1; border-radius:2px; margin:0 auto 12px;"></div>
+    <div style="font-weight:700; color:var(--deep); margin-bottom:10px; font-size:15px;">🔖 תצוגות שמורות</div>
+    <button class="mb-menu-row" id="mb_save_view_btn" style="background:#0284c7; color:white; border:0;">💾 שמור תצוגה נוכחית</button>
+    ${myViews.length ? `
+      <div style="font-weight:600; margin:10px 0 6px; font-size:13px; color:var(--deep);">שלי:</div>
+      ${myViews.map(renderRow).join('')}
+    ` : ''}
+    ${sharedByOthers.length ? `
+      <div style="font-weight:600; margin:10px 0 6px; font-size:13px; color:var(--deep);">משותפות ע״י אחרים:</div>
+      ${sharedByOthers.map(renderRow).join('')}
+    ` : ''}
+    ${!myViews.length && !sharedByOthers.length ? '<div style="color:var(--muted); font-size:12px; padding:8px; text-align:center;">אין תצוגות שמורות עדיין</div>' : ''}
+    <button class="mb-menu-row mb-menu-cancel" style="margin-top:12px;">סגור</button>
+  `;
+  scrim.onclick = () => { pop.remove(); scrim.remove(); };
+  document.body.appendChild(scrim);
+  document.body.appendChild(pop);
+
+  pop.querySelector('#mb_save_view_btn').onclick = async () => {
+    const name = prompt('שם התצוגה:');
+    if (!name) return;
+    const shareConfirm = confirm('לשתף את התצוגה עם שאר המשתמשים?\n\nאישור = משותפת.\nביטול = רק לך.');
+    const { error } = await sb.from('saved_views').insert({
+      user_id: CURRENT_USER.id, name,
+      state: getCurrentFilterState(), is_shared: shareConfirm,
+    });
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    await loadSavedViewsFromDB();
+    pop.remove(); scrim.remove();
+    toast('נשמר ✓');
+    openMobileViews();
+  };
+  pop.querySelector('.mb-menu-cancel').onclick = () => { pop.remove(); scrim.remove(); };
 }
 
 function openMobileAdminMenu(e) {
