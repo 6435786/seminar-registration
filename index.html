@@ -1385,16 +1385,16 @@ const ALL_COLS = [
   { group: 'זיהוי', key: 'first_name',       label: 'שם',      width: 110, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'first_name' } },
   // מגזר/קהילה
   { group: 'קבוצה', key: 'sector_bucket',     label: 'קבוצה',   width: 100, default: true,  edit: { type: 'readonly' } },
-  { group: 'קבוצה', key: 'sector',            label: 'שיוך',    width: 80,  default: false, edit: { type: 'enum', values: ENUM_AFFILIATION, warn: true, table: 'girls', dbField: 'sector' } },
-  { group: 'קבוצה', key: 'community',         label: 'קהילה',   width: 110, default: true,  edit: { type: 'text', warn: true, table: 'girls', dbField: 'community' } },
+  { group: 'קבוצה', key: 'sector',            label: 'שיוך',    width: 80,  default: true,  edit: { type: 'enum', values: ENUM_AFFILIATION, warn: true, table: 'girls', dbField: 'sector' } },
+  { group: 'קבוצה', key: 'community',         label: 'קהילה',   width: 110, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'community' } },
   { group: 'קבוצה', key: 'source_school_name',label: 'יסודי',   width: 140, default: true,  edit: { type: 'source_school', warn: true } },
   { group: 'קבוצה', key: 'source_school_code',label: 'סמל יסודי', width: 70, default: false, edit: { type: 'readonly' } },
   // כתובת
-  { group: 'כתובת', key: 'address_street',   label: 'רחוב',    width: 130, default: true,  edit: { type: 'text', warn: true, table: 'girls', dbField: 'address_street' } },
-  { group: 'כתובת', key: 'address_number',   label: "מס'",     width: 50,  default: true,  edit: { type: 'text', warn: true, table: 'girls', dbField: 'address_number' } },
+  { group: 'כתובת', key: 'address_street',   label: 'רחוב',    width: 130, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'address_street' } },
+  { group: 'כתובת', key: 'address_number',   label: "מס'",     width: 50,  default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'address_number' } },
   // הורים
   { group: 'הורים', key: 'mother_name',      label: 'שם אם',   width: 120, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'mother_name' } },
-  { group: 'הורים', key: 'mother_phone',     label: 'טלפון אם',width: 110, default: true,  edit: { type: 'text', warn: true, table: 'girls', dbField: 'mother_phone' } },
+  { group: 'הורים', key: 'mother_phone',     label: 'טלפון אם',width: 110, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'mother_phone' } },
   { group: 'הורים', key: 'father_name',      label: 'שם אב',   width: 120, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'father_name' } },
   { group: 'הורים', key: 'father_phone',     label: 'טלפון אב',width: 110, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'father_phone' } },
   { group: 'הורים', key: 'email',            label: 'מייל',    width: 140, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'email' } },
@@ -1405,17 +1405,26 @@ const ALL_COLS = [
   { group: 'רישום', key: 'pref_2',           label: 'העדפה 2', width: 110, default: true,  edit: { type: 'seminar', table: 'registrations', preference_order: 'pref_2' } },
   { group: 'רישום', key: 'pref_2_response',  label: 'תשובה 2', width: 80,  default: true, badge: true, edit: { type: 'enum', values: ENUM_RESPONSE, table: 'registrations', preference_order: 'pref_2', dbField: 'response' } },
   { group: 'רישום', key: 'pref_2_class',     label: 'א-ו 2',   width: 55,  default: true, edit: { type: 'enum', values: ENUM_CLASS, table: 'registrations', preference_order: 'pref_2', dbField: 'class_type' } },
-  { group: 'רישום', key: 'advance_seminar',  label: 'מקדמת',   width: 110, default: false, edit: { type: 'seminar', table: 'registrations', preference_order: 'advance' } },
+  { group: 'רישום', key: 'advance_seminar',  label: 'מקדמת',   width: 110, default: true,  edit: { type: 'seminar', table: 'registrations', preference_order: 'advance' } },
   // שיבוץ — ללא warn (שגרה)
   { group: 'שיבוץ', key: 'placement_seminar',label: 'שיבוץ',   width: 110, default: true, bold: true, edit: { type: 'seminar', table: 'placements' } },
   { group: 'שיבוץ', key: 'placement_status', label: 'סטטוס',   width: 100, default: true, badge: true, edit: { type: 'enum', values: ENUM_STATUS, table: 'placements', dbField: 'status' } },
-  { group: 'שיבוץ', key: 'notes',            label: 'הערה',      width: 150, default: false, edit: { type: 'text', table: 'girls', dbField: 'notes' } },
+  { group: 'שיבוץ', key: 'notes',            label: 'הערה',      width: 150, default: true,  edit: { type: 'text', table: 'girls', dbField: 'notes' } },
   // אחים
   { group: 'אחים', key: 'sibling_inst_display', label: 'מוסדות אחים', width: 180, default: true, edit: { type: 'readonly' }, siblings: true, filterFromKey: 'sibling_institutions' },
 ];
 
+// גרסה של ברירות המחדל — מעלים מספר → איפוס חד־פעמי לכל המשתמשים הקיימים
+const COL_PREFS_VERSION = 2;
 function loadColPrefs() {
   try {
+    const storedVersion = parseInt(localStorage.getItem('col_prefs_version') || '0');
+    if (storedVersion < COL_PREFS_VERSION) {
+      // איפוס חד־פעמי — מוחק את ההעדפות הישנות, מעלה גרסה
+      localStorage.removeItem('col_prefs');
+      localStorage.setItem('col_prefs_version', String(COL_PREFS_VERSION));
+      return ALL_COLS.map(c => ({ ...c, visible: c.default }));
+    }
     const saved = JSON.parse(localStorage.getItem('col_prefs') || '{}');
     return ALL_COLS.map(c => ({ ...c, visible: saved[c.key] ?? c.default }));
   } catch { return ALL_COLS.map(c => ({ ...c, visible: c.default })); }
