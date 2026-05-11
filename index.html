@@ -639,6 +639,48 @@
   .modal .form-actions .delete-btn { background: #fbe9e9; color: var(--bad); margin-right: auto; }
   .modal .form-actions .delete-btn:hover { background: var(--bad); color: white; }
 
+  /* Bulk actions */
+  td.row-check, th.row-check {
+    width: 32px; padding: 0; text-align: center;
+    background: white !important;
+  }
+  td.row-check input, th.row-check input {
+    width: 18px; height: 18px; cursor: pointer;
+  }
+  .bulk-bar {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%);
+    background: var(--deep); color: white;
+    padding: 10px 16px; border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    display: none; align-items: center; gap: 14px;
+    z-index: 2000; max-width: 95vw;
+  }
+  .bulk-bar.open { display: flex; }
+  .bulk-bar .bulk-count {
+    display: flex; align-items: baseline; gap: 4px;
+    padding-left: 12px; border-left: 1px solid rgba(255,255,255,0.25);
+  }
+  .bulk-bar .bulk-count #bulk_count_num {
+    font-size: 22px; font-weight: 800;
+  }
+  .bulk-bar .bulk-actions { display: flex; gap: 6px; flex-wrap: wrap; }
+  .bulk-btn {
+    padding: 8px 14px; background: white; color: var(--deep);
+    border: 0; border-radius: 6px; font-family: inherit;
+    font-size: 13px; font-weight: 600; cursor: pointer;
+  }
+  .bulk-btn:hover { background: #f0f9ff; }
+  .bulk-btn-ghost {
+    padding: 8px 14px; background: transparent; color: white;
+    border: 1px solid rgba(255,255,255,0.4); border-radius: 6px;
+    font-family: inherit; font-size: 13px; cursor: pointer;
+  }
+  .bulk-btn-ghost:hover { background: rgba(255,255,255,0.1); }
+  @media (max-width: 640px) {
+    .bulk-bar { flex-direction: column; align-items: stretch; }
+    .bulk-bar .bulk-count { border-left: 0; padding-left: 0; justify-content: center; padding-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.25); }
+  }
+
   /* Row delete × button */
   td.row-del {
     width: 30px; text-align: center; color: var(--bad);
@@ -1629,6 +1671,20 @@
 
 <div class="toast" id="toast"></div>
 
+<!-- פס פעולות מרובות (Bulk) — מופיע כשנבחרות בנות -->
+<div class="bulk-bar" id="bulk_bar">
+  <div class="bulk-count">
+    <span id="bulk_count_num">0</span>
+    <span>נבחרו</span>
+  </div>
+  <div class="bulk-actions">
+    <button class="bulk-btn" onclick="openBulkPlacement()">שנה שיבוץ</button>
+    <button class="bulk-btn" onclick="openBulkStatus()">שנה סטטוס</button>
+    <button class="bulk-btn" onclick="openBulkNotes()">שנה הערה</button>
+    <button class="bulk-btn-ghost" onclick="clearBulkSelection()">נקה בחירה</button>
+  </div>
+</div>
+
 <main>
   <div class="filters" style="position:relative">
     <div class="search-wrap">
@@ -1895,6 +1951,7 @@ let COLS = loadColPrefs();
 
 // מצב עריכה — תמיד כבוי בטעינה (לא זוכר ברענון)
 let EDIT_MODE = false;
+const BULK_SELECTED = new Set();  // ת.ז של בנות שנבחרו לפעולה מרובה
 
 function setEditMode(on) {
   EDIT_MODE = !!on;
@@ -2238,9 +2295,24 @@ function renderHeader() {
       <span class="th-filter${active}" data-filter-col="${c.key}" title="סינון בעמודה">▼</span>
     </th>`;
   }).join('');
-  // במצב עריכה — כותרת ריקה למחיקה
+  // עמודת bulk select בכותרת
+  if (EDIT_MODE) {
+    html = `<th class="row-check"><input type="checkbox" id="bulk_master_cb" title="סמן את כל הבנות הנראות"></th>` + html;
+  }
   if (EDIT_MODE && canDeleteGirls()) html += '<th style="width:34px"></th>';
   thead.innerHTML = html;
+  // master checkbox handler
+  const masterCb = document.getElementById('bulk_master_cb');
+  if (masterCb) {
+    masterCb.checked = VIEW.length > 0 && VIEW.every(r => BULK_SELECTED.has(r.national_id));
+    masterCb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (masterCb.checked) VIEW.forEach(r => BULK_SELECTED.add(r.national_id));
+      else VIEW.forEach(r => BULK_SELECTED.delete(r.national_id));
+      render();  // יציג מחדש עם הסימון
+      updateBulkBar();
+    });
+  }
 
   // Sort click
   thead.querySelectorAll('.th-label').forEach(el => {
@@ -2404,6 +2476,7 @@ function render() {
   const canDel = canDeleteGirls();
   tbody.innerHTML = VIEW.map(r => `
     <tr data-nid="${r.national_id}">
+      ${EDIT_MODE ? `<td class="row-check"><input type="checkbox" class="bulk-cb" data-nid="${r.national_id}" ${BULK_SELECTED.has(r.national_id) ? 'checked' : ''}></td>` : ''}
       ${visible.map(c => `<td class="${cellClass(c)}" data-key="${c.key}">${renderCell(c, r)}</td>`).join('')}
       ${EDIT_MODE && canDel ? `<td class="row-del" title="מחק תלמידה" data-del="${r.national_id}">×</td>` : ''}
     </tr>
@@ -2411,11 +2484,23 @@ function render() {
 
   // Click — תלוי במצב עריכה:
   // מצב עריכה דולק + תא editable → עריכה inline
+  // checkbox bulk select
+  tbody.querySelectorAll('.bulk-cb').forEach(cb => {
+    cb.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const nid = cb.dataset.nid;
+      if (cb.checked) BULK_SELECTED.add(nid);
+      else BULK_SELECTED.delete(nid);
+      updateBulkBar();
+    });
+  });
+
   // מצב עריכה כבוי (או תא readonly) → פתיחת מודל
   tbody.querySelectorAll('tr').forEach(tr => {
     tr.addEventListener('click', (e) => {
       const td = e.target.closest('td');
       if (td && td.classList.contains('editing')) return;
+      if (td && td.classList.contains('row-check')) return;  // קליק על תיבת סימון
       if (td && td.classList.contains('row-del')) {
         e.stopPropagation();
         deleteGirlFromRow(td.dataset.del);
@@ -3892,6 +3977,142 @@ function switchView(view) {
   if (view === 'kanban') {
     renderKanban();
   }
+}
+
+// =============== Bulk operations ===============
+function updateBulkBar() {
+  const bar = document.getElementById('bulk_bar');
+  if (!bar) return;
+  if (BULK_SELECTED.size > 0 && EDIT_MODE) {
+    bar.classList.add('open');
+    document.getElementById('bulk_count_num').textContent = BULK_SELECTED.size;
+  } else {
+    bar.classList.remove('open');
+  }
+}
+
+function clearBulkSelection() {
+  BULK_SELECTED.clear();
+  render();
+  renderHeader();
+  updateBulkBar();
+}
+
+function _bulkSelectedGirls() {
+  return ROWS.filter(r => BULK_SELECTED.has(r.national_id));
+}
+
+async function openBulkPlacement() {
+  const girls = _bulkSelectedGirls();
+  if (!girls.length) return;
+  const sems = (DATA.seminars || []).map(s => s.name).filter(Boolean);
+  const choice = await _bulkChoosePopup('שנה שיבוץ', sems, true);
+  if (choice === null) return;
+  const seminarName = choice;
+  const sem = (DATA.seminars || []).find(s => s.name === seminarName);
+  const newSemId = sem ? sem.id : null;
+  if (!confirm(`לעדכן שיבוץ של ${girls.length} בנות ל־"${seminarName || 'ריק'}"?`)) return;
+  await _bulkApply(girls, async (gid) => {
+    const existing = (DATA.placements || []).find(p => p.girl_id === gid);
+    if (existing) {
+      await sb.from('placements').update({ seminar_id: newSemId }).eq('id', existing.id);
+      await auditLog('placements', existing.id, 'update', { seminar_id: existing.seminar_id }, { seminar_id: newSemId });
+    } else {
+      const { data, error } = await sb.from('placements').insert({ girl_id: gid, seminar_id: newSemId, season_id: CURRENT_SEASON_ID }).select().single();
+      if (error) throw error;
+      await auditLog('placements', data.id, 'insert', null, { girl_id: gid, seminar_id: newSemId });
+    }
+  });
+}
+
+async function openBulkStatus() {
+  const girls = _bulkSelectedGirls();
+  if (!girls.length) return;
+  const choice = await _bulkChoosePopup('שנה סטטוס', ENUM_STATUS, true);
+  if (choice === null) return;
+  const newStatus = choice || null;
+  if (!confirm(`לעדכן סטטוס של ${girls.length} בנות ל־"${newStatus || 'ריק'}"?`)) return;
+  await _bulkApply(girls, async (gid) => {
+    const existing = (DATA.placements || []).find(p => p.girl_id === gid);
+    if (existing) {
+      await sb.from('placements').update({ status: newStatus }).eq('id', existing.id);
+      await auditLog('placements', existing.id, 'update', { status: existing.status }, { status: newStatus });
+    } else {
+      const { data, error } = await sb.from('placements').insert({ girl_id: gid, status: newStatus, season_id: CURRENT_SEASON_ID }).select().single();
+      if (error) throw error;
+      await auditLog('placements', data.id, 'insert', null, { girl_id: gid, status: newStatus });
+    }
+  });
+}
+
+async function openBulkNotes() {
+  const girls = _bulkSelectedGirls();
+  if (!girls.length) return;
+  const text = prompt(`הערה חדשה ל־${girls.length} בנות (ריק = נקה את ההערה):`);
+  if (text === null) return;
+  const newNotes = text.trim() || null;
+  if (!confirm(`לעדכן הערה של ${girls.length} בנות ל־"${newNotes || '(ריק)'}"?\n\n⚠️ פעולה זו תדרוס הערות קיימות.`)) return;
+  await _bulkApply(girls, async (gid) => {
+    const oldRow = (DATA.girls || []).find(g => g.id === gid);
+    await sb.from('girls').update({ notes: newNotes }).eq('id', gid);
+    await auditLog('girls', gid, 'update', { notes: oldRow ? oldRow.notes : null }, { notes: newNotes });
+  });
+}
+
+async function _bulkApply(girls, fn) {
+  toast(`מבצע על ${girls.length}...`);
+  let ok = 0, fail = 0;
+  for (const r of girls) {
+    try {
+      await fn(r.id);
+      ok++;
+    } catch (e) {
+      console.error(e);
+      fail++;
+    }
+  }
+  BULK_SELECTED.clear();
+  await reloadData();
+  updateBulkBar();
+  if (fail) toast(`✓ ${ok} עודכנו, ${fail} נכשלו`, 'warn');
+  else toast(`✓ ${ok} בנות עודכנו`);
+}
+
+// פופאפ קטן לבחירת ערך — תומך גם בערך ריק
+function _bulkChoosePopup(title, options, allowEmpty) {
+  return new Promise((resolve) => {
+    const existing = document.getElementById('bulk_choose_pop');
+    if (existing) { existing.remove(); document.getElementById('bulk_choose_scrim')?.remove(); }
+    const scrim = document.createElement('div');
+    scrim.id = 'bulk_choose_scrim';
+    scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.4); z-index:2100;';
+    const pop = document.createElement('div');
+    pop.id = 'bulk_choose_pop';
+    pop.style.cssText = 'position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:white; border-radius:12px; padding:18px; box-shadow:0 12px 32px rgba(0,0,0,0.25); z-index:2101; min-width:320px; max-width:90vw; max-height:80vh; overflow-y:auto;';
+    pop.innerHTML = `
+      <div style="font-weight:700; color:var(--deep); margin-bottom:12px; font-size:15px;">${title}</div>
+      <select id="bulk_choose_select" style="width:100%; padding:10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+        ${allowEmpty ? '<option value="">(ריק)</option>' : ''}
+        ${options.map(o => `<option value="${_esc(o)}">${o}</option>`).join('')}
+      </select>
+      <div style="display:flex; gap:8px; margin-top:14px;">
+        <button class="apply-big" id="bulk_choose_ok" style="flex:1;">אישור</button>
+        <button class="cancel-btn" id="bulk_choose_cancel" style="flex:0 0 auto; padding:10px 16px;">ביטול</button>
+      </div>
+    `;
+    scrim.onclick = () => { pop.remove(); scrim.remove(); resolve(null); };
+    document.body.appendChild(scrim);
+    document.body.appendChild(pop);
+    pop.querySelector('#bulk_choose_ok').onclick = () => {
+      const v = pop.querySelector('#bulk_choose_select').value;
+      pop.remove(); scrim.remove();
+      resolve(v);
+    };
+    pop.querySelector('#bulk_choose_cancel').onclick = () => {
+      pop.remove(); scrim.remove();
+      resolve(null);
+    };
+  });
 }
 
 // =============== Kanban ===============
