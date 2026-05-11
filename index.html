@@ -6853,6 +6853,7 @@ window.addEventListener('afterprint', () => {
   document.body.style.visibility = 'visible';
   renderUserBadge();       // קודם ה־badge (צריך להיות ב־DOM)
   applyRoleVisibility();    // אח"כ הסתרה/מיזוג שורות
+  adjustHeaderForTablet();  // ב־11" — מעבירים 'הרשאות' + avatar לשורה התחתונה
   renderHeader();
   renderColPicker();
   setupAllFilters();
@@ -6958,7 +6959,39 @@ function renderUserBadge() {
   `;
   const top = document.querySelector('.hdr-top');
   if (top) top.appendChild(badge);
+  // ב־11" טאבלט — העבר את 'הרשאות' + avatar ל־hdr-bottom כדי שלא ייווצר שורה ריקה
+  adjustHeaderForTablet();
 }
+
+// ב־1250px (טאבלט 11"), העברת btn_manage_users + user-badge ל־hdr-bottom
+// (אצל אדמין שיש לו 2 שורות בכותרת — מונע wrap לשורה 3 ריקה)
+function adjustHeaderForTablet() {
+  const top = document.querySelector('.hdr-top');
+  const bottom = document.querySelector('.hdr-bottom');
+  if (!top || !bottom) return;
+  // לא־אדמין: hdr-bottom כבר מוסתר (הכל ממוזג בעליון) — אל תיגע
+  if (bottom.style.display === 'none') return;
+  const manageBtn = document.getElementById('btn_manage_users');
+  const badge = document.querySelector('.user-badge');
+  const isTablet = window.innerWidth <= 1250 && window.innerWidth > 500;
+  if (isTablet) {
+    if (manageBtn && manageBtn.parentNode === top) {
+      const lists = document.getElementById('btn_manage_lists');
+      if (lists) bottom.insertBefore(manageBtn, lists);
+      else bottom.appendChild(manageBtn);
+    }
+    if (badge && badge.parentNode === top) {
+      bottom.appendChild(badge);  // ב־RTL flex — נדחק לקצה השמאלי
+    }
+  } else {
+    if (manageBtn && manageBtn.parentNode === bottom) top.appendChild(manageBtn);
+    if (badge && badge.parentNode === bottom) top.appendChild(badge);
+  }
+}
+window.addEventListener('resize', () => {
+  clearTimeout(window._adjHdrTO);
+  window._adjHdrTO = setTimeout(adjustHeaderForTablet, 80);
+});
 
 function toggleUserMenu(e) {
   e.stopPropagation();
