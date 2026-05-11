@@ -6948,7 +6948,7 @@ function renderUserBadge() {
   const badge = document.createElement('div');
   badge.className = 'user-badge';
   badge.innerHTML = `
-    <div class="badge-main" onclick="toggleUserMenu(event)">
+    <div class="badge-main" onclick="toggleUserMenu(event)" title="${(CURRENT_USER.full_name || CURRENT_USER.email).replace(/"/g,'&quot;')}">
       <span class="avatar" style="background:${avatarColor}">${firstLetter}</span>
       <span class="uname">${CURRENT_USER.full_name}</span>
     </div>
@@ -6963,8 +6963,8 @@ function renderUserBadge() {
   adjustHeaderForTablet();
 }
 
-// ב־1250px (טאבלט 11"), העברת btn_manage_users + user-badge ל־hdr-bottom
-// (אצל אדמין שיש לו 2 שורות בכותרת — מונע wrap לשורה 3 ריקה)
+// ב־1250px (טאבלט 11"), העברת btn_manage_users ל־hdr-bottom (ליד 'היסטוריה')
+// ה־user-badge נשאר ב־hdr-top — ב־1250px הוא ממילא רק עיגול קטן (uname מוסתר ב־CSS)
 function adjustHeaderForTablet() {
   const top = document.querySelector('.hdr-top');
   const bottom = document.querySelector('.hdr-bottom');
@@ -6972,20 +6972,16 @@ function adjustHeaderForTablet() {
   // לא־אדמין: hdr-bottom כבר מוסתר (הכל ממוזג בעליון) — אל תיגע
   if (bottom.style.display === 'none') return;
   const manageBtn = document.getElementById('btn_manage_users');
-  const badge = document.querySelector('.user-badge');
   const isTablet = window.innerWidth <= 1250 && window.innerWidth > 500;
   if (isTablet) {
     if (manageBtn && manageBtn.parentNode === top) {
-      const lists = document.getElementById('btn_manage_lists');
-      if (lists) bottom.insertBefore(manageBtn, lists);
+      // ליד 'היסטוריה' — מימין לה (ב־RTL = insertBefore)
+      const history = document.getElementById('btn_history');
+      if (history) bottom.insertBefore(manageBtn, history);
       else bottom.appendChild(manageBtn);
-    }
-    if (badge && badge.parentNode === top) {
-      bottom.appendChild(badge);  // ב־RTL flex — נדחק לקצה השמאלי
     }
   } else {
     if (manageBtn && manageBtn.parentNode === bottom) top.appendChild(manageBtn);
-    if (badge && badge.parentNode === bottom) top.appendChild(badge);
   }
 }
 window.addEventListener('resize', () => {
