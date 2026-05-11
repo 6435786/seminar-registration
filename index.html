@@ -2366,7 +2366,26 @@ function renderCell(col, r) {
     if (!r.sibling_count) return '<span style="color:var(--muted)">—</span>';
     return `<span class="sib-cell" data-nid="${r.national_id}" title="לחץ לפרטי אחים">${v || ''} <span style="color:var(--muted); font-size:11px;">👥</span></span>`;
   }
+  // ת.ז — אם לא תקינה, להציג בצבע שונה
+  if ((col.key === 'national_id' || col.key === 'mother_national_id' || col.key === 'father_national_id') && v && !isValidIsraeliId(v)) {
+    return `<span style="color:#dc2626;" title="ת.ז לא תקינה לפי ספרת ביקורת">${v}</span>`;
+  }
   return v == null ? '' : String(v);
+}
+
+// אימות ת.ז ישראלית — אלגוריתם רשמי של משרד הפנים
+function isValidIsraeliId(id) {
+  if (!id) return false;
+  const s = String(id).replace(/\D/g, '');
+  if (s.length < 5 || s.length > 9) return false;
+  const padded = s.padStart(9, '0');
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let n = parseInt(padded[i]) * ((i % 2) + 1);
+    if (n > 9) n -= 9;
+    sum += n;
+  }
+  return sum % 10 === 0;
 }
 
 function cellClass(col) {
@@ -3486,6 +3505,21 @@ async function saveModal() {
     return;
   }
 
+  // אימות ת.ז — אם השתנתה (או חדשה), בודקים תקינות. רק אזהרה, לא חסימה
+  const idsToCheck = [
+    { key: 'national_id', label: 'ת.ז התלמידה' },
+    { key: 'mother_national_id', label: 'ת.ז האם' },
+    { key: 'father_national_id', label: 'ת.ז האב' },
+  ];
+  for (const f of idsToCheck) {
+    if (pending[f.key] !== undefined && pending[f.key]) {
+      if (!isValidIsraeliId(pending[f.key])) {
+        if (!confirm(`⚠️ ${f.label} "${pending[f.key]}" אינה תקינה לפי ספרת הביקורת.\n\nלשמור בכל זאת? (למשל אם זה תושב חוץ)`)) return;
+        break;  // נשאל פעם אחת בלבד
+      }
+    }
+  }
+
   try {
     if (isNew) {
       await _createNewGirl(pending);
@@ -3631,6 +3665,9 @@ async function reloadData() {
     loadAll('girls'), loadAll('registrations'), loadAll('placements'),
     loadAll('siblings'), loadAll('seminars'), loadAll('source_schools'),
   ]);
+  // מיון סמינרים ומוסדות לפי שם — שיופיעו תמיד בסדר א״ב בדרופדאונים
+  sems.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+  schools.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
   DATA = { girls, registrations: regs, placements: plcs, siblings: sibs, seminars: sems, source_schools: schools };
   buildRows();
   updateStats();
@@ -5503,6 +5540,8 @@ async function main() {
       loadAll('seminars'),
       loadAll('source_schools'),
     ]);
+    sems.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
+    schools.sort((a, b) => (a.name || '').localeCompare(b.name || '', 'he'));
     DATA = { girls, registrations: regs, placements: plcs, siblings: sibs, seminars: sems, source_schools: schools };
     buildRows();
     updateStats();
