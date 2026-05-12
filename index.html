@@ -1148,7 +1148,7 @@
   }
 
   /* ===== טאבלט קטן / 11" — icon-only לכפתורים ארוכים ===== */
-  @media (max-width: 1250px) {
+  @media (max-width: 1366px) {
     /* אפסון השם — השאר רק אייקון עגול */
     .user-badge .uname { display: none; }
     .user-badge .badge-main { padding: 3px 3px 3px 3px; }
@@ -6972,7 +6972,7 @@ function adjustHeaderForTablet() {
   // לא־אדמין: hdr-bottom כבר מוסתר (הכל ממוזג בעליון) — אל תיגע
   if (bottom.style.display === 'none') return;
   const manageBtn = document.getElementById('btn_manage_users');
-  const isTablet = window.innerWidth <= 1250 && window.innerWidth > 500;
+  const isTablet = window.innerWidth <= 1366 && window.innerWidth > 500;
   if (isTablet) {
     if (manageBtn && manageBtn.parentNode === top) {
       // ליד 'היסטוריה' — מימין לה (ב־RTL = insertBefore)
