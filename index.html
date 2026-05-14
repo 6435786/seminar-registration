@@ -4709,6 +4709,12 @@ const LIST_TABS = [
       { key: 'name',             label: 'שם',       type: 'text' },
       { key: 'institution_code', label: 'סמל',      type: 'text' },
       { key: 'category',         label: 'קטגוריה',  type: 'enum', valuesRef: 'ENUM_INST_CAT' },
+      { key: 'contact_title',    label: 'תואר',     type: 'text', group: 'contact' },
+      { key: 'contact_name',     label: 'איש קשר',  type: 'text', group: 'contact' },
+      { key: 'contact_role',     label: 'תפקיד',    type: 'text', group: 'contact' },
+      { key: 'contact_phone',    label: 'טלפון',    type: 'text', group: 'contact' },
+      { key: 'contact_email',    label: 'מייל',     type: 'text', group: 'contact' },
+      { key: '_extra_contacts',  label: 'נוספים',   type: 'extra_contacts', group: 'contact' },
     ] },
   { table: 'source_schools',    label: 'מוסדות',            isEntity: true, sortField: 'name',
     fields: [
@@ -4716,6 +4722,21 @@ const LIST_TABS = [
       { key: 'institution_code', label: 'סמל',       type: 'text' },
       { key: 'sector',           label: 'קטגוריה',   type: 'enum', valuesRef: 'ENUM_INST_CAT' },
       { key: 'gender',           label: 'בנות/בנים', type: 'enum', values: ['בנות', 'בנים'] },
+      { key: 'contact_title',    label: 'תואר',      type: 'text', group: 'contact' },
+      { key: 'contact_name',     label: 'איש קשר',   type: 'text', group: 'contact' },
+      { key: 'contact_role',     label: 'תפקיד',     type: 'text', group: 'contact' },
+      { key: 'contact_phone',    label: 'טלפון',     type: 'text', group: 'contact' },
+      { key: 'contact_email',    label: 'מייל',      type: 'text', group: 'contact' },
+      { key: '_extra_contacts',  label: 'נוספים',    type: 'extra_contacts', group: 'contact' },
+    ] },
+  { table: 'form_templates',    label: 'טפסי דוא"ל',         isEntity: true, sortField: 'sort_order',
+    fields: [
+      { key: 'name',           label: 'שם הטופס',    type: 'text' },
+      { key: 'slug',           label: 'מזהה',        type: 'text', readonly: true },
+      { key: 'recipient_kind', label: 'סוג נמען',    type: 'enum', values: ['parents','seminar','source_school'], readonly: true },
+      { key: 'description',    label: 'הסבר',        type: 'text' },
+      { key: 'file_name',      label: 'קובץ תבנית',  type: 'template_file' },
+      { key: 'show_in_picker', label: 'הצג',         type: 'bool' },
     ] },
 ];
 
@@ -4799,8 +4820,47 @@ async function renderManageLists() {
     }
 
     tab.fields.forEach(f => {
+      // שדות מיוחדים (לא בעמודה רגילה)
+      if (f.type === 'extra_contacts') {
+        const arr = Array.isArray(item.extra_contacts) ? item.extra_contacts : [];
+        const cnt = arr.length;
+        const badge = cnt
+          ? `<span style="background:#0ea5e9; color:white; padding:2px 8px; border-radius:999px; font-size:12px; font-weight:600;">${cnt}</span>`
+          : `<span style="color:var(--muted)">—</span>`;
+        const btn = editing
+          ? `<button class="mini-btn" onclick="openExtraContacts('${tab.table}', ${item.id})" title="נהל אנשי קשר נוספים">✎</button>`
+          : '';
+        cells.push(`<td class="val-cell" style="text-align:center;">${badge} ${btn}</td>`);
+        return;
+      }
+      if (f.type === 'template_file') {
+        const has = !!item.file_path;
+        const display = has
+          ? `<span title="${_esc(item.file_name || '')}" style="color:var(--accent);">✓ ${item.file_name || 'הועלה'}</span>`
+          : `<span style="color:var(--muted)">לא הועלה</span>`;
+        const actions = editing
+          ? `<button class="mini-btn" onclick="uploadTemplateFile(${item.id})" title="העלה/החלף קובץ">📤</button>` +
+            (has ? ` <button class="mini-btn" onclick="downloadTemplateFile(${item.id})" title="הורד קובץ">📥</button>` : '')
+          : (has ? `<button class="mini-btn" onclick="downloadTemplateFile(${item.id})" title="הורד קובץ">📥</button>` : '');
+        cells.push(`<td class="val-cell" style="text-align:center;">${display} ${actions}</td>`);
+        return;
+      }
+      if (f.type === 'bool') {
+        const checked = !!item[f.key];
+        if (editing && !f.readonly) {
+          cells.push(`<td class="val-cell editing" style="text-align:center;">
+            <input type="checkbox" ${checked ? 'checked' : ''}
+              onchange="saveListField('${tab.table}', ${item.id}, '${f.key}', this.checked, ${!checked})"
+              style="width:18px; height:18px; cursor:pointer;">
+          </td>`);
+        } else {
+          cells.push(`<td class="val-cell" style="text-align:center;">${checked ? '✓' : '<span style="color:var(--muted)">—</span>'}</td>`);
+        }
+        return;
+      }
+      // שדות רגילים (text / enum)
       const val = item[f.key];
-      if (!editing) {
+      if (!editing || f.readonly) {
         cells.push(`<td class="val-cell">${val == null || val === '' ? '<span style="color:var(--muted)">—</span>' : val}</td>`);
       } else {
         if (f.type === 'enum') {
@@ -5137,6 +5197,12 @@ function setListTab(i) { _activeListTab = i; renderManageLists(); }
 
 async function addListItem(table) {
   const isEntity = LIST_TABS.find(t => t.table === table).isEntity;
+
+  // form_templates — popup ייעודי
+  if (table === 'form_templates') {
+    return _addTemplatePopup();
+  }
+
   if (isEntity) {
     const name = prompt('שם המוסד/סמינר:');
     if (!name) return;
@@ -5161,6 +5227,19 @@ async function addListItem(table) {
 
 // שמירת שדה בודד מעריכה inline ברשימה
 async function saveListField(table, id, field, newValue, oldValue) {
+  // טיפול ב־boolean (לא להמיר למחרוזת)
+  const tabDefEarly = LIST_TABS.find(t => t.table === table);
+  const fieldDef = tabDefEarly && tabDefEarly.fields.find(f => f.key === field);
+  if (fieldDef && fieldDef.type === 'bool') {
+    if (!!newValue === !!oldValue) return;
+    const { error } = await sb.from(table).update({ [field]: !!newValue }).eq('id', id);
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    toast('עודכן ✓');
+    await loadLookupLists();
+    await renderManageLists();
+    return;
+  }
+
   newValue = (newValue == null) ? '' : String(newValue);
   oldValue = (oldValue == null) ? '' : String(oldValue);
   if (newValue === oldValue) return;
@@ -5224,6 +5303,26 @@ async function saveListField(table, id, field, newValue, oldValue) {
 
 async function deleteListRow(table, id) {
   const tabDef = LIST_TABS.find(t => t.table === table);
+
+  // form_templates — בדיקת שימוש בלוג שליחות + מחיקת קובץ מ־Storage
+  if (table === 'form_templates') {
+    const { count } = await sb.from('email_send_log').select('*', { count: 'exact', head: true }).eq('template_id', id);
+    if (count && count > 0) {
+      alert(`לא ניתן למחוק — תבנית זו שימשה ב־${count} שליחות מתועדות.\nאפשר להוריד מהבחירה ע"י ביטול "הצג".`);
+      return;
+    }
+    if (!confirm('למחוק את התבנית לצמיתות? (הקובץ יימחק גם מהאחסון)')) return;
+    const { data: tpl } = await sb.from('form_templates').select('file_path').eq('id', id).single();
+    if (tpl && tpl.file_path) {
+      await sb.storage.from('form_templates').remove([tpl.file_path]);
+    }
+    const { error } = await sb.from('form_templates').delete().eq('id', id);
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    toast('נמחק');
+    await renderManageLists();
+    return;
+  }
+
   if (tabDef.isEntity) {
     // בדיקת שימוש
     const fkField = table === 'seminars' ? 'seminar_id' : 'source_school_id';
@@ -5446,6 +5545,244 @@ async function deleteListItemWithMove(table, id, usedIn, value) {
   await loadLookupLists();
   await renderManageLists();
   await reloadData();
+}
+
+// ============================================================
+// אנשי קשר נוספים — popup קטן לעריכת extra_contacts (JSONB)
+// ============================================================
+async function openExtraContacts(table, id) {
+  // משוך את הרשומה הנוכחית
+  const { data: row, error } = await sb.from(table).select('id, name, extra_contacts').eq('id', id).single();
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  const contacts = Array.isArray(row.extra_contacts) ? [...row.extra_contacts] : [];
+
+  // צור scrim + popup
+  document.getElementById('extra_contacts_scrim')?.remove();
+  const scrim = document.createElement('div');
+  scrim.id = 'extra_contacts_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2500; display:flex; align-items:center; justify-content:center; padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) scrim.remove(); };
+
+  const pop = document.createElement('div');
+  pop.style.cssText = 'background:white; border-radius:12px; padding:18px 22px; box-shadow:0 16px 40px rgba(0,0,0,0.25); max-width:760px; width:100%; max-height:85vh; overflow-y:auto;';
+
+  function render() {
+    pop.innerHTML = `
+      <div style="display:flex; align-items:center; gap:12px; margin-bottom:14px;">
+        <div style="flex:1;">
+          <div style="font-weight:700; color:var(--deep); font-size:17px;">👥 אנשי קשר נוספים — ${_esc(row.name)}</div>
+          <div style="color:var(--muted); font-size:12px; margin-top:2px;">כל איש קשר נוסף = מכתב נפרד שיישלח אליו אישית</div>
+        </div>
+        <button class="close" onclick="document.getElementById('extra_contacts_scrim').remove();">×</button>
+      </div>
+      <table style="width:100%; font-size:13px;">
+        <thead>
+          <tr style="background:#f0f9ff;">
+            <th style="padding:6px; width:80px;">תואר</th>
+            <th style="padding:6px;">שם</th>
+            <th style="padding:6px;">תפקיד</th>
+            <th style="padding:6px;">טלפון</th>
+            <th style="padding:6px;">מייל</th>
+            <th style="padding:6px; width:34px;"></th>
+          </tr>
+        </thead>
+        <tbody id="ec_tbody">
+          ${contacts.map((c, i) => `
+            <tr>
+              <td style="padding:3px;"><input type="text" value="${_esc(c.title||'')}" data-i="${i}" data-k="title" style="width:100%; padding:5px; border:1px solid var(--border); border-radius:4px;"></td>
+              <td style="padding:3px;"><input type="text" value="${_esc(c.name||'')}" data-i="${i}" data-k="name" style="width:100%; padding:5px; border:1px solid var(--border); border-radius:4px;"></td>
+              <td style="padding:3px;"><input type="text" value="${_esc(c.role||'')}" data-i="${i}" data-k="role" style="width:100%; padding:5px; border:1px solid var(--border); border-radius:4px;"></td>
+              <td style="padding:3px;"><input type="text" value="${_esc(c.phone||'')}" data-i="${i}" data-k="phone" style="width:100%; padding:5px; border:1px solid var(--border); border-radius:4px;"></td>
+              <td style="padding:3px;"><input type="email" value="${_esc(c.email||'')}" data-i="${i}" data-k="email" style="width:100%; padding:5px; border:1px solid var(--border); border-radius:4px;"></td>
+              <td style="padding:3px; text-align:center;"><button class="mini-btn danger" data-rm="${i}" title="מחק">×</button></td>
+            </tr>
+          `).join('') || `<tr><td colspan="6" style="padding:18px; text-align:center; color:var(--muted);">אין אנשי קשר נוספים</td></tr>`}
+        </tbody>
+      </table>
+      <div style="display:flex; gap:8px; margin-top:14px; flex-wrap:wrap;">
+        <button class="save-btn" id="ec_add">+ הוסף איש קשר</button>
+        <button class="apply-big" id="ec_save" style="flex:1;">שמור</button>
+        <button class="cancel-btn" onclick="document.getElementById('extra_contacts_scrim').remove();">ביטול</button>
+      </div>
+    `;
+    // Wire input changes
+    pop.querySelectorAll('input[data-i]').forEach(inp => {
+      inp.oninput = () => {
+        const i = +inp.dataset.i, k = inp.dataset.k;
+        contacts[i][k] = inp.value;
+      };
+    });
+    // Wire delete buttons
+    pop.querySelectorAll('button[data-rm]').forEach(b => {
+      b.onclick = () => {
+        contacts.splice(+b.dataset.rm, 1);
+        render();
+      };
+    });
+    document.getElementById('ec_add').onclick = () => {
+      contacts.push({ title:'', name:'', role:'', phone:'', email:'' });
+      render();
+    };
+    document.getElementById('ec_save').onclick = async () => {
+      // ולידציה — לכל איש קשר נוסף חייב להיות מייל
+      const invalid = contacts.find(c => c.name && !c.email);
+      if (invalid) {
+        toast('לכל איש קשר נוסף חייב להיות מייל (אחרת אי אפשר לשלוח אליו)', 'warn');
+        return;
+      }
+      const cleaned = contacts.filter(c => c.name || c.email);  // השמט שורות ריקות
+      const { error } = await sb.from(table).update({ extra_contacts: cleaned }).eq('id', id);
+      if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+      toast(`נשמרו ${cleaned.length} אנשי קשר נוספים ✓`);
+      scrim.remove();
+      await renderManageLists();
+    };
+  }
+  render();
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+}
+
+// ============================================================
+// הוספת תבנית חדשה — popup ייעודי (slug + שם + סוג נמען)
+// ============================================================
+function _addTemplatePopup() {
+  document.getElementById('add_tpl_scrim')?.remove();
+  const scrim = document.createElement('div');
+  scrim.id = 'add_tpl_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2500; display:flex; align-items:center; justify-content:center; padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) scrim.remove(); };
+
+  const pop = document.createElement('div');
+  pop.style.cssText = 'background:white; border-radius:12px; padding:18px 22px; box-shadow:0 16px 40px rgba(0,0,0,0.25); max-width:480px; width:100%;';
+  pop.innerHTML = `
+    <div style="font-weight:700; color:var(--deep); font-size:17px; margin-bottom:14px;">+ תבנית מכתב חדשה</div>
+    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:4px; color:var(--deep);">שם תצוגה *</label>
+    <input id="tpl_name" type="text" placeholder="לדוגמה: מכתב תזכורת לסמינרים" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; margin-bottom:12px; font-family:inherit;">
+
+    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:4px; color:var(--deep);">סוג נמען *</label>
+    <select id="tpl_kind" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; margin-bottom:12px; font-family:inherit;">
+      <option value="parents">להורים — בת אחת = מייל אחד</option>
+      <option value="seminar">לסמינר — סמינר אחד = מייל אחד עם טבלת בנות</option>
+      <option value="source_school">למוסד יסודי — מוסד אחד = מייל אחד עם טבלת בנות</option>
+    </select>
+
+    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:4px; color:var(--deep);">מזהה (slug, באנגלית, רק אותיות + קו תחתון)</label>
+    <input id="tpl_slug" type="text" placeholder="auto" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; margin-bottom:12px; font-family:'Courier New', monospace; direction:ltr; text-align:left;">
+
+    <label style="display:block; font-size:13px; font-weight:600; margin-bottom:4px; color:var(--deep);">הסבר (אופציונלי)</label>
+    <textarea id="tpl_desc" rows="2" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; margin-bottom:12px; font-family:inherit; resize:vertical;"></textarea>
+
+    <div style="display:flex; gap:8px;">
+      <button class="apply-big" id="tpl_save" style="flex:1;">צור</button>
+      <button class="cancel-btn" onclick="document.getElementById('add_tpl_scrim').remove();">ביטול</button>
+    </div>
+    <div style="margin-top:10px; padding:8px 10px; background:#f0f9ff; border-radius:6px; font-size:12px; color:var(--deep);">
+      💡 אחרי היצירה, יש להעלות את קובץ ה־.docx של התבנית (לחיצה על 📤 בשורה).
+    </div>
+  `;
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+
+  // auto-generate slug from name as user types
+  const nameInp = document.getElementById('tpl_name');
+  const slugInp = document.getElementById('tpl_slug');
+  let slugTouched = false;
+  slugInp.oninput = () => { slugTouched = true; };
+  nameInp.oninput = () => {
+    if (!slugTouched) {
+      // ניסיון להפיק slug מהשם — להוריד ניקוד, להמיר רווחים ל־_, להשאיר עברית/אנגלית
+      const auto = nameInp.value
+        .trim()
+        .toLowerCase()
+        .replace(/[ְ-ׇ]/g, '')  // ניקוד
+        .replace(/\s+/g, '_')
+        .replace(/[^\w֐-׿]/g, '')
+        .substring(0, 32);
+      slugInp.value = auto;
+    }
+  };
+
+  document.getElementById('tpl_save').onclick = async () => {
+    const name = nameInp.value.trim();
+    const slug = (slugInp.value || '').trim().toLowerCase();
+    const kind = document.getElementById('tpl_kind').value;
+    const desc = document.getElementById('tpl_desc').value.trim();
+    if (!name) { toast('שם חובה', 'warn'); return; }
+    if (!slug || !/^[a-z0-9_֐-׿]+$/.test(slug)) { toast('מזהה חייב להכיל רק אותיות, ספרות וקו תחתון', 'warn'); return; }
+
+    const { data: nextOrderRow } = await sb.from('form_templates').select('sort_order').order('sort_order', { ascending: false }).limit(1);
+    const nextOrder = nextOrderRow && nextOrderRow[0] ? (nextOrderRow[0].sort_order || 0) + 10 : 10;
+
+    const { error } = await sb.from('form_templates').insert({
+      slug, name, description: desc || null, recipient_kind: kind, sort_order: nextOrder,
+    });
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    toast('נוספה ✓');
+    scrim.remove();
+    await renderManageLists();
+  };
+}
+
+// ============================================================
+// העלאה/הורדה של קבצי תבנית (form_templates → Supabase Storage)
+// ============================================================
+async function uploadTemplateFile(templateId) {
+  const { data: template, error } = await sb.from('form_templates').select('*').eq('id', templateId).single();
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+  inp.onchange = async () => {
+    const file = inp.files[0];
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith('.docx')) {
+      toast('יש להעלות קובץ .docx בלבד', 'warn');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      toast('קובץ גדול מדי (מקסימום 5MB)', 'warn');
+      return;
+    }
+    toast('מעלה...', 'info');
+
+    // נתיב ב־Storage: templates/<slug>.docx (דריסה בעדכון)
+    const path = `${template.slug}.docx`;
+    const { error: upErr } = await sb.storage.from('form_templates').upload(path, file, {
+      upsert: true,
+      contentType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    if (upErr) { toast('שגיאה בהעלאה: ' + upErr.message, 'warn'); return; }
+
+    const { error: updErr } = await sb.from('form_templates').update({
+      file_path: path,
+      file_name: file.name,
+      file_size: file.size,
+      updated_at: new Date().toISOString(),
+    }).eq('id', templateId);
+    if (updErr) { toast('שגיאה בעדכון רשומה: ' + updErr.message, 'warn'); return; }
+
+    toast(`הועלה: ${file.name} ✓`);
+    await renderManageLists();
+  };
+  inp.click();
+}
+
+async function downloadTemplateFile(templateId) {
+  const { data: template, error } = await sb.from('form_templates').select('*').eq('id', templateId).single();
+  if (error || !template.file_path) { toast('לא הועלה קובץ', 'warn'); return; }
+
+  const { data, error: dlErr } = await sb.storage.from('form_templates').download(template.file_path);
+  if (dlErr) { toast('שגיאה בהורדה: ' + dlErr.message, 'warn'); return; }
+
+  const url = URL.createObjectURL(data);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = template.file_name || `${template.slug}.docx`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  toast('הורד ✓');
 }
 
 // ============================================================
