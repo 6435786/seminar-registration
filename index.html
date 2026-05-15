@@ -13,7 +13,7 @@
 <link rel="apple-touch-icon" href="./icon-192.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Heebo:wght@400;500;600;700;800&family=David+Libre:wght@400;500;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
@@ -5825,32 +5825,30 @@ async function loadLetterhead() {
 }
 
 // בונה את ה־HTML של המכתב לפי תבנית + נתונים
-function buildLetterHTML(template, data, letterheadDataUrl) {
-  // A4: 210mm × 297mm. ב־96dpi: 794 × 1123 px. בלוקאל אצלנו נעבוד ב־px.
-  // הניירת מכסה את כל הדף, הטקסט מעל באזורים בטוחים.
+// הניירת **לא** ב־HTML — היא מתווספת ל־PDF ישירות ברזולוציה מקורית.
+// ה־HTML רק טקסט שקוף שמונח מעל הניירת.
+function buildLetterHTML(template, data) {
   const A4_W = 794, A4_H = 1123;
 
-  // אזור בטוח: בערך 8% מלמעלה (אחרי הלוגו), 12% מלמטה (לפני הפוטר)
-  const PAD_TOP = 145;    // ~18%
-  const PAD_BOTTOM = 130; // ~12%
-  const PAD_RIGHT = 75;
-  const PAD_LEFT = 75;
+  // אזור בטוח: אחרי הלוגו למעלה, לפני הפוטר למטה
+  const PAD_TOP = 155;
+  const PAD_BOTTOM = 145;
+  const PAD_RIGHT = 85;
+  const PAD_LEFT = 85;
 
-  // סגנון משותף
+  // סגנון משותף — רקע שקוף, פונט David Libre (חופשי, דומה ל־David הקלאסי)
   const baseStyle = `
     width: ${A4_W}px;
     height: ${A4_H}px;
-    background-image: url('${letterheadDataUrl}');
-    background-size: 100% 100%;
-    background-repeat: no-repeat;
-    font-family: 'Heebo', 'David', Arial, sans-serif;
+    background: transparent;
+    font-family: 'David Libre', 'David', 'Times New Roman', serif;
     direction: rtl;
     text-align: right;
     color: #000;
     position: relative;
     box-sizing: border-box;
     padding: ${PAD_TOP}px ${PAD_RIGHT}px ${PAD_BOTTOM}px ${PAD_LEFT}px;
-    line-height: 1.55;
+    line-height: 1.5;
     font-size: 14px;
   `;
 
@@ -5865,12 +5863,12 @@ function buildLetterHTML(template, data, letterheadDataUrl) {
   `;
 
   const seminarSignature = `
-    <div style="margin-top: 22px; font-size: 13px;">
+    <div style="margin-top: 22px; font-size: 14px;">
       <div>בברכה,</div>
       <div style="font-weight: 700; margin-top: 4px;">יהודה קורנבליט</div>
       <div>מנהל אגף החינוך</div>
     </div>
-    <div style="margin-top: 18px; font-size: 11px; color: #333;">
+    <div style="margin-top: 18px; font-size: 11.5px; color: #222;">
       <div style="font-weight: 600;">העתקים:</div>
       <div>הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך</div>
       <div>גב' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך</div>
@@ -5879,16 +5877,46 @@ function buildLetterHTML(template, data, letterheadDataUrl) {
     </div>
   `;
 
+  // הנדון — תמיד ממורכז, מודגש, עם רווח אנכי
+  const subjectStyle = `text-align: center; font-weight: 700; margin: 16px 0 18px; font-size: 15px;`;
+
+  // טבלת בנות — קומפקטית, גבולות מלאים
+  const tableHTML = (girls) => {
+    const rows = (girls || []).map((g, i) => `
+      <tr>
+        <td style="border:1px solid #1e3a8a; padding:4px 6px; text-align:center;">${i+1}</td>
+        <td style="border:1px solid #1e3a8a; padding:4px 6px; text-align:center;">${g.national_id || ''}</td>
+        <td style="border:1px solid #1e3a8a; padding:4px 6px; text-align:right;">${g.family_name || ''}</td>
+        <td style="border:1px solid #1e3a8a; padding:4px 6px; text-align:right;">${g.first_name || ''}</td>
+        <td style="border:1px solid #1e3a8a; padding:4px 6px; text-align:right;">${g.source_school || ''}</td>
+      </tr>
+    `).join('') || `<tr><td colspan="5" style="border:1px solid #1e3a8a; padding:10px; text-align:center; color:#666;">אין תלמידות</td></tr>`;
+    return `
+      <table style="width:85%; margin:0 auto; border-collapse:collapse; font-size:12.5px; border:2px solid #1e3a8a;">
+        <thead>
+          <tr>
+            <th style="border:1px solid #1e3a8a; padding:5px 7px; background:#dbeafe; font-weight:700; width:38px;">מ.ס.</th>
+            <th style="border:1px solid #1e3a8a; padding:5px 7px; background:#dbeafe; font-weight:700;">מספר זהות</th>
+            <th style="border:1px solid #1e3a8a; padding:5px 7px; background:#dbeafe; font-weight:700;">שם משפחה</th>
+            <th style="border:1px solid #1e3a8a; padding:5px 7px; background:#dbeafe; font-weight:700;">שם פרטי</th>
+            <th style="border:1px solid #1e3a8a; padding:5px 7px; background:#dbeafe; font-weight:700;">מוסד</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    `;
+  };
+
   if (template === 'parents') {
     const seminarLine = data.seminar_code
       ? `${data.seminar_name} (${data.seminar_code})`
       : (data.seminar_name || '________________');
     return `<div style="${baseStyle}">
-      <div style="margin-bottom: 14px;">לכבוד</div>
-      <div style="margin-bottom: 6px;">הורי התלמידה <b>${data.girl_full_name || '________'}</b></div>
-      <div style="margin-bottom: 14px;">בדוא"ל</div>
-      <div style="margin-bottom: 14px;">שלום וברכה,</div>
-      <div style="font-weight: 700; margin-bottom: 14px;">הנדון: מענה לפנייתכם לשיבוץ בתכם לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
+      <div style="margin-bottom: 10px;">לכבוד</div>
+      <div style="margin-bottom: 4px;">הורי התלמידה <b>${data.girl_full_name || '________'}</b></div>
+      <div style="margin-bottom: 12px;">בדוא"ל</div>
+      <div style="margin-bottom: 6px;">שלום וברכה,</div>
+      <div style="${subjectStyle}">הנדון: מענה לפנייתכם לשיבוץ בתכם לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
       <div style="text-align: justify; margin-bottom: 14px;">
         במענה לפנייתכם אודות בקשת שיבוץ לתיכון עבור בתכם תחי' לשנת הלימודים ${data.school_year || 'תשפ"ז'}
         לאחר עיון בפנייתכם ובחינת ההיבטים, ובהתבסס על כלל השיקולים הנ"ל, הוחלט כי בתכם תשובץ בסמינר:
@@ -5906,26 +5934,17 @@ function buildLetterHTML(template, data, letterheadDataUrl) {
 
   if (template === 'seminar_initial') {
     const dt = formatHebrewDate(data.letter_date ? new Date(data.letter_date) : new Date());
-    const girlsRows = (data.girls || []).map((g, i) => `
-      <tr>
-        <td>${i+1}</td>
-        <td>${g.national_id || ''}</td>
-        <td>${g.family_name || ''}</td>
-        <td>${g.first_name || ''}</td>
-        <td>${g.source_school || ''}</td>
-      </tr>
-    `).join('');
     return `<div style="${baseStyle}">
-      <div style="text-align: center; font-weight: 700; font-size: 18px; margin-bottom: 8px;">אגף החינוך</div>
-      <div style="font-size: 12px; color: #444; margin-bottom: 18px;">
+      <div style="text-align: center; font-weight: 700; font-size: 20px; margin-bottom: 12px;">אגף החינוך</div>
+      <div style="font-size: 12px; color: #333; margin-bottom: 18px; text-align: right;">
         <div>${dt.hebrew}</div>
         <div>${dt.latin}</div>
       </div>
-      <div style="margin-bottom: 10px;">לכבוד</div>
+      <div style="margin-bottom: 8px;">לכבוד</div>
       <div style="margin-bottom: 4px;"><b>${data.contact_full || '________________'}</b></div>
-      <div style="margin-bottom: 14px;">מנהל סמינר "<b>${data.seminar_name || '________'}</b>"</div>
-      <div style="margin-bottom: 14px;">שלום רב,</div>
-      <div style="font-weight: 700; margin-bottom: 14px;">הנדון: שיבוץ תלמידות במוסדכם לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
+      <div style="margin-bottom: 12px;">מנהל סמינר "<b>${data.seminar_name || '________'}</b>"</div>
+      <div style="margin-bottom: 6px;">שלום רב,</div>
+      <div style="${subjectStyle}">הנדון: שיבוץ תלמידות במוסדכם לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
       <div style="text-align: justify; margin-bottom: 10px;">
         שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע' 7א')
       </div>
@@ -5950,40 +5969,20 @@ function buildLetterHTML(template, data, letterheadDataUrl) {
       ${seminarSignature}
     </div>
     <div style="${baseStyle} page-break-before: always;">
-      <div style="text-align: center; font-weight: 700; font-size: 18px; margin-bottom: 8px;">אגף החינוך</div>
-      <div style="text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 18px;">רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}</div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-        <thead>
-          <tr style="background: #e0f2fe;">
-            <th style="border: 1px solid #333; padding: 6px;">מ.ס.</th>
-            <th style="border: 1px solid #333; padding: 6px;">מספר זהות</th>
-            <th style="border: 1px solid #333; padding: 6px;">שם משפחה</th>
-            <th style="border: 1px solid #333; padding: 6px;">שם פרטי</th>
-            <th style="border: 1px solid #333; padding: 6px;">מוסד</th>
-          </tr>
-        </thead>
-        <tbody>${girlsRows || `<tr><td colspan="5" style="border:1px solid #333; padding:10px; text-align:center; color:#666;">אין תלמידות</td></tr>`}</tbody>
-      </table>
+      <div style="text-align: center; font-weight: 700; font-size: 20px; margin-bottom: 10px;">אגף החינוך</div>
+      <div style="text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 22px;">רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}</div>
+      ${tableHTML(data.girls)}
     </div>`;
   }
 
   if (template === 'seminar_final') {
-    const girlsRows = (data.girls || []).map((g, i) => `
-      <tr>
-        <td>${i+1}</td>
-        <td>${g.national_id || ''}</td>
-        <td>${g.family_name || ''}</td>
-        <td>${g.first_name || ''}</td>
-        <td>${g.source_school || ''}</td>
-      </tr>
-    `).join('');
     return `<div style="${baseStyle}">
-      <div style="text-align: center; font-weight: 700; margin-bottom: 14px;">בס"ד</div>
-      <div style="margin-bottom: 10px;">לכבוד</div>
+      <div style="text-align: center; font-weight: 700; margin-bottom: 16px;">בס"ד</div>
+      <div style="margin-bottom: 8px;">לכבוד</div>
       <div style="margin-bottom: 4px;"><b>${data.contact_full || '________________'}</b></div>
-      <div style="margin-bottom: 14px;">הנהלת סמינר <b>${data.seminar_name || '_______________'}</b></div>
-      <div style="margin-bottom: 14px;">שלום רב,</div>
-      <div style="font-weight: 700; margin-bottom: 14px;">הנדון: מענה לערעור - שיבוץ תלמידות סופי לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
+      <div style="margin-bottom: 12px;">הנהלת סמינר <b>${data.seminar_name || '_______________'}</b></div>
+      <div style="margin-bottom: 6px;">שלום רב,</div>
+      <div style="${subjectStyle}">הנדון: מענה לערעור - שיבוץ תלמידות סופי לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
       <div style="text-align: justify; margin-bottom: 10px;">
         בהמשך להודעת השיבוץ שנשלחה אליכם ולאחר קבלת המענה ממכם התקיימה ישיבת היוועצות עם וועדת הרבנים העירונית ולהלן מסקנותיה.
       </div>
@@ -6000,55 +5999,60 @@ function buildLetterHTML(template, data, letterheadDataUrl) {
       ${seminarSignature.replace('העתקים:', 'העתקים: וועדת הרבנים העירונית')}
     </div>
     <div style="${baseStyle} page-break-before: always;">
-      <div style="text-align: center; font-weight: 700; margin-bottom: 10px;">בס"ד</div>
-      <div style="text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 18px;">רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}</div>
-      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
-        <thead>
-          <tr style="background: #e0f2fe;">
-            <th style="border: 1px solid #333; padding: 6px;">מ.ס.</th>
-            <th style="border: 1px solid #333; padding: 6px;">מספר זהות</th>
-            <th style="border: 1px solid #333; padding: 6px;">שם משפחה</th>
-            <th style="border: 1px solid #333; padding: 6px;">שם פרטי</th>
-            <th style="border: 1px solid #333; padding: 6px;">מוסד</th>
-          </tr>
-        </thead>
-        <tbody>${girlsRows || `<tr><td colspan="5" style="border:1px solid #333; padding:10px; text-align:center; color:#666;">אין תלמידות</td></tr>`}</tbody>
-      </table>
+      <div style="text-align: center; font-weight: 700; margin-bottom: 12px;">בס"ד</div>
+      <div style="text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 22px;">רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}</div>
+      ${tableHTML(data.girls)}
     </div>`;
   }
 
   throw new Error(`תבנית לא מוכרת: ${template}`);
 }
 
+// המתנה לטעינת פונט David Libre (חיוני: html2canvas חייב פונט מוכן לפני הרינדור)
+async function waitForFonts() {
+  if (document.fonts && document.fonts.ready) {
+    try { await document.fonts.load('14px "David Libre"'); } catch (e) {}
+    try { await document.fonts.load('700 14px "David Libre"'); } catch (e) {}
+    try { await document.fonts.ready; } catch (e) {}
+  }
+}
+
 // יצירת PDF מהתבנית — מחזיר Blob של PDF
+// שיטה: ה־HTML מרונדר עם רקע **שקוף**, מומר לתמונת PNG עם אלפא.
+// הניירת מתווספת ל־PDF ישירות מה־JPG המקורי ברזולוציה מלאה.
 async function generateLetterPDF(template, data) {
   const letterhead = await loadLetterhead();
-  const html = buildLetterHTML(template, data, letterhead);
+  await waitForFonts();
+  const html = buildLetterHTML(template, data);
 
   // צור div מוסתר ב־DOM (html2canvas צריך DOM אמיתי)
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed; left:-99999px; top:0; z-index:-1;';
+  wrap.style.cssText = 'position:fixed; left:-99999px; top:0; z-index:-1; background:transparent;';
   wrap.innerHTML = html;
   document.body.appendChild(wrap);
 
   try {
     const pages = wrap.children;  // כל בן זה דף A4
     const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
 
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
-      // המתן רגע לטעינת הרקע (cache כבר טעון אז זה מהיר)
+
+      // (1) ניירת — הוסף כתמונה נטיב ברזולוציה המקורית (חד, ללא דגימה מחדש)
+      if (i > 0) pdf.addPage();
+      pdf.addImage(letterhead, 'JPEG', 0, 0, 210, 297);
+
+      // (2) טקסט — צלם כ־PNG עם אלפא (רקע שקוף שלא יסתיר את הניירת)
       const canvas = await html2canvas(page, {
-        scale: 2,                  // איכות גבוהה
+        scale: 2.5,                // איכות גבוהה לטקסט עברי חד
         useCORS: true,
-        backgroundColor: '#fff',
+        backgroundColor: null,     // ⚠️ שקוף — קריטי כדי שהניירת תיראה
         windowWidth: 794,
         windowHeight: 1123,
       });
-      const img = canvas.toDataURL('image/jpeg', 0.92);
-      if (i > 0) pdf.addPage();
-      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+      const textImg = canvas.toDataURL('image/png');
+      pdf.addImage(textImg, 'PNG', 0, 0, 210, 297);
     }
     return pdf.output('blob');
   } finally {
