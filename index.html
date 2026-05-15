@@ -5851,24 +5851,18 @@ async function embedDavidFont(pdf) {
 }
 
 // ============================================================
-// Bidi — סידור עברית RTL עבור jsPDF
+// Bidi — סידור עברית RTL עבור jsPDF (גישת "visual order")
 // ============================================================
-// jsPDF מצייר תווים שמאל→ימין. עברית צריך להיות מסודר ככה שהתו הראשון
-// במחרוזת יופיע מימין. השיטה: לסדר טוקנים כך שטוקני עברית הופכים, וטוקני
-// לטינית/מספרים נשארים אותו דבר, וסדר הטוקנים מתהפך (RTL flow).
-function _isHebrewChar(ch) {
-  const c = ch.charCodeAt(0);
-  return c >= 0x0590 && c <= 0x05FF;
-}
+// jsPDF מצייר תווים LTR. כדי שקורא עברית יראה את הטקסט נכון כשהוא קורא
+// מימין לשמאל ברצף (כולל מספרים ואנגלית), אנחנו פשוט הופכים את כל המחרוזת.
+// תוצאה: כשהקורא סורק מימין לשמאל, התווים מופיעים בסדר הנכון.
+// (זו "visual RTL" — שונה מ־Unicode bidi הסטנדרטי, אבל זה מה שמתאים
+// לקובץ PDF סטטי לקורא עברית בלי מנוע bidi.)
 function bidi(s) {
   if (!s) return '';
-  // פצל לטוקנים: הברה עברית רצופה או הברה לא־עברית רצופה
-  const tokens = s.match(/[֐-׿"׳״]+|[^֐-׿"׳״]+/g) || [s];
-  // הפוך את סדר הטוקנים (זרימה RTL), והפוך כל טוקן עברי בנפרד
-  return tokens.reverse().map(t => {
-    if (/[֐-׿]/.test(t)) return [...t].reverse().join('');
-    return t;
-  }).join('');
+  // הפוך את הסוגריים (mirror bidi chars): '(' ↔ ')', '[' ↔ ']', '{' ↔ '}', '<' ↔ '>'
+  const mirror = { '(':')',')':'(','[':']',']':'[','{':'}','}':'{','<':'>','>':'<' };
+  return [...s].reverse().map(c => mirror[c] || c).join('');
 }
 
 // ציור שורת טקסט מימין (rightX = מיקום הקצה הימני של הטקסט במ"מ)
@@ -5959,12 +5953,72 @@ function drawStudentsTable(pdf, girls, startY) {
   return y;
 }
 
+// ============================================================
+// Hebrew numerals (gematria) — המרת מספר לאותיות עבריות
+// ============================================================
+// משמש לתאריך עברי: ל־"15" → "ט"ו", "5786" → "תשפ"ו" (5000 מושמט בכוונה)
+function hebrewNumeral(n) {
+  if (n <= 0) return '';
+  // עבור שנה עברית: השמטת ה־5000 (כך נהוג: "תשפ"ו" ולא "ה'תשפ"ו")
+  if (n >= 5000) n = n - 5000;
+  // החריגים: 15 ו־16 (להימנע מכינוי שם ה'). מצוירים כ־ט"ו/ט"ז ולא י"ה/י"ו
+  const specials = { 15: 'ט"ו', 16: 'ט"ז' };
+  if (specials[n]) return specials[n];
+
+  const ones    = ['', 'א', 'ב', 'ג', 'ד', 'ה', 'ו', 'ז', 'ח', 'ט'];
+  const tens    = ['', 'י', 'כ', 'ל', 'מ', 'נ', 'ס', 'ע', 'פ', 'צ'];
+  const hundreds= ['', 'ק', 'ר', 'ש', 'ת', 'תק', 'תר', 'תש', 'תת', 'תתק'];
+
+  let result = '';
+  if (n >= 100) { result += hundreds[Math.floor(n / 100)]; n %= 100; }
+  if (n === 15 || n === 16) { result += specials[n].replace('"', ''); }
+  else {
+    if (n >= 10) { result += tens[Math.floor(n / 10)]; n %= 10; }
+    if (n >= 1)  { result += ones[n]; }
+  }
+  // הוספת גרשיים: לפני התו האחרון אם יש שני תווים ויותר, אחרת גרש בודד אחרי
+  if (result.length >= 2) result = result.slice(0, -1) + '"' + result.slice(-1);
+  else if (result.length === 1) result = result + "'";
+  return result;
+}
+
+// שם יום בעברית (יום ראשון... יום שבת)
+const HEBREW_WEEKDAYS = ['יום ראשון','יום שני','יום שלישי','יום רביעי','יום חמישי','יום שישי','שבת'];
+
+// המרת תאריך לועזי לתאריך עברי באמצעות Intl, ועיבוד לפורמט "יום שישי, כ"ח באייר תשפ"ו"
+function formatHebrewDateFull(date) {
+  // ננסה לקבל את היום, החודש, והשנה לפי הלוח העברי בעזרת Intl
+  try {
+    const fmt = new Intl.DateTimeFormat('en-u-ca-hebrew', { day: 'numeric', month: 'long', year: 'numeric' });
+    const parts = fmt.formatToParts(date);
+    let dayNum = null, monthName = '', yearNum = null;
+    for (const p of parts) {
+      if (p.type === 'day')   dayNum = parseInt(p.value, 10);
+      if (p.type === 'month') monthName = p.value;
+      if (p.type === 'year')  yearNum = parseInt(p.value, 10);
+    }
+    // המרת שם חודש מאנגלית לעברית
+    const monthMap = {
+      'Tishri':'תשרי','Heshvan':'חשון','Marcheshvan':'חשוון','Kislev':'כסלו','Tevet':'טבת',
+      'Shevat':'שבט','Adar':'אדר','Adar I':'אדר א\'','Adar II':'אדר ב\'',
+      'Nisan':'ניסן','Iyar':'אייר','Sivan':'סיון','Tamuz':'תמוז','Av':'אב','Elul':'אלול'
+    };
+    const monthHe = monthMap[monthName] || monthName;
+    const dayHe = hebrewNumeral(dayNum);
+    const yearHe = hebrewNumeral(yearNum);
+    const weekday = HEBREW_WEEKDAYS[date.getDay()];
+    // לדוגמה: "יום שישי כ"ח באייר תשפ"ו"
+    return `${weekday} ${dayHe} ב${monthHe} ${yearHe}`;
+  } catch (e) {
+    return '';
+  }
+}
+
 // תאריך עברי+לועזי כשתי שורות
 function _twoDates(date) {
   const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
   const lat = `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
-  let heb = '';
-  try { heb = new Intl.DateTimeFormat('he-u-ca-hebrew', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(date); } catch (e) {}
+  const heb = formatHebrewDateFull(date);
   return { hebrew: heb, latin: lat };
 }
 
@@ -5974,7 +6028,7 @@ function _twoDates(date) {
 function drawParentsLetter(pdf, data) {
   const RIGHT_X = 190;   // קצה ימין של הטקסט
   const LEFT_X = 20;     // קצה שמאל (עבור wrap)
-  let y = 52;
+  let y = 65;  // 3 שורות מתחת ל"אגף החינוך" בניירת
 
   drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, `הורי התלמידה ${data.girl_full_name || '________'}`, RIGHT_X, y, { size: 12, bold: true });  y += 6;
@@ -6020,11 +6074,11 @@ function drawSeminarInitialLetter(pdf, data) {
   const dt = _twoDates(data.letter_date ? new Date(data.letter_date) : new Date());
 
   // הניירת כבר מכילה את "אגף החינוך" ו"בס"ד" — לא צריך לצייר שוב
-  // תאריכים בלבד
-  drawRTL(pdf, dt.hebrew, RIGHT_X, 38, { size: 10 });
-  drawRTL(pdf, dt.latin, RIGHT_X, 43, { size: 10 });
+  // תאריכים — בקצה שמאל (לועזי) או ימין (עברי) למטה מ"אגף החינוך"
+  drawRTL(pdf, dt.hebrew, RIGHT_X, 50, { size: 10 });
+  drawRTL(pdf, dt.latin, RIGHT_X, 55, { size: 10 });
 
-  let y = 55;
+  let y = 68;
   drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
   drawRTL(pdf, `מנהל סמינר "${data.seminar_name || '________'}"`, RIGHT_X, y, { size: 12 });  y += 9;
@@ -6058,7 +6112,7 @@ function drawSeminarInitialLetter(pdf, data) {
 function drawSeminarFinalLetter(pdf, data) {
   const RIGHT_X = 190, LEFT_X = 20;
   // הניירת כבר מכילה "בס"ד" בפינה הימנית עליונה
-  let y = 40;
+  let y = 60;  // 3 שורות מתחת ל"אגף החינוך" בניירת
   drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
   drawRTL(pdf, `הנהלת סמינר ${data.seminar_name || '_______________'}`, RIGHT_X, y, { size: 12 });  y += 9;
@@ -6085,8 +6139,8 @@ function drawSeminarFinalLetter(pdf, data) {
 
 function drawStudentsListPage(pdf, data, isFinal) {
   // הניירת מכילה את "אגף החינוך" ו"בס"ד" — לא צריך לחזור
-  drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}`, 105, 38, { size: 14, bold: true });
-  drawStudentsTable(pdf, data.girls, 48);
+  drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}`, 105, 58, { size: 14, bold: true });
+  drawStudentsTable(pdf, data.girls, 68);
 }
 
 // בונה את ה־HTML של המכתב לפי תבנית + נתונים  [נשמר לתאימות; לא בשימוש בגנרטור החדש]
