@@ -6019,12 +6019,12 @@ function drawSeminarInitialLetter(pdf, data) {
   const RIGHT_X = 190, LEFT_X = 20;
   const dt = _twoDates(data.letter_date ? new Date(data.letter_date) : new Date());
 
-  // כותרת
-  drawCenteredRTL(pdf, 'אגף החינוך', 105, 48, { size: 18, bold: true });
-  drawRTL(pdf, dt.hebrew, RIGHT_X, 57, { size: 10 });
-  drawRTL(pdf, dt.latin, RIGHT_X, 62, { size: 10 });
+  // הניירת כבר מכילה את "אגף החינוך" ו"בס"ד" — לא צריך לצייר שוב
+  // תאריכים בלבד
+  drawRTL(pdf, dt.hebrew, RIGHT_X, 38, { size: 10 });
+  drawRTL(pdf, dt.latin, RIGHT_X, 43, { size: 10 });
 
-  let y = 75;
+  let y = 55;
   drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
   drawRTL(pdf, `מנהל סמינר "${data.seminar_name || '________'}"`, RIGHT_X, y, { size: 12 });  y += 9;
@@ -6057,9 +6057,8 @@ function drawSeminarInitialLetter(pdf, data) {
 
 function drawSeminarFinalLetter(pdf, data) {
   const RIGHT_X = 190, LEFT_X = 20;
-  drawCenteredRTL(pdf, 'בס"ד', 105, 48, { size: 11, bold: true });
-
-  let y = 60;
+  // הניירת כבר מכילה "בס"ד" בפינה הימנית עליונה
+  let y = 40;
   drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
   drawRTL(pdf, `הנהלת סמינר ${data.seminar_name || '_______________'}`, RIGHT_X, y, { size: 12 });  y += 9;
@@ -6085,9 +6084,9 @@ function drawSeminarFinalLetter(pdf, data) {
 }
 
 function drawStudentsListPage(pdf, data, isFinal) {
-  drawCenteredRTL(pdf, isFinal ? 'בס"ד' : 'אגף החינוך', 105, 48, { size: isFinal ? 11 : 18, bold: true });
-  drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}`, 105, isFinal ? 60 : 62, { size: 14, bold: true });
-  drawStudentsTable(pdf, data.girls, isFinal ? 68 : 72);
+  // הניירת מכילה את "אגף החינוך" ו"בס"ד" — לא צריך לחזור
+  drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}`, 105, 38, { size: 14, bold: true });
+  drawStudentsTable(pdf, data.girls, 48);
 }
 
 // בונה את ה־HTML של המכתב לפי תבנית + נתונים  [נשמר לתאימות; לא בשימוש בגנרטור החדש]
