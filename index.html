@@ -17,6 +17,9 @@
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0"></script>
+<!-- jsPDF + html2canvas — ייצור PDF במייל (תבניות מכתבי שיבוץ עם רינדור עברי מלא דרך הדפדפן) -->
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -5784,6 +5787,319 @@ async function downloadTemplateFile(templateId) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast('הורד ✓');
 }
+
+// ============================================================
+// מנוע ייצור PDF למיילי שיבוץ — תבניות מכתבים
+// ============================================================
+// גישה: בונים את המכתב כ־HTML מוסתר עם הניירת כרקע, מרנדרים
+// עם html2canvas (קבלת bidi עברי טבעי של הדפדפן), ועוטפים ב־jsPDF.
+// ============================================================
+
+// תאריך עברי לועזי (ברירת מחדל לכותרת המכתב לסמינר)
+function formatHebrewDate(d) {
+  d = d || new Date();
+  // לועזי (DD פברואר YYYY)
+  const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  const lat = `${d.getDate()} ${months[d.getMonth()]} ${d.getFullYear()}`;
+  // עברי (יום ה' i סיוון תשפ"ו) — שימוש ב־Intl
+  let heb;
+  try {
+    heb = new Intl.DateTimeFormat('he-u-ca-hebrew', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(d);
+  } catch (e) { heb = ''; }
+  return { latin: lat, hebrew: heb };
+}
+
+// טעינת הניירת כ־data URL (פעם אחת, נשמר ב־cache)
+let _letterheadCache = null;
+async function loadLetterhead() {
+  if (_letterheadCache) return _letterheadCache;
+  const resp = await fetch('./letterhead.jpg');
+  if (!resp.ok) throw new Error('שגיאה בטעינת הניירת');
+  const blob = await resp.blob();
+  return new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => { _letterheadCache = r.result; res(_letterheadCache); };
+    r.onerror = rej;
+    r.readAsDataURL(blob);
+  });
+}
+
+// בונה את ה־HTML של המכתב לפי תבנית + נתונים
+function buildLetterHTML(template, data, letterheadDataUrl) {
+  // A4: 210mm × 297mm. ב־96dpi: 794 × 1123 px. בלוקאל אצלנו נעבוד ב־px.
+  // הניירת מכסה את כל הדף, הטקסט מעל באזורים בטוחים.
+  const A4_W = 794, A4_H = 1123;
+
+  // אזור בטוח: בערך 8% מלמעלה (אחרי הלוגו), 12% מלמטה (לפני הפוטר)
+  const PAD_TOP = 145;    // ~18%
+  const PAD_BOTTOM = 130; // ~12%
+  const PAD_RIGHT = 75;
+  const PAD_LEFT = 75;
+
+  // סגנון משותף
+  const baseStyle = `
+    width: ${A4_W}px;
+    height: ${A4_H}px;
+    background-image: url('${letterheadDataUrl}');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    font-family: 'Heebo', 'David', Arial, sans-serif;
+    direction: rtl;
+    text-align: right;
+    color: #000;
+    position: relative;
+    box-sizing: border-box;
+    padding: ${PAD_TOP}px ${PAD_RIGHT}px ${PAD_BOTTOM}px ${PAD_LEFT}px;
+    line-height: 1.55;
+    font-size: 14px;
+  `;
+
+  const signature = `
+    <div style="margin-top: 26px; font-size: 14px;">
+      <div>באיחולי הצלחה ורוב נחת</div>
+      <div style="margin-top: 14px;">בברכה,</div>
+      <div style="font-weight: 700; margin-top: 4px;">יהודה קורנבליט</div>
+      <div>מנהל אגף החינוך</div>
+      <div>עיריית ביתר עילית</div>
+    </div>
+  `;
+
+  const seminarSignature = `
+    <div style="margin-top: 22px; font-size: 13px;">
+      <div>בברכה,</div>
+      <div style="font-weight: 700; margin-top: 4px;">יהודה קורנבליט</div>
+      <div>מנהל אגף החינוך</div>
+    </div>
+    <div style="margin-top: 18px; font-size: 11px; color: #333;">
+      <div style="font-weight: 600;">העתקים:</div>
+      <div>הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך</div>
+      <div>גב' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך</div>
+      <div>גב' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך</div>
+      <div>וועדת ערר - מחוז חרדי</div>
+    </div>
+  `;
+
+  if (template === 'parents') {
+    const seminarLine = data.seminar_code
+      ? `${data.seminar_name} (${data.seminar_code})`
+      : (data.seminar_name || '________________');
+    return `<div style="${baseStyle}">
+      <div style="margin-bottom: 14px;">לכבוד</div>
+      <div style="margin-bottom: 6px;">הורי התלמידה <b>${data.girl_full_name || '________'}</b></div>
+      <div style="margin-bottom: 14px;">בדוא"ל</div>
+      <div style="margin-bottom: 14px;">שלום וברכה,</div>
+      <div style="font-weight: 700; margin-bottom: 14px;">הנדון: מענה לפנייתכם לשיבוץ בתכם לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
+      <div style="text-align: justify; margin-bottom: 14px;">
+        במענה לפנייתכם אודות בקשת שיבוץ לתיכון עבור בתכם תחי' לשנת הלימודים ${data.school_year || 'תשפ"ז'}
+        לאחר עיון בפנייתכם ובחינת ההיבטים, ובהתבסס על כלל השיקולים הנ"ל, הוחלט כי בתכם תשובץ בסמינר:
+        <b>${seminarLine}</b>.
+      </div>
+      <div style="margin-bottom: 10px;">החלטה זו הינה על דעת וועדת הרבנים העירונית.</div>
+      <div style="margin-bottom: 18px;">הקבלה לסמינר מותנית ברישום לסמינר ועמידה בכללי הקבלה.</div>
+      ${signature}
+      <div style="position: absolute; bottom: ${PAD_BOTTOM + 8}px; right: ${PAD_RIGHT}px; left: ${PAD_LEFT}px;
+                  text-align: center; font-size: 11px; color: #555;">
+        על פי חוק ניתן לערער למנהל המחוז במשרד החינוך
+      </div>
+    </div>`;
+  }
+
+  if (template === 'seminar_initial') {
+    const dt = formatHebrewDate(data.letter_date ? new Date(data.letter_date) : new Date());
+    const girlsRows = (data.girls || []).map((g, i) => `
+      <tr>
+        <td>${i+1}</td>
+        <td>${g.national_id || ''}</td>
+        <td>${g.family_name || ''}</td>
+        <td>${g.first_name || ''}</td>
+        <td>${g.source_school || ''}</td>
+      </tr>
+    `).join('');
+    return `<div style="${baseStyle}">
+      <div style="text-align: center; font-weight: 700; font-size: 18px; margin-bottom: 8px;">אגף החינוך</div>
+      <div style="font-size: 12px; color: #444; margin-bottom: 18px;">
+        <div>${dt.hebrew}</div>
+        <div>${dt.latin}</div>
+      </div>
+      <div style="margin-bottom: 10px;">לכבוד</div>
+      <div style="margin-bottom: 4px;"><b>${data.contact_full || '________________'}</b></div>
+      <div style="margin-bottom: 14px;">מנהל סמינר "<b>${data.seminar_name || '________'}</b>"</div>
+      <div style="margin-bottom: 14px;">שלום רב,</div>
+      <div style="font-weight: 700; margin-bottom: 14px;">הנדון: שיבוץ תלמידות במוסדכם לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
+      <div style="text-align: justify; margin-bottom: 10px;">
+        שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע' 7א')
+      </div>
+      <div style="text-align: justify; margin-bottom: 10px;">
+        כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.
+      </div>
+      <div style="text-align: justify; margin-bottom: 10px;">
+        לאחר דין ודברים שהתנהל בוועדת הרבנים העירונית ולאחר עבודת צוות מעמיקה ע"פ הנחיות משרד החינוך וגורמי נוספים ברשות,
+        הוחלט שבבית ספרכם תשובצנה תלמידות בנוסף לאלו שכבר משובצות אצלכם.
+      </div>
+      <div style="margin-bottom: 10px;">הודעה להורים תשלח בהמשך ועם פנייתם אליכם הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.</div>
+      <div style="margin-bottom: 10px;"><b>רצ"ב רשימת התלמידות.</b></div>
+      <div style="margin-bottom: 10px;">
+        השגה על השיבוץ ניתן להגיש התייחסות עניינית בכתב לכתובת דוא"ל
+        <span style="direction:ltr; unicode-bidi: embed;">seminar@5888111.co.il</span>
+        עד 3 ימי עבודה מיום קבלת מכתב שיבוץ זה. מכתבכם יוצג בוועדת הרבנים.
+      </div>
+      <div style="margin-bottom: 14px;">
+        כאמור בהנחיות ניתן לערער לועדת הערר במחוז בדוא"ל
+        <span style="direction:ltr; unicode-bidi: embed;">vaadat_arar@education.gov.il</span>.
+      </div>
+      ${seminarSignature}
+    </div>
+    <div style="${baseStyle} page-break-before: always;">
+      <div style="text-align: center; font-weight: 700; font-size: 18px; margin-bottom: 8px;">אגף החינוך</div>
+      <div style="text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 18px;">רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}</div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+          <tr style="background: #e0f2fe;">
+            <th style="border: 1px solid #333; padding: 6px;">מ.ס.</th>
+            <th style="border: 1px solid #333; padding: 6px;">מספר זהות</th>
+            <th style="border: 1px solid #333; padding: 6px;">שם משפחה</th>
+            <th style="border: 1px solid #333; padding: 6px;">שם פרטי</th>
+            <th style="border: 1px solid #333; padding: 6px;">מוסד</th>
+          </tr>
+        </thead>
+        <tbody>${girlsRows || `<tr><td colspan="5" style="border:1px solid #333; padding:10px; text-align:center; color:#666;">אין תלמידות</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  }
+
+  if (template === 'seminar_final') {
+    const girlsRows = (data.girls || []).map((g, i) => `
+      <tr>
+        <td>${i+1}</td>
+        <td>${g.national_id || ''}</td>
+        <td>${g.family_name || ''}</td>
+        <td>${g.first_name || ''}</td>
+        <td>${g.source_school || ''}</td>
+      </tr>
+    `).join('');
+    return `<div style="${baseStyle}">
+      <div style="text-align: center; font-weight: 700; margin-bottom: 14px;">בס"ד</div>
+      <div style="margin-bottom: 10px;">לכבוד</div>
+      <div style="margin-bottom: 4px;"><b>${data.contact_full || '________________'}</b></div>
+      <div style="margin-bottom: 14px;">הנהלת סמינר <b>${data.seminar_name || '_______________'}</b></div>
+      <div style="margin-bottom: 14px;">שלום רב,</div>
+      <div style="font-weight: 700; margin-bottom: 14px;">הנדון: מענה לערעור - שיבוץ תלמידות סופי לשנה"ל ${data.school_year || 'תשפ"ז'}</div>
+      <div style="text-align: justify; margin-bottom: 10px;">
+        בהמשך להודעת השיבוץ שנשלחה אליכם ולאחר קבלת המענה ממכם התקיימה ישיבת היוועצות עם וועדת הרבנים העירונית ולהלן מסקנותיה.
+      </div>
+      <div style="text-align: justify; margin-bottom: 10px;">
+        להזכירכם שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע' 7א')
+        כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.
+      </div>
+      <div style="margin-bottom: 10px;">העתק החלטת השיבוץ נשלח להורים, הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.</div>
+      <div style="margin-bottom: 10px;"><b>רצ"ב רשימת התלמידות.</b></div>
+      <div style="margin-bottom: 14px;">
+        כאמור בהנחיות ניתן לערער לוועדת הערר במחוז בדוא"ל
+        <span style="direction:ltr; unicode-bidi: embed;">vaadat_arar@education.gov.il</span>.
+      </div>
+      ${seminarSignature.replace('העתקים:', 'העתקים: וועדת הרבנים העירונית')}
+    </div>
+    <div style="${baseStyle} page-break-before: always;">
+      <div style="text-align: center; font-weight: 700; margin-bottom: 10px;">בס"ד</div>
+      <div style="text-align: center; font-weight: 700; font-size: 16px; margin-bottom: 18px;">רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}</div>
+      <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+        <thead>
+          <tr style="background: #e0f2fe;">
+            <th style="border: 1px solid #333; padding: 6px;">מ.ס.</th>
+            <th style="border: 1px solid #333; padding: 6px;">מספר זהות</th>
+            <th style="border: 1px solid #333; padding: 6px;">שם משפחה</th>
+            <th style="border: 1px solid #333; padding: 6px;">שם פרטי</th>
+            <th style="border: 1px solid #333; padding: 6px;">מוסד</th>
+          </tr>
+        </thead>
+        <tbody>${girlsRows || `<tr><td colspan="5" style="border:1px solid #333; padding:10px; text-align:center; color:#666;">אין תלמידות</td></tr>`}</tbody>
+      </table>
+    </div>`;
+  }
+
+  throw new Error(`תבנית לא מוכרת: ${template}`);
+}
+
+// יצירת PDF מהתבנית — מחזיר Blob של PDF
+async function generateLetterPDF(template, data) {
+  const letterhead = await loadLetterhead();
+  const html = buildLetterHTML(template, data, letterhead);
+
+  // צור div מוסתר ב־DOM (html2canvas צריך DOM אמיתי)
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:fixed; left:-99999px; top:0; z-index:-1;';
+  wrap.innerHTML = html;
+  document.body.appendChild(wrap);
+
+  try {
+    const pages = wrap.children;  // כל בן זה דף A4
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+
+    for (let i = 0; i < pages.length; i++) {
+      const page = pages[i];
+      // המתן רגע לטעינת הרקע (cache כבר טעון אז זה מהיר)
+      const canvas = await html2canvas(page, {
+        scale: 2,                  // איכות גבוהה
+        useCORS: true,
+        backgroundColor: '#fff',
+        windowWidth: 794,
+        windowHeight: 1123,
+      });
+      const img = canvas.toDataURL('image/jpeg', 0.92);
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'FAST');
+    }
+    return pdf.output('blob');
+  } finally {
+    wrap.remove();
+  }
+}
+
+// הורד PDF — בעיקר לפיתוח/בדיקה
+async function downloadLetterPDF(template, data, filename) {
+  const blob = await generateLetterPDF(template, data);
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename || `מכתב-${template}.pdf`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
+
+// --- בדיקה ידנית מהקונסול ---
+// כדי לבדוק תבנית: window._testPDF('parents') או window._testPDF('seminar_initial') או window._testPDF('seminar_final')
+window._testPDF = async (template = 'parents') => {
+  const sample = {
+    parents: {
+      girl_full_name: 'שרה כהן',
+      seminar_name: 'בית יעקב הוותיק',
+      seminar_code: '888001',
+      school_year: 'תשפ"ז',
+    },
+    seminar_initial: {
+      contact_full: 'מורי וגב\' רחל לוי',
+      seminar_name: 'בית יעקב הוותיק',
+      school_year: 'תשפ"ז',
+      letter_date: new Date().toISOString(),
+      girls: [
+        { national_id: '123456789', family_name: 'כהן',    first_name: 'שרה',  source_school: 'בי"ס נאות רחל' },
+        { national_id: '234567890', family_name: 'לוי',    first_name: 'מרים', source_school: 'חיי שרה' },
+        { national_id: '345678901', family_name: 'אברהם', first_name: 'רחל',  source_school: 'מעיינות בית רבקה' },
+      ],
+    },
+    seminar_final: {
+      contact_full: 'מורי וגב\' רחל לוי',
+      seminar_name: 'בית יעקב הוותיק',
+      school_year: 'תשפ"ז',
+      girls: [
+        { national_id: '123456789', family_name: 'כהן',    first_name: 'שרה',  source_school: 'בי"ס נאות רחל' },
+        { national_id: '234567890', family_name: 'לוי',    first_name: 'מרים', source_school: 'חיי שרה' },
+      ],
+    },
+  };
+  await downloadLetterPDF(template, sample[template], `test-${template}.pdf`);
+};
 
 // ============================================================
 // היסטוריית שינויים — מודל פשוט עם 200 שינויים אחרונים
