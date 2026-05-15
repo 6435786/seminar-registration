@@ -5824,9 +5824,273 @@ async function loadLetterhead() {
   });
 }
 
-// בונה את ה־HTML של המכתב לפי תבנית + נתונים
-// הניירת מוטמעת כרקע באלמנט; html2canvas צובע הכל ביחד.
-// כדי לפצות על איבוד חדות הניירת — מגדילים את ה־scale ב־PDF generator.
+// ============================================================
+// פונט David Libre — טעינה ל־jsPDF (פעם אחת, נשמר ב־cache גלובלי)
+// ============================================================
+const _davidFontCache = { regular: null, bold: null };
+async function _fetchAsBase64(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error('fetch failed: ' + url);
+  const buf = await r.arrayBuffer();
+  let binary = '';
+  const bytes = new Uint8Array(buf);
+  for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
+async function embedDavidFont(pdf) {
+  if (!_davidFontCache.regular) {
+    [_davidFontCache.regular, _davidFontCache.bold] = await Promise.all([
+      _fetchAsBase64('./fonts/DavidLibre-Regular.ttf'),
+      _fetchAsBase64('./fonts/DavidLibre-Bold.ttf'),
+    ]);
+  }
+  pdf.addFileToVFS('DavidLibre-Regular.ttf', _davidFontCache.regular);
+  pdf.addFont('DavidLibre-Regular.ttf', 'David', 'normal');
+  pdf.addFileToVFS('DavidLibre-Bold.ttf', _davidFontCache.bold);
+  pdf.addFont('DavidLibre-Bold.ttf', 'David', 'bold');
+}
+
+// ============================================================
+// Bidi — סידור עברית RTL עבור jsPDF
+// ============================================================
+// jsPDF מצייר תווים שמאל→ימין. עברית צריך להיות מסודר ככה שהתו הראשון
+// במחרוזת יופיע מימין. השיטה: לסדר טוקנים כך שטוקני עברית הופכים, וטוקני
+// לטינית/מספרים נשארים אותו דבר, וסדר הטוקנים מתהפך (RTL flow).
+function _isHebrewChar(ch) {
+  const c = ch.charCodeAt(0);
+  return c >= 0x0590 && c <= 0x05FF;
+}
+function bidi(s) {
+  if (!s) return '';
+  // פצל לטוקנים: הברה עברית רצופה או הברה לא־עברית רצופה
+  const tokens = s.match(/[֐-׿"׳״]+|[^֐-׿"׳״]+/g) || [s];
+  // הפוך את סדר הטוקנים (זרימה RTL), והפוך כל טוקן עברי בנפרד
+  return tokens.reverse().map(t => {
+    if (/[֐-׿]/.test(t)) return [...t].reverse().join('');
+    return t;
+  }).join('');
+}
+
+// ציור שורת טקסט מימין (rightX = מיקום הקצה הימני של הטקסט במ"מ)
+function drawRTL(pdf, text, rightX, y, opts = {}) {
+  pdf.setFont('David', opts.bold ? 'bold' : 'normal');
+  pdf.setFontSize(opts.size || 11);
+  pdf.text(bidi(text), rightX, y, { align: 'right' });
+}
+function drawCenteredRTL(pdf, text, centerX, y, opts = {}) {
+  pdf.setFont('David', opts.bold ? 'bold' : 'normal');
+  pdf.setFontSize(opts.size || 11);
+  pdf.text(bidi(text), centerX, y, { align: 'center' });
+}
+// ציור פסקה עם wrap; מחזיר את ה־y אחרי הפסקה
+function drawWrappedRTL(pdf, text, rightX, leftX, y, opts = {}) {
+  pdf.setFont('David', opts.bold ? 'bold' : 'normal');
+  pdf.setFontSize(opts.size || 11);
+  const maxW = rightX - leftX;
+  const lineH = opts.lineHeight || ((opts.size || 11) * 0.45);
+  const lines = pdf.splitTextToSize(text, maxW);
+  for (const line of lines) {
+    pdf.text(bidi(line), rightX, y, { align: 'right' });
+    y += lineH;
+  }
+  return y;
+}
+
+// ציור טבלת בנות (לסמינר)
+function drawStudentsTable(pdf, girls, startY) {
+  const tableW = 178;  // מ"מ
+  const leftX = (210 - tableW) / 2;  // ממורכז
+  const colsW = [12, 36, 40, 36, 54]; // מ.ס., ת.ז., משפחה, פרטי, מוסד
+  const headers = ['מ.ס.', 'מספר זהות', 'שם משפחה', 'שם פרטי', 'מוסד'];
+  const rowH = 7;
+  const headH = 8;
+
+  pdf.setFont('David', 'bold');
+  pdf.setFontSize(11);
+  pdf.setDrawColor(30, 58, 138);
+  pdf.setLineWidth(0.4);
+
+  // כותרת — רקע כחול
+  pdf.setFillColor(219, 234, 254);
+  pdf.rect(leftX, startY, tableW, headH, 'FD');
+
+  // קווי עמודות בכותרת
+  let x = leftX;
+  for (let c = 0; c < colsW.length; c++) {
+    const w = colsW[c];
+    // ציור הקו הימני של העמודה (חוץ מהאחרונה)
+    if (c < colsW.length - 1) pdf.line(x + w, startY, x + w, startY + headH);
+    // טקסט כותרת — בעמודה RTL, הטקסט במרכז
+    pdf.text(bidi(headers[c]), x + w / 2, startY + 5.5, { align: 'center' });
+    x += w;
+  }
+
+  // שורות
+  pdf.setFont('David', 'normal');
+  pdf.setFontSize(10.5);
+  let y = startY + headH;
+  const rows = girls || [];
+  for (let r = 0; r < rows.length; r++) {
+    const g = rows[r];
+    // קו אופקי
+    pdf.line(leftX, y, leftX + tableW, y);
+    // ציור התא
+    let cx = leftX;
+    const values = [String(r + 1), g.national_id || '', g.family_name || '', g.first_name || '', g.source_school || ''];
+    for (let c = 0; c < colsW.length; c++) {
+      const w = colsW[c];
+      if (c < colsW.length - 1) pdf.line(cx + w, y, cx + w, y + rowH);
+      // עברית בעמודות 2-4 (שם משפ', פרטי, מוסד) — bidi.
+      // מספרים בעמודות 0-1 — לא bidi.
+      const v = values[c];
+      if (c <= 1) {
+        pdf.text(v, cx + w / 2, y + 5, { align: 'center' });
+      } else {
+        pdf.text(bidi(v), cx + w / 2, y + 5, { align: 'center' });
+      }
+      cx += w;
+    }
+    y += rowH;
+  }
+  // קו תחתון
+  pdf.line(leftX, y, leftX + tableW, y);
+  // מסגרת חיצונית
+  pdf.rect(leftX, startY, tableW, (y - startY));
+  return y;
+}
+
+// תאריך עברי+לועזי כשתי שורות
+function _twoDates(date) {
+  const months = ['ינואר','פברואר','מרץ','אפריל','מאי','יוני','יולי','אוגוסט','ספטמבר','אוקטובר','נובמבר','דצמבר'];
+  const lat = `${date.getDate()} ${months[date.getMonth()]} ${date.getFullYear()}`;
+  let heb = '';
+  try { heb = new Intl.DateTimeFormat('he-u-ca-hebrew', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }).format(date); } catch (e) {}
+  return { hebrew: heb, latin: lat };
+}
+
+// ============================================================
+// תבניות מכתבים — ציור ישיר ל־PDF (טקסט נטיב, חד לחלוטין)
+// ============================================================
+function drawParentsLetter(pdf, data) {
+  const RIGHT_X = 190;   // קצה ימין של הטקסט
+  const LEFT_X = 20;     // קצה שמאל (עבור wrap)
+  let y = 52;
+
+  drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, `הורי התלמידה ${data.girl_full_name || '________'}`, RIGHT_X, y, { size: 12, bold: true });  y += 6;
+  drawRTL(pdf, 'בדוא"ל', RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, 'שלום וברכה,', RIGHT_X, y, { size: 12 });  y += 9;
+
+  // הנדון — ממורכז
+  drawCenteredRTL(pdf, `הנדון: מענה לפנייתכם לשיבוץ בתכם לשנה"ל ${data.school_year || 'תשפ"ז'}`, 105, y, { size: 13, bold: true });
+  y += 11;
+
+  const seminarLine = data.seminar_code ? `${data.seminar_name} (${data.seminar_code})` : (data.seminar_name || '________________');
+  y = drawWrappedRTL(pdf,
+    `במענה לפנייתכם אודות בקשת שיבוץ לתיכון עבור בתכם תחי' לשנת הלימודים ${data.school_year || 'תשפ"ז'} לאחר עיון בפנייתכם ובחינת ההיבטים, ובהתבסס על כלל השיקולים הנ"ל, הוחלט כי בתכם תשובץ בסמינר: ${seminarLine}.`,
+    RIGHT_X, LEFT_X, y, { size: 12, lineHeight: 6 });
+  y += 4;
+  drawRTL(pdf, 'החלטה זו הינה על דעת וועדת הרבנים העירונית.', RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, 'הקבלה לסמינר מותנית ברישום לסמינר ועמידה בכללי הקבלה.', RIGHT_X, y, { size: 12 });  y += 14;
+
+  // חתימה
+  drawRTL(pdf, 'באיחולי הצלחה ורוב נחת', RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, 'בברכה,', RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, 'יהודה קורנבליט', RIGHT_X, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, 'מנהל אגף החינוך', RIGHT_X, y, { size: 12 });  y += 5;
+  drawRTL(pdf, 'עיריית ביתר עילית', RIGHT_X, y, { size: 12 });
+
+  // הערה למטה ממורכזת
+  drawCenteredRTL(pdf, 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך', 105, 268, { size: 10 });
+}
+
+function drawSeminarSignature(pdf, y, extraCopiesPrefix) {
+  drawRTL(pdf, 'בברכה,', 190, y, { size: 12 });  y += 6;
+  drawRTL(pdf, 'יהודה קורנבליט', 190, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, 'מנהל אגף החינוך', 190, y, { size: 12 });  y += 10;
+  drawRTL(pdf, `העתקים:${extraCopiesPrefix ? ' ' + extraCopiesPrefix : ''}`, 190, y, { size: 10, bold: true });  y += 5;
+  drawRTL(pdf, 'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך', 190, y, { size: 10 });  y += 4.5;
+  drawRTL(pdf, 'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך', 190, y, { size: 10 });  y += 4.5;
+  drawRTL(pdf, 'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך', 190, y, { size: 10 });  y += 4.5;
+  drawRTL(pdf, 'וועדת ערר - מחוז חרדי', 190, y, { size: 10 });
+}
+
+function drawSeminarInitialLetter(pdf, data) {
+  const RIGHT_X = 190, LEFT_X = 20;
+  const dt = _twoDates(data.letter_date ? new Date(data.letter_date) : new Date());
+
+  // כותרת
+  drawCenteredRTL(pdf, 'אגף החינוך', 105, 48, { size: 18, bold: true });
+  drawRTL(pdf, dt.hebrew, RIGHT_X, 57, { size: 10 });
+  drawRTL(pdf, dt.latin, RIGHT_X, 62, { size: 10 });
+
+  let y = 75;
+  drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, `מנהל סמינר "${data.seminar_name || '________'}"`, RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, 'שלום רב,', RIGHT_X, y, { size: 12 });  y += 10;
+
+  drawCenteredRTL(pdf, `הנדון: שיבוץ תלמידות במוסדכם לשנה"ל ${data.school_year || 'תשפ"ז'}`, 105, y, { size: 13, bold: true });
+  y += 11;
+
+  y = drawWrappedRTL(pdf, 'שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\')',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  y = drawWrappedRTL(pdf, 'כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  y = drawWrappedRTL(pdf, 'לאחר דין ודברים שהתנהל בוועדת הרבנים העירונית ולאחר עבודת צוות מעמיקה ע"פ הנחיות משרד החינוך וגורמי נוספים ברשות, הוחלט שבבית ספרכם תשובצנה תלמידות בנוסף לאלו שכבר משובצות אצלכם.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  y = drawWrappedRTL(pdf, 'הודעה להורים תשלח בהמשך ועם פנייתם אליכם הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  drawRTL(pdf, 'רצ"ב רשימת התלמידות.', RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
+  y = drawWrappedRTL(pdf, 'השגה על השיבוץ ניתן להגיש התייחסות עניינית בכתב לכתובת דוא"ל seminar@5888111.co.il עד 3 ימי עבודה מיום קבלת מכתב שיבוץ זה. מכתבכם יוצג בוועדת הרבנים.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  y = drawWrappedRTL(pdf, 'כאמור בהנחיות ניתן לערער לועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 7;
+  drawSeminarSignature(pdf, y);
+}
+
+function drawSeminarFinalLetter(pdf, data) {
+  const RIGHT_X = 190, LEFT_X = 20;
+  drawCenteredRTL(pdf, 'בס"ד', 105, 48, { size: 11, bold: true });
+
+  let y = 60;
+  drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, `הנהלת סמינר ${data.seminar_name || '_______________'}`, RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, 'שלום רב,', RIGHT_X, y, { size: 12 });  y += 10;
+
+  drawCenteredRTL(pdf, `הנדון: מענה לערעור - שיבוץ תלמידות סופי לשנה"ל ${data.school_year || 'תשפ"ז'}`, 105, y, { size: 13, bold: true });
+  y += 11;
+
+  y = drawWrappedRTL(pdf, 'בהמשך להודעת השיבוץ שנשלחה אליכם ולאחר קבלת המענה ממכם התקיימה ישיבת היוועצות עם וועדת הרבנים העירונית ולהלן מסקנותיה.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  y = drawWrappedRTL(pdf, 'להזכירכם שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\') כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  y = drawWrappedRTL(pdf, 'העתק החלטת השיבוץ נשלח להורים, הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  drawRTL(pdf, 'רצ"ב רשימת התלמידות.', RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
+  y = drawWrappedRTL(pdf, 'כאמור בהנחיות ניתן לערער לוועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.',
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 7;
+  drawSeminarSignature(pdf, y, 'וועדת הרבנים העירונית');
+}
+
+function drawStudentsListPage(pdf, data, isFinal) {
+  drawCenteredRTL(pdf, isFinal ? 'בס"ד' : 'אגף החינוך', 105, 48, { size: isFinal ? 11 : 18, bold: true });
+  drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}`, 105, isFinal ? 60 : 62, { size: 14, bold: true });
+  drawStudentsTable(pdf, data.girls, isFinal ? 68 : 72);
+}
+
+// בונה את ה־HTML של המכתב לפי תבנית + נתונים  [נשמר לתאימות; לא בשימוש בגנרטור החדש]
 function buildLetterHTML(template, data, letterheadDataUrl) {
   const A4_W = 794, A4_H = 1123;
 
@@ -6019,51 +6283,41 @@ async function waitForFonts() {
   }
 }
 
-// יצירת PDF מהתבנית — מחזיר Blob של PDF
-// scale גבוה (3.5) מפצה על איבוד החדות הטבעי של html2canvas כשהוא צובע
-// את הניירת. הפלט JPEG באיכות 0.95 (גודל קובץ סביר).
+// יצירת PDF מהתבנית — מחזיר Blob של PDF.
+// גרסה חדשה: טקסט נטיב (וקטור) ב־PDF, חד לחלוטין בכל זום, קובץ קטן.
+// הניירת כתמונת JPG מקורית (1653×2338) ללא דגימה מחדש.
 async function generateLetterPDF(template, data) {
-  console.log('[PDF] generateLetterPDF v3 — combined render hi-res, template:', template);
+  console.log('[PDF] generateLetterPDF v4 — NATIVE TEXT, template:', template);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
+
+  await embedDavidFont(pdf);
   const letterhead = await loadLetterhead();
-  await waitForFonts();
-  if (document.fonts) {
-    const fonts = [];
-    document.fonts.forEach(f => fonts.push(`${f.family} ${f.weight} (${f.status})`));
-    console.log('[PDF] David fonts:', fonts.filter(f => f.includes('David')).join(' | ') || '⚠️ David Libre לא נטען!');
+
+  const addLetterheadPage = (isFirst) => {
+    if (!isFirst) pdf.addPage();
+    // הוסף את הניירת ככה שתכסה את כל ה־A4 (210×297 מ"מ)
+    pdf.addImage(letterhead, 'JPEG', 0, 0, 210, 297, undefined, 'NONE');
+  };
+
+  if (template === 'parents') {
+    addLetterheadPage(true);
+    drawParentsLetter(pdf, data);
+  } else if (template === 'seminar_initial') {
+    addLetterheadPage(true);
+    drawSeminarInitialLetter(pdf, data);
+    addLetterheadPage(false);
+    drawStudentsListPage(pdf, data, false);
+  } else if (template === 'seminar_final') {
+    addLetterheadPage(true);
+    drawSeminarFinalLetter(pdf, data);
+    addLetterheadPage(false);
+    drawStudentsListPage(pdf, data, true);
+  } else {
+    throw new Error('תבנית לא מוכרת: ' + template);
   }
-  const html = buildLetterHTML(template, data, letterhead);
 
-  // צור div מוסתר ב־DOM (html2canvas צריך DOM אמיתי)
-  const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed; left:-99999px; top:0; z-index:-1;';
-  wrap.innerHTML = html;
-  document.body.appendChild(wrap);
-
-  try {
-    const pages = wrap.children;  // כל בן זה דף A4
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4', compress: true });
-
-    for (let i = 0; i < pages.length; i++) {
-      const page = pages[i];
-      // scale: 3.5 → 794*3.5 × 1123*3.5 = 2779 × 3931 (יותר מ־DPI הניירת המקורי).
-      // איכות JPEG 0.95 משאירה קובץ סביר (~1-2MB) עם חדות גבוהה.
-      const canvas = await html2canvas(page, {
-        scale: 3.5,
-        useCORS: true,
-        backgroundColor: '#fff',
-        windowWidth: 794,
-        windowHeight: 1123,
-        imageTimeout: 0,           // אל תוותר על תמונות אם איטיות
-      });
-      const img = canvas.toDataURL('image/jpeg', 0.95);
-      if (i > 0) pdf.addPage();
-      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'NONE');
-    }
-    return pdf.output('blob');
-  } finally {
-    wrap.remove();
-  }
+  return pdf.output('blob');
 }
 
 // הורד PDF — בעיקר לפיתוח/בדיקה
