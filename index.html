@@ -5825,9 +5825,9 @@ async function loadLetterhead() {
 }
 
 // בונה את ה־HTML של המכתב לפי תבנית + נתונים
-// הניירת **לא** ב־HTML — היא מתווספת ל־PDF ישירות ברזולוציה מקורית.
-// ה־HTML רק טקסט שקוף שמונח מעל הניירת.
-function buildLetterHTML(template, data) {
+// הניירת מוטמעת כרקע באלמנט; html2canvas צובע הכל ביחד.
+// כדי לפצות על איבוד חדות הניירת — מגדילים את ה־scale ב־PDF generator.
+function buildLetterHTML(template, data, letterheadDataUrl) {
   const A4_W = 794, A4_H = 1123;
 
   // אזור בטוח: אחרי הלוגו למעלה, לפני הפוטר למטה
@@ -5836,11 +5836,13 @@ function buildLetterHTML(template, data) {
   const PAD_RIGHT = 85;
   const PAD_LEFT = 85;
 
-  // סגנון משותף — רקע שקוף, פונט David Libre (חופשי, דומה ל־David הקלאסי)
+  // סגנון משותף — ניירת כרקע, פונט David Libre (חופשי, דומה ל־David הקלאסי)
   const baseStyle = `
     width: ${A4_W}px;
     height: ${A4_H}px;
-    background: transparent;
+    background-image: url('${letterheadDataUrl}');
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
     font-family: 'David Libre', 'David', 'Times New Roman', serif;
     direction: rtl;
     text-align: right;
@@ -6018,23 +6020,22 @@ async function waitForFonts() {
 }
 
 // יצירת PDF מהתבנית — מחזיר Blob של PDF
-// שיטה: ה־HTML מרונדר עם רקע **שקוף**, מומר לתמונת PNG עם אלפא.
-// הניירת מתווספת ל־PDF ישירות מה־JPG המקורי ברזולוציה מלאה.
+// scale גבוה (3.5) מפצה על איבוד החדות הטבעי של html2canvas כשהוא צובע
+// את הניירת. הפלט JPEG באיכות 0.95 (גודל קובץ סביר).
 async function generateLetterPDF(template, data) {
-  console.log('[PDF] generateLetterPDF v2 — David Libre + native letterhead, template:', template);
+  console.log('[PDF] generateLetterPDF v3 — combined render hi-res, template:', template);
   const letterhead = await loadLetterhead();
   await waitForFonts();
-  const html = buildLetterHTML(template, data);
-  // הדפס לקונסול אילו פונטים זמינים — לאבחון
   if (document.fonts) {
     const fonts = [];
     document.fonts.forEach(f => fonts.push(`${f.family} ${f.weight} (${f.status})`));
-    console.log('[PDF] loaded fonts:', fonts.filter(f => f.includes('David')).join(' | ') || '⚠️ David Libre לא נטען!');
+    console.log('[PDF] David fonts:', fonts.filter(f => f.includes('David')).join(' | ') || '⚠️ David Libre לא נטען!');
   }
+  const html = buildLetterHTML(template, data, letterhead);
 
   // צור div מוסתר ב־DOM (html2canvas צריך DOM אמיתי)
   const wrap = document.createElement('div');
-  wrap.style.cssText = 'position:fixed; left:-99999px; top:0; z-index:-1; background:transparent;';
+  wrap.style.cssText = 'position:fixed; left:-99999px; top:0; z-index:-1;';
   wrap.innerHTML = html;
   document.body.appendChild(wrap);
 
@@ -6045,21 +6046,19 @@ async function generateLetterPDF(template, data) {
 
     for (let i = 0; i < pages.length; i++) {
       const page = pages[i];
-
-      // (1) ניירת — הוסף כתמונה נטיב ברזולוציה המקורית (חד, ללא דגימה מחדש)
-      if (i > 0) pdf.addPage();
-      pdf.addImage(letterhead, 'JPEG', 0, 0, 210, 297);
-
-      // (2) טקסט — צלם כ־PNG עם אלפא (רקע שקוף שלא יסתיר את הניירת)
+      // scale: 3.5 → 794*3.5 × 1123*3.5 = 2779 × 3931 (יותר מ־DPI הניירת המקורי).
+      // איכות JPEG 0.95 משאירה קובץ סביר (~1-2MB) עם חדות גבוהה.
       const canvas = await html2canvas(page, {
-        scale: 2.5,                // איכות גבוהה לטקסט עברי חד
+        scale: 3.5,
         useCORS: true,
-        backgroundColor: null,     // ⚠️ שקוף — קריטי כדי שהניירת תיראה
+        backgroundColor: '#fff',
         windowWidth: 794,
         windowHeight: 1123,
+        imageTimeout: 0,           // אל תוותר על תמונות אם איטיות
       });
-      const textImg = canvas.toDataURL('image/png');
-      pdf.addImage(textImg, 'PNG', 0, 0, 210, 297);
+      const img = canvas.toDataURL('image/jpeg', 0.95);
+      if (i > 0) pdf.addPage();
+      pdf.addImage(img, 'JPEG', 0, 0, 210, 297, undefined, 'NONE');
     }
     return pdf.output('blob');
   } finally {
