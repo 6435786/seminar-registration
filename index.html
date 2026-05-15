@@ -6021,9 +6021,16 @@ async function waitForFonts() {
 // שיטה: ה־HTML מרונדר עם רקע **שקוף**, מומר לתמונת PNG עם אלפא.
 // הניירת מתווספת ל־PDF ישירות מה־JPG המקורי ברזולוציה מלאה.
 async function generateLetterPDF(template, data) {
+  console.log('[PDF] generateLetterPDF v2 — David Libre + native letterhead, template:', template);
   const letterhead = await loadLetterhead();
   await waitForFonts();
   const html = buildLetterHTML(template, data);
+  // הדפס לקונסול אילו פונטים זמינים — לאבחון
+  if (document.fonts) {
+    const fonts = [];
+    document.fonts.forEach(f => fonts.push(`${f.family} ${f.weight} (${f.status})`));
+    console.log('[PDF] loaded fonts:', fonts.filter(f => f.includes('David')).join(' | ') || '⚠️ David Libre לא נטען!');
+  }
 
   // צור div מוסתר ב־DOM (html2canvas צריך DOM אמיתי)
   const wrap = document.createElement('div');
