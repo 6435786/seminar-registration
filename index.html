@@ -8062,11 +8062,11 @@ if ('serviceWorker' in navigator) {
   });
 }
 
+// PWA install banner — מושבת לבקשת המשתמש (לא מציגים יותר)
 let _deferredInstallPrompt = null;
 window.addEventListener('beforeinstallprompt', (e) => {
   e.preventDefault();
-  _deferredInstallPrompt = e;
-  showInstallBanner();
+  // לא קוראים ל־showInstallBanner — ההצעה להתקנה לא תיגלה.
 });
 
 function showInstallBanner() {
