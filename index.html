@@ -4738,7 +4738,7 @@ const LIST_TABS = [
       { key: 'slug',           label: 'מזהה',        type: 'text', readonly: true },
       { key: 'recipient_kind', label: 'סוג נמען',    type: 'enum', values: ['parents','seminar','source_school'], readonly: true },
       { key: 'description',    label: 'הסבר',        type: 'text' },
-      { key: 'file_name',      label: 'קובץ תבנית',  type: 'template_file' },
+      { key: '_edit_content',  label: 'טקסט המכתב',  type: 'edit_sections' },
       { key: 'show_in_picker', label: 'הצג',         type: 'bool' },
     ] },
 ];
@@ -4846,6 +4846,14 @@ async function renderManageLists() {
             (has ? ` <button class="mini-btn" onclick="downloadTemplateFile(${item.id})" title="הורד קובץ">📥</button>` : '')
           : (has ? `<button class="mini-btn" onclick="downloadTemplateFile(${item.id})" title="הורד קובץ">📥</button>` : '');
         cells.push(`<td class="val-cell" style="text-align:center;">${display} ${actions}</td>`);
+        return;
+      }
+      if (f.type === 'edit_sections') {
+        const has = !!(item.content_json && item.content_json.sections);
+        const display = has
+          ? `<span style="color:var(--accent); font-weight:600;">${Object.keys(item.content_json.sections).length} קטעים</span>`
+          : `<span style="color:var(--muted)">ברירת מחדל</span>`;
+        cells.push(`<td class="val-cell" style="text-align:center;">${display} <button class="mini-btn" onclick="openTemplateEditor(${item.id})" title="ערוך טקסטים של המכתב">✎ ערוך</button></td>`);
         return;
       }
       if (f.type === 'bool') {
@@ -5786,6 +5794,225 @@ async function downloadTemplateFile(templateId) {
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
   toast('הורד ✓');
+}
+
+// ============================================================
+// עורך טקסטי תבניות — UI לעריכת ה־sections של form_templates
+// ============================================================
+
+// תיאור ידידותי לכל קטע (למוצג בעורך)
+const TEMPLATE_SECTION_LABELS = {
+  parents: {
+    greeting:         { label: 'פתיחה (לכבוד)',          short: true },
+    addressee:        { label: 'שורת הנמען (שם התלמידה)' },
+    email_line:       { label: 'שורת מייל ההורים' },
+    shalom:           { label: 'ברכת פתיחה',              short: true },
+    subject:          { label: 'הנדון (ממורכז, מודגש)' },
+    body:             { label: 'גוף המכתב', textarea: true },
+    rabanim_note:     { label: 'הערת ועדת רבנים' },
+    registration_note:{ label: 'הערת רישום וקבלה' },
+    blessing:         { label: 'ברכה (איחולי הצלחה)',     short: true },
+    signature_open:   { label: 'פתיחת חתימה (בברכה)',     short: true },
+    signer_name:      { label: 'שם החותם',                short: true },
+    signer_role:      { label: 'תפקיד החותם',             short: true },
+    signer_dept:      { label: 'שיוך החותם',              short: true },
+    footer_appeal:    { label: 'הערה תחתונה (ערעור)' },
+  },
+  seminar_initial: {
+    greeting:         { label: 'פתיחה (לכבוד)',          short: true },
+    contact_name:     { label: 'שורת איש קשר',           short: true },
+    contact_role:     { label: 'שורת תפקיד הסמינר' },
+    shalom:           { label: 'ברכת פתיחה',              short: true },
+    subject:          { label: 'הנדון (ממורכז, מודגש)' },
+    para1:            { label: 'פסקה 1 (סמכות ואחריות)', textarea: true },
+    para2:            { label: 'פסקה 2 (שלב החלטות)', textarea: true },
+    para3:            { label: 'פסקה 3 (החלטת ועדת רבנים)', textarea: true },
+    parents_note:     { label: 'הודעת הורים', textarea: true },
+    attachment_note:  { label: 'רצ"ב רשימה',              short: true },
+    appeal_note:      { label: 'הוראות השגה (לאגף החינוך)', textarea: true },
+    meshrad_chinuch:  { label: 'הוראות ערעור (משרד החינוך)', textarea: true },
+    signature_open:   { label: 'פתיחת חתימה',             short: true },
+    signer_name:      { label: 'שם החותם',                short: true },
+    signer_role:      { label: 'תפקיד החותם',             short: true },
+    copies_label:     { label: 'כותרת העתקים',            short: true },
+    copies_line1:     { label: 'העתקים — שורה 1' },
+    copies_line2:     { label: 'העתקים — שורה 2' },
+    copies_line3:     { label: 'העתקים — שורה 3' },
+    copies_line4:     { label: 'העתקים — שורה 4',         short: true },
+    table_title:      { label: 'כותרת רשימת התלמידות' },
+  },
+  seminar_final: {
+    greeting:         { label: 'פתיחה (לכבוד)',          short: true },
+    contact_name:     { label: 'שורת איש קשר',           short: true },
+    contact_role:     { label: 'שורת תפקיד הסמינר' },
+    shalom:           { label: 'ברכת פתיחה',              short: true },
+    subject:          { label: 'הנדון (ממורכז, מודגש)' },
+    para1:            { label: 'פסקה 1 (פתיחת הערעור)', textarea: true },
+    para2:            { label: 'פסקה 2 (להזכירכם)', textarea: true },
+    parents_note:     { label: 'הודעת הורים', textarea: true },
+    attachment_note:  { label: 'רצ"ב רשימה',              short: true },
+    appeal_note:      { label: 'הוראות ערעור (משרד החינוך)', textarea: true },
+    signature_open:   { label: 'פתיחת חתימה',             short: true },
+    signer_name:      { label: 'שם החותם',                short: true },
+    signer_role:      { label: 'תפקיד החותם',             short: true },
+    copies_label:     { label: 'כותרת העתקים',            short: true },
+    copies_line1:     { label: 'העתקים — שורה 1' },
+    copies_line2:     { label: 'העתקים — שורה 2' },
+    copies_line3:     { label: 'העתקים — שורה 3' },
+    copies_line4:     { label: 'העתקים — שורה 4',         short: true },
+    table_title:      { label: 'כותרת רשימת התלמידות' },
+  },
+};
+
+// משתנים זמינים לכל סוג תבנית (להצגה למשתמש)
+const TEMPLATE_PLACEHOLDERS = {
+  parents: [
+    { tag: '{{girl_full_name}}', desc: 'שם התלמידה (פרטי + משפחה)' },
+    { tag: '{{parent_email}}',   desc: 'מייל ההורים' },
+    { tag: '{{seminar_full}}',   desc: 'שם הסמינר + סמל בסוגריים' },
+    { tag: '{{seminar_name}}',   desc: 'שם הסמינר בלבד' },
+    { tag: '{{school_year}}',    desc: 'שנת לימודים (תשפ"ז)' },
+  ],
+  seminar_initial: [
+    { tag: '{{contact_full}}',   desc: 'איש קשר (תואר + שם)' },
+    { tag: '{{seminar_name}}',   desc: 'שם הסמינר' },
+    { tag: '{{school_year}}',    desc: 'שנת לימודים' },
+  ],
+  seminar_final: [
+    { tag: '{{contact_full}}',   desc: 'איש קשר (תואר + שם)' },
+    { tag: '{{seminar_name}}',   desc: 'שם הסמינר' },
+    { tag: '{{school_year}}',    desc: 'שנת לימודים' },
+  ],
+};
+
+async function openTemplateEditor(templateId) {
+  // טען את התבנית מה־DB
+  const { data: template, error } = await sb.from('form_templates').select('*').eq('id', templateId).single();
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+
+  const slug = template.slug;
+  const labels = TEMPLATE_SECTION_LABELS[slug];
+  if (!labels) {
+    alert(`עורך התבניות תומך כרגע רק ב: ${Object.keys(TEMPLATE_SECTION_LABELS).join(', ')}`);
+    return;
+  }
+
+  const current = (template.content_json && template.content_json.sections) || {};
+  // עותק עבודה (לא משנה את ה־DB עד שמירה)
+  const working = {};
+  for (const id of Object.keys(labels)) {
+    working[id] = current[id] != null ? current[id] : '';
+  }
+
+  // בניית המודל
+  document.getElementById('tpl_editor_scrim')?.remove();
+  const scrim = document.createElement('div');
+  scrim.id = 'tpl_editor_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.5); z-index:2500; display:flex; align-items:center; justify-content:center; padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) confirmClose(); };
+
+  const pop = document.createElement('div');
+  pop.style.cssText = 'background:white; border-radius:12px; padding:0; box-shadow:0 16px 40px rgba(0,0,0,0.25); max-width:980px; width:100%; max-height:92vh; display:flex; flex-direction:column;';
+
+  // כותרת + רשימת placeholders
+  const placeholders = TEMPLATE_PLACEHOLDERS[slug] || [];
+  const placeholdersHtml = placeholders.map(p =>
+    `<span style="display:inline-block; padding:3px 8px; margin:2px; background:#f0f9ff; border:1px solid #7dd3fc; border-radius:6px; font-size:12px; cursor:copy;" title="${p.desc} — לחץ להעתקה" onclick="navigator.clipboard.writeText('${p.tag}').then(()=>toast('הועתק: ${p.tag}'))">${p.tag}</span>`
+  ).join('');
+
+  // קטעים
+  const sectionsHtml = Object.entries(labels).map(([id, meta]) => {
+    const val = working[id] || '';
+    const escVal = _esc(val);
+    const useTextarea = meta.textarea || val.length > 80;
+    const inputHtml = useTextarea
+      ? `<textarea data-section="${id}" rows="3" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:'David Libre','David',serif; font-size:14px; resize:vertical; line-height:1.5;">${escVal}</textarea>`
+      : `<input data-section="${id}" type="text" value="${escVal}" style="width:100%; padding:7px 10px; border:1px solid var(--border); border-radius:6px; font-family:'David Libre','David',serif; font-size:14px;">`;
+    return `
+      <div style="margin-bottom:14px;">
+        <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:4px;">${meta.label}</label>
+        ${inputHtml}
+      </div>
+    `;
+  }).join('');
+
+  pop.innerHTML = `
+    <div style="padding:16px 22px 10px; border-bottom:1px solid var(--border); position:sticky; top:0; background:white;">
+      <div style="display:flex; align-items:center; gap:12px;">
+        <div style="flex:1;">
+          <div style="font-weight:700; color:var(--deep); font-size:17px;">✎ עריכת טקסט: ${_esc(template.name)}</div>
+          <div style="color:var(--muted); font-size:12px; margin-top:2px;">המבנה (סדר, מיקום, פונט) נשאר קבוע — רק הטקסט נערך</div>
+        </div>
+        <button class="mini-btn" onclick="resetTemplateSection(${templateId})" title="אפס את הטקסטים לברירת המחדל המקורית">↻ אפס לברירת מחדל</button>
+        <button class="close" onclick="document.getElementById('tpl_editor_scrim').remove();" title="סגור">×</button>
+      </div>
+      ${placeholders.length ? `
+        <div style="margin-top:10px;">
+          <div style="font-size:11px; color:var(--muted); margin-bottom:4px;">משתנים זמינים (לחץ להעתקה):</div>
+          <div>${placeholdersHtml}</div>
+        </div>
+      ` : ''}
+    </div>
+    <div style="padding:16px 22px; overflow-y:auto; flex:1;" id="tpl_editor_body">
+      ${sectionsHtml}
+    </div>
+    <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
+      <button class="apply-big" id="tpl_editor_save" style="flex:1;">💾 שמור שינויים</button>
+      <button class="cancel-btn" id="tpl_editor_cancel">ביטול</button>
+    </div>
+  `;
+
+  function confirmClose() {
+    // אם יש שינויים — לבקש אישור
+    const dirty = collectChanges();
+    const hasDirty = Object.entries(dirty).some(([k, v]) => v !== (current[k] || ''));
+    if (hasDirty && !confirm('יש שינויים שלא נשמרו. לסגור בכל זאת?')) return;
+    scrim.remove();
+  }
+  function collectChanges() {
+    const out = {};
+    pop.querySelectorAll('[data-section]').forEach(el => {
+      out[el.dataset.section] = el.value;
+    });
+    return out;
+  }
+
+  document.getElementById('tpl_editor_cancel').onclick = confirmClose;
+  document.getElementById('tpl_editor_save').onclick = async () => {
+    const sections = collectChanges();
+    const newContent = { ...(template.content_json || {}), sections };
+    const { error } = await sb.from('form_templates').update({
+      content_json: newContent,
+      updated_at: new Date().toISOString(),
+    }).eq('id', templateId);
+    if (error) { toast('שגיאה בשמירה: ' + error.message, 'warn'); return; }
+    invalidateFormTemplateCache(slug);
+    toast('נשמר ✓');
+    scrim.remove();
+    await renderManageLists();
+  };
+
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+}
+
+// אפסון התבנית לברירת המחדל המקורית
+async function resetTemplateSection(templateId) {
+  if (!confirm('לאפס את כל הטקסטים של תבנית זו לברירת המחדל המקורית? פעולה זו תמחק את העריכות הנוכחיות.')) return;
+  // ברירת המחדל היא לפנות ל־migration original — אבל אנחנו לא יכולים לקרוא ל־migration מהדפדפן.
+  // במקום זה: מוחקים את ה־content_json, ובפעם הבאה ש־ensureFormTemplateContent רץ — הוא יקבל null
+  // וה־draw functions ייפלו לברירות המחדל ההארדקוד שלהן (שזה אכן הטקסט המקורי).
+  const { error } = await sb.from('form_templates').update({
+    content_json: null,
+    updated_at: new Date().toISOString(),
+  }).eq('id', templateId);
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  // ננקה את ה־cache לפי slug
+  const { data } = await sb.from('form_templates').select('slug').eq('id', templateId).single();
+  if (data) invalidateFormTemplateCache(data.slug);
+  toast('הותאם לברירת מחדל ✓');
+  document.getElementById('tpl_editor_scrim')?.remove();
+  await renderManageLists();
 }
 
 // ============================================================
