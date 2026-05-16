@@ -20,6 +20,8 @@
 <!-- jsPDF + html2canvas — ייצור PDF במייל (תבניות מכתבי שיבוץ עם רינדור עברי מלא דרך הדפדפן) -->
 <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<!-- JSZip — לבניית ZIP של PDFים לשליחת מיילים -->
+<script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -1193,6 +1195,8 @@
     #btn_hdr_print { font-size: 11px; padding: 4px 8px; } /* טקסט */
     #btn_export_table { font-size: 0; }
     #btn_export_table::before { content: '📊'; font-size: 16px; }
+    #btn_hdr_email { font-size: 0; }
+    #btn_hdr_email::before { content: '✉'; font-size: 16px; }
     /* stats — מקוצר */
     .stats { font-size: 11px; gap: 6px; }
   }
@@ -1610,6 +1614,7 @@
     <span class="hdr-sep" style="margin-right:auto;"></span>
     <button class="hdr-btn" id="btn_hdr_views">🔖 תצוגות שמורות</button>
     <button class="hdr-btn" id="btn_hdr_print">הדפסה</button>
+    <button class="hdr-btn" id="btn_hdr_email" title="שליחת מיילים לפי תבנית">✉ דוא"ל</button>
     <button class="hdr-btn" id="btn_export_table">📊 יצוא</button>
   </div>
   <!-- מובייל בלבד -->
@@ -6016,6 +6021,655 @@ async function resetTemplateSection(templateId) {
 }
 
 // ============================================================
+// Email composer — UI לשליחת מיילים מתבנית
+// ============================================================
+// 3 שלבים: בחירת תבנית → בחירת נמענים → גוף+שליחה
+// כרגע השליחה ב־mock (יורד ZIP + רישום ב־email_send_log).
+// כשמתחברים ל־Gmail API — רק מחליפים את _ec_send.
+// ============================================================
+
+const EC_STATE = {
+  step: 1,                      // 1=template, 2=recipients, 3=compose+send
+  template: null,               // { id, slug, name, recipient_kind, ... }
+  recipients: [],               // array of { kind, ref_id, email, display_name, letter_data }
+  statusFilters: ['ועדת רבנים'], // ברירת מחדל לפילטר סטטוס
+  subject: '',
+  bodyText: '',
+  bcc: '',
+  letterDate: null,             // ISO string; null = today
+};
+
+async function openEmailComposer() {
+  // אתחל state
+  Object.assign(EC_STATE, {
+    step: 1, template: null, recipients: [],
+    statusFilters: ['ועדת רבנים'],
+    subject: '', bodyText: '',
+    bcc: localStorage.getItem('ec_bcc_default') || '',
+    letterDate: null,
+  });
+  await _ec_renderModal();
+}
+
+function _ec_renderModal() {
+  document.getElementById('ec_scrim')?.remove();
+  const scrim = document.createElement('div');
+  scrim.id = 'ec_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2400; display:flex; align-items:center; justify-content:center; padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) _ec_confirmClose(); };
+
+  const pop = document.createElement('div');
+  pop.id = 'ec_pop';
+  pop.style.cssText = 'background:white; border-radius:14px; box-shadow:0 16px 50px rgba(0,0,0,0.3); max-width:920px; width:100%; max-height:92vh; display:flex; flex-direction:column;';
+
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+  return _ec_renderStep();
+}
+
+function _ec_confirmClose() {
+  if (EC_STATE.step > 1 && (EC_STATE.template || EC_STATE.recipients.length)) {
+    if (!confirm('לסגור את החלון? הבחירות לא יישמרו.')) return;
+  }
+  document.getElementById('ec_scrim')?.remove();
+}
+
+function _ec_stepHeader() {
+  const stepNames = ['1. בחירת תבנית', '2. בחירת נמענים', '3. כתיבה ושליחה'];
+  return `
+    <div style="padding:14px 22px; border-bottom:1px solid var(--border); background:linear-gradient(to bottom, #f8fafc, white); display:flex; align-items:center; gap:10px;">
+      <div style="font-size:22px;">✉</div>
+      <div style="flex:1;">
+        <div style="font-weight:700; color:var(--deep); font-size:17px;">שליחת מיילים</div>
+        <div style="color:var(--muted); font-size:12px; margin-top:2px;">
+          ${stepNames.map((n, i) => {
+            const cur = i + 1 === EC_STATE.step;
+            const done = i + 1 < EC_STATE.step;
+            const color = cur ? 'var(--deep)' : (done ? 'var(--accent)' : 'var(--muted)');
+            const weight = cur ? '700' : '500';
+            return `<span style="color:${color}; font-weight:${weight};">${n}</span>`;
+          }).join('  ◀  ')}
+        </div>
+      </div>
+      <button class="close" onclick="_ec_confirmClose()" title="סגור">×</button>
+    </div>
+  `;
+}
+
+async function _ec_renderStep() {
+  const pop = document.getElementById('ec_pop');
+  if (!pop) return;
+  if (EC_STATE.step === 1) return _ec_renderStep1(pop);
+  if (EC_STATE.step === 2) return _ec_renderStep2(pop);
+  if (EC_STATE.step === 3) return _ec_renderStep3(pop);
+}
+
+// =============== Step 1: template picker ===============
+async function _ec_renderStep1(pop) {
+  pop.innerHTML = `${_ec_stepHeader()}
+    <div id="ec_body" style="padding:20px; overflow-y:auto; flex:1;">
+      <div style="color:var(--muted); font-size:13px; margin-bottom:14px;">בחר את סוג המכתב שברצונך לשלוח:</div>
+      <div id="ec_tpl_list" style="display:flex; flex-direction:column; gap:10px;">
+        <div style="color:var(--muted); text-align:center; padding:20px;">טוען תבניות...</div>
+      </div>
+    </div>
+  `;
+  const { data, error } = await sb.from('form_templates')
+    .select('*')
+    .eq('is_active', true)
+    .eq('show_in_picker', true)
+    .order('sort_order');
+  const list = document.getElementById('ec_tpl_list');
+  if (error) { list.innerHTML = `<div style="color:var(--bad);">שגיאה: ${error.message}</div>`; return; }
+  if (!data || !data.length) { list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:20px;">אין תבניות זמינות. הגדר תבניות ב"רשימות → טפסי דוא"ל".</div>`; return; }
+
+  const kindLabel = { parents: '👨‍👩‍👧 הורים', seminar: '🏫 סמינר', source_school: '🏛 מוסד יסודי' };
+  const kindDesc = {
+    parents: 'בת אחת = מייל אחד',
+    seminar: 'סמינר אחד = מייל אחד עם רשימת בנות',
+    source_school: 'מוסד אחד = מייל אחד עם רשימת בנות',
+  };
+  list.innerHTML = data.map(t => `
+    <button onclick='_ec_pickTemplate(${t.id})' style="text-align:right; padding:14px 16px; border:2px solid var(--border); border-radius:10px; background:white; cursor:pointer; transition:all 0.15s; display:flex; align-items:center; gap:14px;"
+      onmouseover="this.style.borderColor='var(--accent)'; this.style.background='#f0f9ff';"
+      onmouseout="this.style.borderColor='var(--border)'; this.style.background='white';">
+      <div style="font-size:30px; flex-shrink:0;">${(kindLabel[t.recipient_kind] || '✉').split(' ')[0]}</div>
+      <div style="flex:1;">
+        <div style="font-weight:700; color:var(--deep); font-size:15px;">${_esc(t.name)}</div>
+        <div style="color:var(--muted); font-size:12px; margin-top:3px;">${_esc(t.description || '')}</div>
+        <div style="color:var(--accent); font-size:11px; margin-top:5px; font-weight:600;">${kindDesc[t.recipient_kind] || ''}</div>
+      </div>
+      <div style="color:var(--muted); font-size:24px;">◀</div>
+    </button>
+  `).join('');
+}
+
+async function _ec_pickTemplate(templateId) {
+  const { data, error } = await sb.from('form_templates').select('*').eq('id', templateId).single();
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  EC_STATE.template = data;
+  EC_STATE.step = 2;
+  // ברירת מחדל לנושא — לפי שם התבנית
+  EC_STATE.subject = data.name;
+  await _ec_renderStep();
+}
+
+// =============== Step 2: recipient picker ===============
+async function _ec_renderStep2(pop) {
+  const t = EC_STATE.template;
+  const kind = t.recipient_kind;
+  pop.innerHTML = `${_ec_stepHeader()}
+    <div id="ec_body" style="padding:14px 20px 0; overflow-y:auto; flex:1; display:flex; flex-direction:column;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
+        <span style="font-weight:600; color:var(--deep);">תבנית:</span>
+        <span style="color:var(--accent); font-weight:600;">${_esc(t.name)}</span>
+        <button class="cancel-btn" onclick="EC_STATE.step=1; _ec_renderStep();" style="padding:3px 10px; font-size:11px;">↺ שנה</button>
+      </div>
+      <div id="ec_recip_filter" style="margin-bottom:10px;"></div>
+      <div id="ec_recip_list" style="flex:1; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px; background:#fafbfc;">
+        <div style="color:var(--muted); text-align:center; padding:30px;">טוען...</div>
+      </div>
+    </div>
+    <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
+      <div style="flex:1; align-self:center; color:var(--muted); font-size:13px;" id="ec_recip_count">0 נמענים נבחרו</div>
+      <button class="cancel-btn" onclick="EC_STATE.step=1; _ec_renderStep();">← חזור</button>
+      <button class="apply-big" id="ec_recip_next" disabled>המשך ←</button>
+    </div>
+  `;
+
+  document.getElementById('ec_recip_next').onclick = () => { EC_STATE.step = 3; _ec_renderStep(); };
+
+  if (kind === 'parents') await _ec_renderParentsRecipients();
+  else if (kind === 'seminar') await _ec_renderSeminarRecipients();
+  else if (kind === 'source_school') await _ec_renderSchoolRecipients();
+  else document.getElementById('ec_recip_list').innerHTML = `<div style="color:var(--bad); text-align:center; padding:30px;">סוג נמען לא נתמך עדיין: ${kind}</div>`;
+}
+
+function _ec_updateRecipientCount() {
+  const count = EC_STATE.recipients.length;
+  const el = document.getElementById('ec_recip_count');
+  if (el) el.textContent = `${count} נמענים נבחרו`;
+  const next = document.getElementById('ec_recip_next');
+  if (next) next.disabled = count === 0;
+}
+
+// === Recipients for parents template ===
+async function _ec_renderParentsRecipients() {
+  // ניצור רשימה של בנות לפי סטטוס שיבוץ
+  // ROWS היא הרשימה הראשית עם נתונים מוצלבים (joined)
+  const allStatuses = ENUM_STATUS || [];
+  const filtersHtml = `
+    <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:8px 12px;">
+      <div style="font-size:12px; font-weight:600; color:var(--deep); margin-bottom:6px;">סנן לפי סטטוס:</div>
+      <div style="display:flex; flex-wrap:wrap; gap:4px;">
+        ${allStatuses.map(s => {
+          const checked = EC_STATE.statusFilters.includes(s);
+          return `<label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:white; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:12px; ${checked ? 'border-color:var(--accent); background:#dbeafe;' : ''}">
+            <input type="checkbox" ${checked ? 'checked' : ''} onchange="_ec_toggleStatusFilter('${_esc(s)}', this.checked)" style="margin:0;">
+            <span>${s}</span>
+          </label>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+  document.getElementById('ec_recip_filter').innerHTML = filtersHtml;
+
+  // סנן את ROWS לפי סטטוס
+  const matchingGirls = (ROWS || []).filter(r => {
+    const status = r.placement_status;
+    return EC_STATE.statusFilters.includes(status);
+  });
+
+  // כל בת עם email = נמען. אם אין email — בנפרד.
+  const list = document.getElementById('ec_recip_list');
+  if (matchingGirls.length === 0) {
+    list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">לא נמצאו בנות עם הסטטוסים שנבחרו.</div>`;
+    EC_STATE.recipients = [];
+    _ec_updateRecipientCount();
+    return;
+  }
+
+  // ברירת מחדל — כל הבנות עם מייל מסומנות
+  // נשמר את הבחירה הקודמת אם קיימת
+  const prevSelected = new Set(EC_STATE.recipients.map(r => r.ref_id));
+  const initialSelected = prevSelected.size > 0
+    ? prevSelected
+    : new Set(matchingGirls.filter(g => g.email).map(g => g.id));
+
+  function buildRows() {
+    return matchingGirls.map(g => {
+      const fullName = `${g.first_name || ''} ${g.family_name || ''}`.trim();
+      const hasEmail = !!g.email;
+      const isSelected = EC_STATE._parentSel.has(g.id);
+      const seminarText = g.placement_seminar || '—';
+      return `
+        <tr style="background:${isSelected ? '#dbeafe' : 'white'};">
+          <td style="padding:4px 8px; text-align:center; width:28px;">
+            <input type="checkbox" ${isSelected ? 'checked' : ''} ${!hasEmail ? 'disabled' : ''}
+              data-gid="${g.id}" class="ec_parent_cb">
+          </td>
+          <td style="padding:4px 8px;">${_esc(fullName)}</td>
+          <td style="padding:4px 8px; color:var(--muted); font-size:12px;">${_esc(seminarText)}</td>
+          <td style="padding:4px 8px; font-size:12px; ${hasEmail ? '' : 'color:var(--bad);'}">${hasEmail ? _esc(g.email) : '⛔ ללא מייל'}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  EC_STATE._parentSel = initialSelected;
+  EC_STATE._parentGirls = matchingGirls;
+
+  list.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="background:#eff6ff;">
+          <th style="padding:6px 8px; width:28px;"><input type="checkbox" id="ec_parent_all"></th>
+          <th style="padding:6px 8px; text-align:right;">שם תלמידה</th>
+          <th style="padding:6px 8px; text-align:right;">סמינר</th>
+          <th style="padding:6px 8px; text-align:right;">מייל</th>
+        </tr>
+      </thead>
+      <tbody id="ec_parent_rows">${buildRows()}</tbody>
+    </table>
+  `;
+  function refreshRows() {
+    document.getElementById('ec_parent_rows').innerHTML = buildRows();
+    bindCbs();
+    _ec_syncParentRecipients();
+  }
+  function bindCbs() {
+    document.querySelectorAll('.ec_parent_cb').forEach(cb => {
+      cb.onchange = () => {
+        const gid = parseInt(cb.dataset.gid, 10);
+        if (cb.checked) EC_STATE._parentSel.add(gid);
+        else EC_STATE._parentSel.delete(gid);
+        refreshRows();
+      };
+    });
+  }
+  document.getElementById('ec_parent_all').onchange = (e) => {
+    const all = e.target.checked;
+    matchingGirls.forEach(g => {
+      if (g.email) {
+        if (all) EC_STATE._parentSel.add(g.id);
+        else EC_STATE._parentSel.delete(g.id);
+      }
+    });
+    refreshRows();
+  };
+  bindCbs();
+  _ec_syncParentRecipients();
+}
+
+function _ec_syncParentRecipients() {
+  const girls = EC_STATE._parentGirls || [];
+  const sel = EC_STATE._parentSel || new Set();
+  EC_STATE.recipients = girls.filter(g => sel.has(g.id) && g.email).map(g => {
+    const fullName = `${g.first_name || ''} ${g.family_name || ''}`.trim();
+    const seminarName = g.placement_seminar || '';
+    const seminar = (DATA.seminars || []).find(s => s.name === seminarName);
+    return {
+      kind: 'parents',
+      ref_id: g.id,
+      email: g.email,
+      display_name: 'הורי ' + fullName,
+      letter_data: {
+        girl_full_name: fullName,
+        parent_email: g.email,
+        seminar_name: seminarName,
+        seminar_code: seminar ? seminar.institution_code : '',
+        school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
+      },
+    };
+  });
+  _ec_updateRecipientCount();
+}
+
+function _ec_toggleStatusFilter(status, checked) {
+  if (checked) {
+    if (!EC_STATE.statusFilters.includes(status)) EC_STATE.statusFilters.push(status);
+  } else {
+    EC_STATE.statusFilters = EC_STATE.statusFilters.filter(s => s !== status);
+  }
+  EC_STATE._parentSel = null;  // איפוס בחירה כדי לאתחל מחדש
+  _ec_renderParentsRecipients();
+}
+
+// === Recipients for seminar template ===
+async function _ec_renderSeminarRecipients() {
+  const filtersHtml = `
+    <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:8px 12px;">
+      <div style="font-size:12px; font-weight:600; color:var(--deep); margin-bottom:6px;">סנן בנות לפי סטטוס שיבוץ:</div>
+      <div style="display:flex; flex-wrap:wrap; gap:4px;">
+        ${(ENUM_STATUS || []).map(s => {
+          const checked = EC_STATE.statusFilters.includes(s);
+          return `<label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:white; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:12px; ${checked ? 'border-color:var(--accent); background:#dbeafe;' : ''}">
+            <input type="checkbox" ${checked ? 'checked' : ''} onchange="_ec_toggleStatusFilterSem('${_esc(s)}', this.checked)" style="margin:0;">
+            <span>${s}</span>
+          </label>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+  document.getElementById('ec_recip_filter').innerHTML = filtersHtml;
+
+  // קבץ בנות לפי סמינר (לפי placement_seminar)
+  const matchingGirls = (ROWS || []).filter(r => EC_STATE.statusFilters.includes(r.placement_status));
+  const bySeminar = {};
+  for (const g of matchingGirls) {
+    const semName = g.placement_seminar;
+    if (!semName) continue;
+    if (!bySeminar[semName]) bySeminar[semName] = [];
+    bySeminar[semName].push(g);
+  }
+  const seminarsWithGirls = Object.keys(bySeminar).sort((a, b) => a.localeCompare(b, 'he'));
+
+  const list = document.getElementById('ec_recip_list');
+  if (!seminarsWithGirls.length) {
+    list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">לא נמצאו סמינרים עם בנות בסטטוסים שנבחרו.</div>`;
+    EC_STATE.recipients = [];
+    _ec_updateRecipientCount();
+    return;
+  }
+
+  EC_STATE._semData = { bySeminar, seminarsWithGirls };
+  // ברירת מחדל — כל הסמינרים נבחרים
+  if (!EC_STATE._semSel || EC_STATE._semSel.size === 0) {
+    EC_STATE._semSel = new Set(seminarsWithGirls.filter(name => {
+      const sem = (DATA.seminars || []).find(s => s.name === name);
+      return sem && sem.contact_email;
+    }));
+  }
+
+  function buildSeminarRows() {
+    return seminarsWithGirls.map(name => {
+      const sem = (DATA.seminars || []).find(s => s.name === name);
+      const hasEmail = !!(sem && sem.contact_email);
+      const isSelected = EC_STATE._semSel.has(name);
+      const girls = bySeminar[name];
+      const extra = sem && Array.isArray(sem.extra_contacts) ? sem.extra_contacts.length : 0;
+      const emailsCount = (hasEmail ? 1 : 0) + extra;
+      return `
+        <tr style="background:${isSelected ? '#dbeafe' : 'white'};">
+          <td style="padding:5px 8px; text-align:center; width:28px;">
+            <input type="checkbox" ${isSelected ? 'checked' : ''} ${!hasEmail && extra === 0 ? 'disabled' : ''}
+              data-sname="${_esc(name)}" class="ec_sem_cb">
+          </td>
+          <td style="padding:5px 8px;">${_esc(name)}</td>
+          <td style="padding:5px 8px; text-align:center; color:var(--accent); font-weight:600;">${girls.length}</td>
+          <td style="padding:5px 8px; font-size:12px; ${hasEmail || extra ? '' : 'color:var(--bad);'}">
+            ${hasEmail ? _esc(sem.contact_email) : '⛔ אין מייל ראשי'}${extra ? ` + ${extra} נוספים` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  list.innerHTML = `
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="background:#eff6ff;">
+          <th style="padding:6px 8px; width:28px;"><input type="checkbox" id="ec_sem_all"></th>
+          <th style="padding:6px 8px; text-align:right;">סמינר</th>
+          <th style="padding:6px 8px; text-align:center; width:60px;">בנות</th>
+          <th style="padding:6px 8px; text-align:right;">איש קשר</th>
+        </tr>
+      </thead>
+      <tbody id="ec_sem_rows">${buildSeminarRows()}</tbody>
+    </table>
+  `;
+  function refresh() {
+    document.getElementById('ec_sem_rows').innerHTML = buildSeminarRows();
+    bindCbs();
+    _ec_syncSeminarRecipients();
+  }
+  function bindCbs() {
+    document.querySelectorAll('.ec_sem_cb').forEach(cb => {
+      cb.onchange = () => {
+        const name = cb.dataset.sname;
+        if (cb.checked) EC_STATE._semSel.add(name);
+        else EC_STATE._semSel.delete(name);
+        refresh();
+      };
+    });
+  }
+  document.getElementById('ec_sem_all').onchange = (e) => {
+    const all = e.target.checked;
+    seminarsWithGirls.forEach(name => {
+      const sem = (DATA.seminars || []).find(s => s.name === name);
+      if (sem && (sem.contact_email || (sem.extra_contacts && sem.extra_contacts.length))) {
+        if (all) EC_STATE._semSel.add(name);
+        else EC_STATE._semSel.delete(name);
+      }
+    });
+    refresh();
+  };
+  bindCbs();
+  _ec_syncSeminarRecipients();
+}
+
+function _ec_syncSeminarRecipients() {
+  const { bySeminar, seminarsWithGirls } = EC_STATE._semData || {};
+  if (!seminarsWithGirls) return;
+  const sel = EC_STATE._semSel || new Set();
+  const out = [];
+  seminarsWithGirls.forEach(name => {
+    if (!sel.has(name)) return;
+    const sem = (DATA.seminars || []).find(s => s.name === name);
+    if (!sem) return;
+    const girls = bySeminar[name].map(g => ({
+      national_id: g.national_id, family_name: g.family_name, first_name: g.first_name,
+      source_school: g.source_school_name || '',
+    }));
+    // ראשי
+    if (sem.contact_email) {
+      const contactFull = `${sem.contact_title || ''} ${sem.contact_name || ''}`.trim();
+      out.push({
+        kind: 'seminar', ref_id: sem.id, email: sem.contact_email,
+        display_name: `${name} — ${contactFull || sem.contact_email}`,
+        letter_data: {
+          contact_full: contactFull, seminar_name: name,
+          school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
+          letter_date: EC_STATE.letterDate, girls,
+        },
+      });
+    }
+    // אנשי קשר נוספים
+    const extras = Array.isArray(sem.extra_contacts) ? sem.extra_contacts : [];
+    extras.forEach(c => {
+      if (!c.email) return;
+      const contactFull = `${c.title || ''} ${c.name || ''}`.trim();
+      out.push({
+        kind: 'seminar', ref_id: sem.id, email: c.email,
+        display_name: `${name} — ${contactFull || c.email} (נוסף)`,
+        letter_data: {
+          contact_full: contactFull, seminar_name: name,
+          school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
+          letter_date: EC_STATE.letterDate, girls,
+        },
+      });
+    });
+  });
+  EC_STATE.recipients = out;
+  _ec_updateRecipientCount();
+}
+
+function _ec_toggleStatusFilterSem(status, checked) {
+  if (checked) {
+    if (!EC_STATE.statusFilters.includes(status)) EC_STATE.statusFilters.push(status);
+  } else {
+    EC_STATE.statusFilters = EC_STATE.statusFilters.filter(s => s !== status);
+  }
+  EC_STATE._semSel = null;
+  _ec_renderSeminarRecipients();
+}
+
+async function _ec_renderSchoolRecipients() {
+  // דומה לסמינר — אבל לפי source_school
+  document.getElementById('ec_recip_filter').innerHTML = '';
+  document.getElementById('ec_recip_list').innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">בקרוב — שליחה למוסדות לימוד יסודי</div>`;
+}
+
+// =============== Step 3: compose + send ===============
+async function _ec_renderStep3(pop) {
+  const t = EC_STATE.template;
+  const count = EC_STATE.recipients.length;
+  const todayIso = new Date().toISOString().substring(0, 10);
+  pop.innerHTML = `${_ec_stepHeader()}
+    <div id="ec_body" style="padding:14px 22px; overflow-y:auto; flex:1;">
+      <div style="display:flex; gap:14px; align-items:center; padding:8px 12px; background:#f0f9ff; border-radius:8px; margin-bottom:14px; flex-wrap:wrap;">
+        <div><b>${_esc(t.name)}</b></div>
+        <div style="color:var(--muted); font-size:13px;">→ <b style="color:var(--accent);">${count}</b> נמענים</div>
+        <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();" style="padding:3px 10px; font-size:11px; margin-right:auto;">↺ ערוך נמענים</button>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 200px; gap:10px; margin-bottom:12px;">
+        <div>
+          <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">נושא המייל</label>
+          <input type="text" id="ec_subject" value="${_esc(EC_STATE.subject)}" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+        </div>
+        <div>
+          <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">תאריך המכתב</label>
+          <input type="date" id="ec_letter_date" value="${EC_STATE.letterDate ? EC_STATE.letterDate.substring(0, 10) : todayIso}" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">גוף המייל (קצר — המכתב המעוצב יישלח כקובץ מצורף)</label>
+        <textarea id="ec_body_text" rows="3" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px; resize:vertical;">${_esc(EC_STATE.bodyText || 'שלום רב,\n\nמצ"ב מכתב שיבוץ. נא לעיין בקובץ המצורף.\n\nבברכה,\nאגף החינוך — עיריית ביתר עילית')}</textarea>
+      </div>
+
+      <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">BCC (עותק נסתר — לארכיון עירוני, אופציונלי)</label>
+        <input type="email" id="ec_bcc" value="${_esc(EC_STATE.bcc)}" placeholder="archive@beitar.muni.il" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+      </div>
+
+      <div style="background:#fffbea; border:1px solid #fde68a; border-radius:8px; padding:10px 12px; font-size:12px; color:#92400e; margin-bottom:14px;">
+        <b>⚠ במצב נוכחי</b> — אינטגרציית Gmail עדיין לא מחוברת. לחיצה על "ייצא" תוריד ZIP עם כל ה־PDFים, ותתעד את השליחה ב"היסטוריית שליחות". כשנחבר את Gmail — המיילים ישלחו אוטומטית.
+      </div>
+
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <button class="cancel-btn" onclick="_ec_previewFirst()">👁 תצוגה מקדימה (PDF ראשון)</button>
+      </div>
+    </div>
+    <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
+      <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();">← חזור</button>
+      <button class="apply-big" id="ec_send_btn" style="flex:1;">📤 ייצא ושלח (Mock — יורד ZIP)</button>
+    </div>
+  `;
+  document.getElementById('ec_send_btn').onclick = _ec_send;
+  // bind inputs
+  document.getElementById('ec_subject').oninput  = (e) => { EC_STATE.subject = e.target.value; };
+  document.getElementById('ec_body_text').oninput = (e) => { EC_STATE.bodyText = e.target.value; };
+  document.getElementById('ec_bcc').oninput     = (e) => { EC_STATE.bcc = e.target.value; localStorage.setItem('ec_bcc_default', e.target.value); };
+  document.getElementById('ec_letter_date').oninput = (e) => {
+    EC_STATE.letterDate = e.target.value ? new Date(e.target.value).toISOString() : null;
+    // עדכן מועד גם בנתוני מכתבי הסמינר (שמשתמשים בתאריך)
+    EC_STATE.recipients.forEach(r => { if (r.letter_data) r.letter_data.letter_date = EC_STATE.letterDate; });
+  };
+}
+
+async function _ec_previewFirst() {
+  if (!EC_STATE.recipients.length) { toast('אין נמענים', 'warn'); return; }
+  toast('יוצר תצוגה מקדימה...');
+  const r = EC_STATE.recipients[0];
+  await downloadLetterPDF(EC_STATE.template.slug, r.letter_data, `preview-${EC_STATE.template.slug}.pdf`);
+}
+
+// =============== Send (mock — generates ZIP + logs) ===============
+async function _ec_send() {
+  if (!EC_STATE.recipients.length) { toast('אין נמענים', 'warn'); return; }
+
+  // ולידציות
+  const missingEmail = EC_STATE.recipients.find(r => !r.email);
+  if (missingEmail) {
+    alert(`אחד הנמענים ללא מייל: ${missingEmail.display_name}\nהשליחה נחסמה. תקן ב"רשימות".`);
+    return;
+  }
+  if (!EC_STATE.subject.trim()) { toast('נושא חובה', 'warn'); return; }
+
+  if (!confirm(`לייצא ZIP עם ${EC_STATE.recipients.length} מיילים?\n\n(בשלב הזה — לא נשלח באמת. יורד ZIP + נרשם בהיסטוריה.)`)) return;
+
+  const btn = document.getElementById('ec_send_btn');
+  btn.disabled = true;
+  btn.textContent = 'מייצר PDFים...';
+
+  const slug = EC_STATE.template.slug;
+  const zip = new JSZip();
+  const folder = zip.folder('מיילים');
+  const batchId = (crypto.randomUUID ? crypto.randomUUID() : ('batch_' + Date.now()));
+  const logRows = [];
+
+  let ok = 0, fail = 0;
+  for (let i = 0; i < EC_STATE.recipients.length; i++) {
+    const r = EC_STATE.recipients[i];
+    btn.textContent = `מייצר ${i+1}/${EC_STATE.recipients.length}...`;
+    try {
+      const pdfBlob = await generateLetterPDF(slug, r.letter_data);
+      const fname = _ec_safeFilename(`${r.display_name}.pdf`);
+      folder.file(fname, pdfBlob);
+      // עטוף ב־.eml פשוט (לעתיד — לפי אסטרטגיית גרירה ל־Drafts)
+      const emlContent = _ec_buildEml(r, pdfBlob, fname);
+      folder.file(_ec_safeFilename(`${r.display_name}.eml`), emlContent);
+      logRows.push({
+        batch_id: batchId,
+        template_id: EC_STATE.template.id,
+        template_slug: slug,
+        recipient_email: r.email,
+        recipient_name: r.display_name,
+        recipient_kind: r.kind,
+        recipient_ref_id: r.ref_id,
+        subject: EC_STATE.subject,
+        body_preview: (EC_STATE.bodyText || '').substring(0, 300),
+        season_id: CURRENT_SEASON_ID,
+        girl_ids: r.kind === 'parents' ? [r.ref_id] : (r.letter_data.girls || []).map(g => g.id).filter(Boolean),
+        status_filters: EC_STATE.statusFilters,
+        letter_date: (EC_STATE.letterDate || new Date().toISOString()).substring(0, 10),
+        sent_by_user_id: CURRENT_USER && CURRENT_USER.id,
+        sent_by_email: CURRENT_USER && CURRENT_USER.email,
+        metadata: { mock: true, bcc: EC_STATE.bcc || null },
+      });
+      ok++;
+    } catch (e) {
+      console.error('PDF gen failed for', r, e);
+      fail++;
+    }
+  }
+
+  btn.textContent = 'שומר ZIP...';
+  const blob = await zip.generateAsync({ type: 'blob' });
+  const ts = new Date().toISOString().substring(0, 19).replace(/[:T]/g, '-');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `מיילים-${slug}-${ts}.zip`;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+
+  // רישום בלוג
+  btn.textContent = 'רושם בהיסטוריה...';
+  if (logRows.length) {
+    const { error } = await sb.from('email_send_log').insert(logRows);
+    if (error) console.warn('email_send_log insert failed:', error.message);
+  }
+
+  toast(`✓ נוצרו ${ok} מיילים${fail ? ` (${fail} נכשלו)` : ''}`);
+  document.getElementById('ec_scrim')?.remove();
+}
+
+function _ec_safeFilename(name) {
+  return name.replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
+}
+
+function _ec_buildEml(r, pdfBlob, attachName) {
+  // EML פשוט עם attachment כ־base64. שימוש: גרירה ל־Drafts באאוטלוק.
+  // ⚠ זה placeholder לעתיד — כשנעבור ל־Gmail API, לא נצטרך EML.
+  // לכן כרגע אנחנו רק יוצרים EML פשוט עם metadata; לא base64-encoding (להאיץ).
+  const subject = EC_STATE.subject || EC_STATE.template.name;
+  const body = EC_STATE.bodyText || '';
+  return `To: ${r.email}\nSubject: ${subject}\n\n${body}\n\n[Attachment: ${attachName}]\n`;
+}
+
+// ============================================================
 // מנוע ייצור PDF למיילי שיבוץ — תבניות מכתבים
 // ============================================================
 // גישה: בונים את המכתב כ־HTML מוסתר עם הניירת כרקע, מרנדרים
@@ -7142,6 +7796,9 @@ document.getElementById('btn_manage_users').addEventListener('click', () => {
 document.getElementById('btn_load_source').addEventListener('click', openLoadSourceModal);
 document.getElementById('btn_export_table').addEventListener('click', exportMainTableToExcel);
 document.getElementById('btn_backup').addEventListener('click', backupAllData);
+
+// כפתור שליחת מיילים
+document.getElementById('btn_hdr_email').addEventListener('click', openEmailComposer);
 
 // כפתור שחזור מגיבוי
 document.getElementById('btn_restore').addEventListener('click', triggerRestore);
