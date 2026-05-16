@@ -5892,65 +5892,84 @@ function drawWrappedRTL(pdf, text, rightX, leftX, y, opts = {}) {
 }
 
 // ציור טבלת בנות (לסמינר)
-function drawStudentsTable(pdf, girls, startY) {
+// טבלת תלמידות עם תמיכה ברב־עמוד (auto page break + redraw header on each page).
+// onNewPage: callback אופציונלי שיוצר עמוד חדש עם הניירת (כותרת חוזרת)
+//            ומחזיר את ה־y ההתחלתי לעמוד החדש.
+function drawStudentsTable(pdf, girls, startY, opts = {}) {
   const tableW = 178;  // מ"מ
-  const leftX = (210 - tableW) / 2;  // ממורכז
+  const leftX = (210 - tableW) / 2;
   const colsW = [12, 36, 40, 36, 54]; // מ.ס., ת.ז., משפחה, פרטי, מוסד
   const headers = ['מ.ס.', 'מספר זהות', 'שם משפחה', 'שם פרטי', 'מוסד'];
   const rowH = 7;
   const headH = 8;
+  const PAGE_BOTTOM = 265;  // מ"מ — אזור בטוח, מעל פוטר הניירת
 
-  pdf.setFont('David', 'bold');
-  pdf.setFontSize(11);
-  pdf.setDrawColor(30, 58, 138);
-  pdf.setLineWidth(0.4);
+  const onNewPage = opts.onNewPage;  // () => yNew  (אופציונלי)
 
-  // כותרת — רקע כחול
-  pdf.setFillColor(219, 234, 254);
-  pdf.rect(leftX, startY, tableW, headH, 'FD');
-
-  // קווי עמודות בכותרת
-  let x = leftX;
-  for (let c = 0; c < colsW.length; c++) {
-    const w = colsW[c];
-    // ציור הקו הימני של העמודה (חוץ מהאחרונה)
-    if (c < colsW.length - 1) pdf.line(x + w, startY, x + w, startY + headH);
-    // טקסט כותרת — בעמודה RTL, הטקסט במרכז
-    pdf.text(bidi(headers[c]), x + w / 2, startY + 5.5, { align: 'center' });
-    x += w;
+  function drawHeader(yTop) {
+    pdf.setFont('David', 'bold');
+    pdf.setFontSize(11);
+    pdf.setDrawColor(30, 58, 138);
+    pdf.setLineWidth(0.4);
+    pdf.setFillColor(219, 234, 254);
+    pdf.rect(leftX, yTop, tableW, headH, 'FD');
+    let x = leftX;
+    for (let c = 0; c < colsW.length; c++) {
+      const w = colsW[c];
+      if (c < colsW.length - 1) pdf.line(x + w, yTop, x + w, yTop + headH);
+      pdf.text(bidi(headers[c]), x + w / 2, yTop + 5.5, { align: 'center' });
+      x += w;
+    }
+    return yTop + headH;
   }
 
-  // שורות
+  // התחל את הטבלה
+  let pageTopY = startY;          // הקצה העליון של הטבלה בעמוד הנוכחי
+  let y = drawHeader(startY);
+
   pdf.setFont('David', 'normal');
   pdf.setFontSize(10.5);
-  let y = startY + headH;
   const rows = girls || [];
-  for (let r = 0; r < rows.length; r++) {
-    const g = rows[r];
-    // קו אופקי
+
+  if (rows.length === 0) {
     pdf.line(leftX, y, leftX + tableW, y);
-    // ציור התא
+    pdf.text(bidi('אין תלמידות'), leftX + tableW / 2, y + 5.5, { align: 'center' });
+    y += rowH;
+    pdf.line(leftX, y, leftX + tableW, y);
+    pdf.rect(leftX, pageTopY, tableW, y - pageTopY);
+    return y;
+  }
+
+  for (let r = 0; r < rows.length; r++) {
+    // page break: אם השורה הבאה תגלוש מעבר לאזור הבטוח — סגור את הטבלה ופתח עמוד חדש
+    if (y + rowH > PAGE_BOTTOM && onNewPage) {
+      // סגירת הטבלה בעמוד הנוכחי
+      pdf.line(leftX, y, leftX + tableW, y);
+      pdf.rect(leftX, pageTopY, tableW, y - pageTopY);
+      // פתיחת עמוד חדש עם ניירת + כותרת המשך
+      const newY = onNewPage();
+      pageTopY = newY;
+      y = drawHeader(newY);
+      pdf.setFont('David', 'normal');
+      pdf.setFontSize(10.5);
+    }
+    const g = rows[r];
+    pdf.line(leftX, y, leftX + tableW, y);
     let cx = leftX;
     const values = [String(r + 1), g.national_id || '', g.family_name || '', g.first_name || '', g.source_school || ''];
     for (let c = 0; c < colsW.length; c++) {
       const w = colsW[c];
       if (c < colsW.length - 1) pdf.line(cx + w, y, cx + w, y + rowH);
-      // עברית בעמודות 2-4 (שם משפ', פרטי, מוסד) — bidi.
-      // מספרים בעמודות 0-1 — לא bidi.
       const v = values[c];
-      if (c <= 1) {
-        pdf.text(v, cx + w / 2, y + 5, { align: 'center' });
-      } else {
-        pdf.text(bidi(v), cx + w / 2, y + 5, { align: 'center' });
-      }
+      if (c <= 1) pdf.text(v, cx + w / 2, y + 5, { align: 'center' });
+      else        pdf.text(bidi(v), cx + w / 2, y + 5, { align: 'center' });
       cx += w;
     }
     y += rowH;
   }
-  // קו תחתון
+  // סגירה סופית
   pdf.line(leftX, y, leftX + tableW, y);
-  // מסגרת חיצונית
-  pdf.rect(leftX, startY, tableW, (y - startY));
+  pdf.rect(leftX, pageTopY, tableW, y - pageTopY);
   return y;
 }
 
@@ -6033,7 +6052,7 @@ function drawParentsLetter(pdf, data) {
 
   drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, `הורי התלמידה ${data.girl_full_name || '________'}`, RIGHT_X, y, { size: 12, bold: true });  y += 6;
-  drawRTL(pdf, 'בדוא"ל', RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, `בדוא"ל ${data.parent_email || '________________'}`, RIGHT_X, y, { size: 12 });  y += 9;
   drawRTL(pdf, 'שלום וברכה,', RIGHT_X, y, { size: 12 });  y += 9;
 
   // הנדון — ממורכז
@@ -6138,10 +6157,16 @@ function drawSeminarFinalLetter(pdf, data) {
   drawSeminarSignature(pdf, y, 'וועדת הרבנים העירונית');
 }
 
-function drawStudentsListPage(pdf, data, isFinal) {
+function drawStudentsListPage(pdf, data, isFinal, addLetterheadPage) {
   // הניירת מכילה את "אגף החינוך" ו"בס"ד" — לא צריך לחזור
   drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}`, 105, 58, { size: 14, bold: true });
-  drawStudentsTable(pdf, data.girls, 68);
+  // אם הטבלה ארוכה ותגלוש, נפתח עמוד נוסף עם כותרת המשך
+  const onNewPage = addLetterheadPage ? () => {
+    addLetterheadPage(false);
+    drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''} (המשך)`, 105, 58, { size: 14, bold: true });
+    return 68;  // y התחלתי לטבלה בעמוד החדש
+  } : null;
+  drawStudentsTable(pdf, data.girls, 68, { onNewPage });
 }
 
 // בונה את ה־HTML של המכתב לפי תבנית + נתונים  [נשמר לתאימות; לא בשימוש בגנרטור החדש]
@@ -6361,12 +6386,12 @@ async function generateLetterPDF(template, data) {
     addLetterheadPage(true);
     drawSeminarInitialLetter(pdf, data);
     addLetterheadPage(false);
-    drawStudentsListPage(pdf, data, false);
+    drawStudentsListPage(pdf, data, false, addLetterheadPage);
   } else if (template === 'seminar_final') {
     addLetterheadPage(true);
     drawSeminarFinalLetter(pdf, data);
     addLetterheadPage(false);
-    drawStudentsListPage(pdf, data, true);
+    drawStudentsListPage(pdf, data, true, addLetterheadPage);
   } else {
     throw new Error('תבנית לא מוכרת: ' + template);
   }
@@ -6386,11 +6411,20 @@ async function downloadLetterPDF(template, data, filename) {
 }
 
 // --- בדיקה ידנית מהקונסול ---
-// כדי לבדוק תבנית: window._testPDF('parents') או window._testPDF('seminar_initial') או window._testPDF('seminar_final')
-window._testPDF = async (template = 'parents') => {
+// כדי לבדוק תבנית: window._testPDF('parents'/'seminar_initial'/'seminar_final')
+// כדי לבדוק רב־עמוד: window._testPDF('seminar_initial', 50)  ← 50 בנות → גלישה לעמוד 3+
+window._testPDF = async (template = 'parents', girlsCount) => {
+  // אם ביקשת כמות בנות (לבדיקת רב־עמוד) — ייצור רשימה ארוכה
+  const manyGirls = girlsCount ? Array.from({length: girlsCount}, (_, i) => ({
+    national_id: String(100000000 + i),
+    family_name: ['כהן','לוי','אברהם','גולדברג','שטרן','פרידמן','רוזן'][i % 7],
+    first_name:  ['שרה','מרים','רחל','לאה','דבורה','חנה','אסתר'][i % 7],
+    source_school: ['בי"ס נאות רחל','חיי שרה','מעיינות בית רבקה','בית יעקב חסידי'][i % 4],
+  })) : null;
   const sample = {
     parents: {
       girl_full_name: 'שרה כהן',
+      parent_email: 'family.cohen@gmail.com',
       seminar_name: 'בית יעקב הוותיק',
       seminar_code: '888001',
       school_year: 'תשפ"ז',
@@ -6416,6 +6450,11 @@ window._testPDF = async (template = 'parents') => {
       ],
     },
   };
+  // אם ביקשת רב־עמוד — דחוף את ה־manyGirls לתוך הדאטה הרלוונטית
+  if (manyGirls) {
+    if (sample.seminar_initial) sample.seminar_initial.girls = manyGirls;
+    if (sample.seminar_final)   sample.seminar_final.girls   = manyGirls;
+  }
   await downloadLetterPDF(template, sample[template], `test-${template}.pdf`);
 };
 
