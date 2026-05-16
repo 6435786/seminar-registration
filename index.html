@@ -6043,128 +6043,181 @@ function _twoDates(date) {
 }
 
 // ============================================================
+// תכני תבניות — נטענים מ־DB ונשמרים ב־cache
+// ============================================================
+const FORM_TEMPLATE_CACHE = {};  // slug → { sections: {...} }
+
+async function ensureFormTemplateContent(slug) {
+  if (FORM_TEMPLATE_CACHE[slug]) return FORM_TEMPLATE_CACHE[slug];
+  const { data, error } = await sb.from('form_templates').select('content_json').eq('slug', slug).maybeSingle();
+  if (error) { console.warn('[tpl] load failed', error.message); return null; }
+  const content = data && data.content_json;
+  if (content) FORM_TEMPLATE_CACHE[slug] = content;
+  return content;
+}
+
+// קח טקסט קטע מתוך התבנית, החלף placeholders, וחזור לברירת מחדל אם חסר
+function tpl(slug, sectionId, data, fallback) {
+  const content = FORM_TEMPLATE_CACHE[slug];
+  let raw = content && content.sections && content.sections[sectionId];
+  if (raw == null) raw = fallback || '';
+  return _substTemplate(raw, data);
+}
+
+// החלפת {{placeholder}} בערך מתוך data
+function _substTemplate(text, data) {
+  if (!text) return '';
+  const fallbacks = {
+    parent_email:    '________________',
+    girl_full_name:  '________',
+    contact_full:    '________________',
+    seminar_name:    '________',
+    seminar_full:    '________________',
+    school_year:     'תשפ"ז',
+  };
+  return text.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    if (key === 'seminar_full') {
+      return data.seminar_code ? `${data.seminar_name} (${data.seminar_code})` : (data.seminar_name || fallbacks.seminar_full);
+    }
+    const val = data && data[key];
+    if (val !== undefined && val !== null && val !== '') return String(val);
+    return fallbacks[key] || `________`;
+  });
+}
+
+// invalidate cache — נקרא אחרי שמירה בעורך
+function invalidateFormTemplateCache(slug) {
+  if (slug) delete FORM_TEMPLATE_CACHE[slug];
+  else Object.keys(FORM_TEMPLATE_CACHE).forEach(k => delete FORM_TEMPLATE_CACHE[k]);
+}
+
+// ============================================================
 // תבניות מכתבים — ציור ישיר ל־PDF (טקסט נטיב, חד לחלוטין)
 // ============================================================
 function drawParentsLetter(pdf, data) {
   const RIGHT_X = 190;   // קצה ימין של הטקסט
   const LEFT_X = 20;     // קצה שמאל (עבור wrap)
   let y = 65;  // 3 שורות מתחת ל"אגף החינוך" בניירת
+  const T = (id, fb) => tpl('parents', id, data, fb);
 
-  drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
-  drawRTL(pdf, `הורי התלמידה ${data.girl_full_name || '________'}`, RIGHT_X, y, { size: 12, bold: true });  y += 6;
-  drawRTL(pdf, `בדוא"ל ${data.parent_email || '________________'}`, RIGHT_X, y, { size: 12 });  y += 9;
-  drawRTL(pdf, 'שלום וברכה,', RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, T('addressee', 'הורי התלמידה {{girl_full_name}}'), RIGHT_X, y, { size: 12, bold: true });  y += 6;
+  drawRTL(pdf, T('email_line', 'בדוא"ל {{parent_email}}'), RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, T('shalom', 'שלום וברכה,'), RIGHT_X, y, { size: 12 });  y += 9;
 
   // הנדון — ממורכז
-  drawCenteredRTL(pdf, `הנדון: מענה לפנייתכם לשיבוץ בתכם לשנה"ל ${data.school_year || 'תשפ"ז'}`, 105, y, { size: 13, bold: true });
+  drawCenteredRTL(pdf, T('subject', 'הנדון: מענה לפנייתכם לשיבוץ בתכם לשנה"ל {{school_year}}'), 105, y, { size: 13, bold: true });
   y += 11;
 
-  const seminarLine = data.seminar_code ? `${data.seminar_name} (${data.seminar_code})` : (data.seminar_name || '________________');
   y = drawWrappedRTL(pdf,
-    `במענה לפנייתכם אודות בקשת שיבוץ לתיכון עבור בתכם תחי' לשנת הלימודים ${data.school_year || 'תשפ"ז'} לאחר עיון בפנייתכם ובחינת ההיבטים, ובהתבסס על כלל השיקולים הנ"ל, הוחלט כי בתכם תשובץ בסמינר: ${seminarLine}.`,
+    T('body', 'במענה לפנייתכם אודות בקשת שיבוץ לתיכון עבור בתכם תחי\' לשנת הלימודים {{school_year}} לאחר עיון בפנייתכם ובחינת ההיבטים, ובהתבסס על כלל השיקולים הנ"ל, הוחלט כי בתכם תשובץ בסמינר: {{seminar_full}}.'),
     RIGHT_X, LEFT_X, y, { size: 12, lineHeight: 6 });
   y += 4;
-  drawRTL(pdf, 'החלטה זו הינה על דעת וועדת הרבנים העירונית.', RIGHT_X, y, { size: 12 });  y += 6;
-  drawRTL(pdf, 'הקבלה לסמינר מותנית ברישום לסמינר ועמידה בכללי הקבלה.', RIGHT_X, y, { size: 12 });  y += 14;
+  drawRTL(pdf, T('rabanim_note', 'החלטה זו הינה על דעת וועדת הרבנים העירונית.'), RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, T('registration_note', 'הקבלה לסמינר מותנית ברישום לסמינר ועמידה בכללי הקבלה.'), RIGHT_X, y, { size: 12 });  y += 14;
 
   // חתימה
-  drawRTL(pdf, 'באיחולי הצלחה ורוב נחת', RIGHT_X, y, { size: 12 });  y += 9;
-  drawRTL(pdf, 'בברכה,', RIGHT_X, y, { size: 12 });  y += 6;
-  drawRTL(pdf, 'יהודה קורנבליט', RIGHT_X, y, { size: 12, bold: true });  y += 5;
-  drawRTL(pdf, 'מנהל אגף החינוך', RIGHT_X, y, { size: 12 });  y += 5;
-  drawRTL(pdf, 'עיריית ביתר עילית', RIGHT_X, y, { size: 12 });
+  drawRTL(pdf, T('blessing', 'באיחולי הצלחה ורוב נחת'), RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, T('signature_open', 'בברכה,'), RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, T('signer_name', 'יהודה קורנבליט'), RIGHT_X, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, T('signer_role', 'מנהל אגף החינוך'), RIGHT_X, y, { size: 12 });  y += 5;
+  drawRTL(pdf, T('signer_dept', 'עיריית ביתר עילית'), RIGHT_X, y, { size: 12 });
 
   // הערה למטה ממורכזת
-  drawCenteredRTL(pdf, 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך', 105, 268, { size: 10 });
+  drawCenteredRTL(pdf, T('footer_appeal', 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך'), 105, 268, { size: 10 });
 }
 
-function drawSeminarSignature(pdf, y, extraCopiesPrefix) {
-  drawRTL(pdf, 'בברכה,', 190, y, { size: 12 });  y += 6;
-  drawRTL(pdf, 'יהודה קורנבליט', 190, y, { size: 12, bold: true });  y += 5;
-  drawRTL(pdf, 'מנהל אגף החינוך', 190, y, { size: 12 });  y += 10;
-  drawRTL(pdf, `העתקים:${extraCopiesPrefix ? ' ' + extraCopiesPrefix : ''}`, 190, y, { size: 10, bold: true });  y += 5;
-  drawRTL(pdf, 'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך', 190, y, { size: 10 });  y += 4.5;
-  drawRTL(pdf, 'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך', 190, y, { size: 10 });  y += 4.5;
-  drawRTL(pdf, 'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך', 190, y, { size: 10 });  y += 4.5;
-  drawRTL(pdf, 'וועדת ערר - מחוז חרדי', 190, y, { size: 10 });
+function drawSeminarSignature(pdf, y, slug, data) {
+  const T = (id, fb) => tpl(slug, id, data, fb);
+  drawRTL(pdf, T('signature_open', 'בברכה,'), 190, y, { size: 12 });  y += 6;
+  drawRTL(pdf, T('signer_name', 'יהודה קורנבליט'), 190, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, T('signer_role', 'מנהל אגף החינוך'), 190, y, { size: 12 });  y += 10;
+  drawRTL(pdf, T('copies_label', 'העתקים:'), 190, y, { size: 10, bold: true });  y += 5;
+  drawRTL(pdf, T('copies_line1', 'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך'), 190, y, { size: 10 });  y += 4.5;
+  drawRTL(pdf, T('copies_line2', 'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך'), 190, y, { size: 10 });  y += 4.5;
+  drawRTL(pdf, T('copies_line3', 'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך'), 190, y, { size: 10 });  y += 4.5;
+  drawRTL(pdf, T('copies_line4', 'וועדת ערר - מחוז חרדי'), 190, y, { size: 10 });
 }
 
 function drawSeminarInitialLetter(pdf, data) {
   const RIGHT_X = 190, LEFT_X = 20;
   const dt = _twoDates(data.letter_date ? new Date(data.letter_date) : new Date());
+  const T = (id, fb) => tpl('seminar_initial', id, data, fb);
 
   // הניירת כבר מכילה את "אגף החינוך" ו"בס"ד" — לא צריך לצייר שוב
-  // תאריכים — בקצה שמאל (לועזי) או ימין (עברי) למטה מ"אגף החינוך"
   drawRTL(pdf, dt.hebrew, RIGHT_X, 50, { size: 10 });
   drawRTL(pdf, dt.latin, RIGHT_X, 55, { size: 10 });
 
   let y = 68;
-  drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
-  drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
-  drawRTL(pdf, `מנהל סמינר "${data.seminar_name || '________'}"`, RIGHT_X, y, { size: 12 });  y += 9;
-  drawRTL(pdf, 'שלום רב,', RIGHT_X, y, { size: 12 });  y += 10;
+  drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, T('contact_name', '{{contact_full}}'), RIGHT_X, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, T('contact_role', 'מנהל סמינר "{{seminar_name}}"'), RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, T('shalom', 'שלום רב,'), RIGHT_X, y, { size: 12 });  y += 10;
 
-  drawCenteredRTL(pdf, `הנדון: שיבוץ תלמידות במוסדכם לשנה"ל ${data.school_year || 'תשפ"ז'}`, 105, y, { size: 13, bold: true });
+  drawCenteredRTL(pdf, T('subject', 'הנדון: שיבוץ תלמידות במוסדכם לשנה"ל {{school_year}}'), 105, y, { size: 13, bold: true });
   y += 11;
 
-  y = drawWrappedRTL(pdf, 'שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\')',
+  y = drawWrappedRTL(pdf, T('para1', 'שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\')'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  y = drawWrappedRTL(pdf, 'כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.',
+  y = drawWrappedRTL(pdf, T('para2', 'כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  y = drawWrappedRTL(pdf, 'לאחר דין ודברים שהתנהל בוועדת הרבנים העירונית ולאחר עבודת צוות מעמיקה ע"פ הנחיות משרד החינוך וגורמי נוספים ברשות, הוחלט שבבית ספרכם תשובצנה תלמידות בנוסף לאלו שכבר משובצות אצלכם.',
+  y = drawWrappedRTL(pdf, T('para3', 'לאחר דין ודברים שהתנהל בוועדת הרבנים העירונית ולאחר עבודת צוות מעמיקה ע"פ הנחיות משרד החינוך וגורמי נוספים ברשות, הוחלט שבבית ספרכם תשובצנה תלמידות בנוסף לאלו שכבר משובצות אצלכם.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  y = drawWrappedRTL(pdf, 'הודעה להורים תשלח בהמשך ועם פנייתם אליכם הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.',
+  y = drawWrappedRTL(pdf, T('parents_note', 'הודעה להורים תשלח בהמשך ועם פנייתם אליכם הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  drawRTL(pdf, 'רצ"ב רשימת התלמידות.', RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
-  y = drawWrappedRTL(pdf, 'השגה על השיבוץ ניתן להגיש התייחסות עניינית בכתב לכתובת דוא"ל seminar@5888111.co.il עד 3 ימי עבודה מיום קבלת מכתב שיבוץ זה. מכתבכם יוצג בוועדת הרבנים.',
+  drawRTL(pdf, T('attachment_note', 'רצ"ב רשימת התלמידות.'), RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
+  y = drawWrappedRTL(pdf, T('appeal_note', 'השגה על השיבוץ ניתן להגיש התייחסות עניינית בכתב לכתובת דוא"ל seminar@5888111.co.il עד 3 ימי עבודה מיום קבלת מכתב שיבוץ זה. מכתבכם יוצג בוועדת הרבנים.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  y = drawWrappedRTL(pdf, 'כאמור בהנחיות ניתן לערער לועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.',
+  y = drawWrappedRTL(pdf, T('meshrad_chinuch', 'כאמור בהנחיות ניתן לערער לועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 7;
-  drawSeminarSignature(pdf, y);
+  drawSeminarSignature(pdf, y, 'seminar_initial', data);
 }
 
 function drawSeminarFinalLetter(pdf, data) {
   const RIGHT_X = 190, LEFT_X = 20;
+  const T = (id, fb) => tpl('seminar_final', id, data, fb);
   // הניירת כבר מכילה "בס"ד" בפינה הימנית עליונה
   let y = 60;  // 3 שורות מתחת ל"אגף החינוך" בניירת
-  drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
-  drawRTL(pdf, data.contact_full || '________________', RIGHT_X, y, { size: 12, bold: true });  y += 5;
-  drawRTL(pdf, `הנהלת סמינר ${data.seminar_name || '_______________'}`, RIGHT_X, y, { size: 12 });  y += 9;
-  drawRTL(pdf, 'שלום רב,', RIGHT_X, y, { size: 12 });  y += 10;
+  drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
+  drawRTL(pdf, T('contact_name', '{{contact_full}}'), RIGHT_X, y, { size: 12, bold: true });  y += 5;
+  drawRTL(pdf, T('contact_role', 'הנהלת סמינר {{seminar_name}}'), RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, T('shalom', 'שלום רב,'), RIGHT_X, y, { size: 12 });  y += 10;
 
-  drawCenteredRTL(pdf, `הנדון: מענה לערעור - שיבוץ תלמידות סופי לשנה"ל ${data.school_year || 'תשפ"ז'}`, 105, y, { size: 13, bold: true });
+  drawCenteredRTL(pdf, T('subject', 'הנדון: מענה לערעור - שיבוץ תלמידות סופי לשנה"ל {{school_year}}'), 105, y, { size: 13, bold: true });
   y += 11;
 
-  y = drawWrappedRTL(pdf, 'בהמשך להודעת השיבוץ שנשלחה אליכם ולאחר קבלת המענה ממכם התקיימה ישיבת היוועצות עם וועדת הרבנים העירונית ולהלן מסקנותיה.',
+  y = drawWrappedRTL(pdf, T('para1', 'בהמשך להודעת השיבוץ שנשלחה אליכם ולאחר קבלת המענה ממכם התקיימה ישיבת היוועצות עם וועדת הרבנים העירונית ולהלן מסקנותיה.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  y = drawWrappedRTL(pdf, 'להזכירכם שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\') כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.',
+  y = drawWrappedRTL(pdf, T('para2', 'להזכירכם שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\') כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  y = drawWrappedRTL(pdf, 'העתק החלטת השיבוץ נשלח להורים, הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.',
+  y = drawWrappedRTL(pdf, T('parents_note', 'העתק החלטת השיבוץ נשלח להורים, הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  drawRTL(pdf, 'רצ"ב רשימת התלמידות.', RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
-  y = drawWrappedRTL(pdf, 'כאמור בהנחיות ניתן לערער לוועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.',
+  drawRTL(pdf, T('attachment_note', 'רצ"ב רשימת התלמידות.'), RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
+  y = drawWrappedRTL(pdf, T('appeal_note', 'כאמור בהנחיות ניתן לערער לוועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 7;
-  drawSeminarSignature(pdf, y, 'וועדת הרבנים העירונית');
+  drawSeminarSignature(pdf, y, 'seminar_final', data);
 }
 
 function drawStudentsListPage(pdf, data, isFinal, addLetterheadPage) {
   // הניירת מכילה את "אגף החינוך" ו"בס"ד" — לא צריך לחזור
-  drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''}`, 105, 58, { size: 14, bold: true });
+  const slug = isFinal ? 'seminar_final' : 'seminar_initial';
+  const title = tpl(slug, 'table_title', data, 'רשימת תלמידות לשיבוץ — {{seminar_name}}');
+  drawCenteredRTL(pdf, title, 105, 58, { size: 14, bold: true });
   // אם הטבלה ארוכה ותגלוש, נפתח עמוד נוסף עם כותרת המשך
   const onNewPage = addLetterheadPage ? () => {
     addLetterheadPage(false);
-    drawCenteredRTL(pdf, `רשימת תלמידות לשיבוץ — ${data.seminar_name || ''} (המשך)`, 105, 58, { size: 14, bold: true });
-    return 68;  // y התחלתי לטבלה בעמוד החדש
+    drawCenteredRTL(pdf, `${title} (המשך)`, 105, 58, { size: 14, bold: true });
+    return 68;
   } : null;
   drawStudentsTable(pdf, data.girls, 68, { onNewPage });
 }
@@ -6372,6 +6425,7 @@ async function generateLetterPDF(template, data) {
 
   await embedDavidFont(pdf);
   const letterhead = await loadLetterhead();
+  await ensureFormTemplateContent(template);  // טוען טקסטים מ־DB
 
   const addLetterheadPage = (isFirst) => {
     if (!isFirst) pdf.addPage();
