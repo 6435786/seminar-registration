@@ -6067,10 +6067,12 @@ async function resetTemplateSection(templateId) {
 const EC_STATE = {
   step: 1,                      // 1=template, 2=recipients, 3=compose+send
   template: null,               // { id, slug, name, recipient_kind, ... }
-  recipients: [],               // array of { kind, ref_id, email, display_name, letter_data }
+  recipients: [],               // array of { kind, ref_id, email, display_name, letter_data, cc_emails? }
   statusFilters: ['ועדת רבנים'], // ברירת מחדל לפילטר סטטוס
   subject: '',
   bodyText: '',
+  cc: '',                       // CC ידני (פסיקים)
+  ccContacts: [],               // אנשי קשר שנבחרו מהרשימה
   bcc: '',
   letterDate: null,             // ISO string; null = today
 };
@@ -6086,6 +6088,7 @@ async function openEmailComposer() {
     step: 1, template: null, recipients: [],
     statusFilters: ['ועדת רבנים'],
     subject: '', bodyText: '',
+    cc: '', ccContacts: [],
     bcc: localStorage.getItem('ec_bcc_default') || '',
     letterDate: null,
   });
@@ -6585,38 +6588,24 @@ function _ec_syncSeminarRecipients() {
   seminarsWithGirls.forEach(name => {
     if (!sel.has(name)) return;
     const sem = (DATA.seminars || []).find(s => s.name === name);
-    if (!sem) return;
+    if (!sem || !sem.contact_email) return;  // ללא מייל ראשי — לא נשלח כלל
     const girls = bySeminar[name].map(g => ({
       national_id: g.national_id, family_name: g.family_name, first_name: g.first_name,
       source_school: g.source_school_name || '',
     }));
-    // ראשי
-    if (sem.contact_email) {
-      const contactFull = `${sem.contact_title || ''} ${sem.contact_name || ''}`.trim();
-      out.push({
-        kind: 'seminar', ref_id: sem.id, email: sem.contact_email,
-        display_name: `${name} — ${contactFull || sem.contact_email}`,
-        letter_data: {
-          contact_full: contactFull, seminar_name: name,
-          school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
-          letter_date: EC_STATE.letterDate, girls,
-        },
-      });
-    }
-    // אנשי קשר נוספים
+    const contactFull = `${sem.contact_title || ''} ${sem.contact_name || ''}`.trim();
+    // extra_contacts כעת = CC אוטומטי על אותו מכתב (לא מכתב נפרד)
     const extras = Array.isArray(sem.extra_contacts) ? sem.extra_contacts : [];
-    extras.forEach(c => {
-      if (!c.email) return;
-      const contactFull = `${c.title || ''} ${c.name || ''}`.trim();
-      out.push({
-        kind: 'seminar', ref_id: sem.id, email: c.email,
-        display_name: `${name} — ${contactFull || c.email} (נוסף)`,
-        letter_data: {
-          contact_full: contactFull, seminar_name: name,
-          school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
-          letter_date: EC_STATE.letterDate, girls,
-        },
-      });
+    const ccFromSeminar = extras.map(c => c.email).filter(Boolean);
+    out.push({
+      kind: 'seminar', ref_id: sem.id, email: sem.contact_email,
+      cc_emails: ccFromSeminar,  // יתווסף ל־CC הגלובלי בעת השליחה
+      display_name: `${name} — ${contactFull || sem.contact_email}`,
+      letter_data: {
+        contact_full: contactFull, seminar_name: name,
+        school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
+        letter_date: EC_STATE.letterDate, girls,
+      },
     });
   });
   EC_STATE.recipients = out;
@@ -6669,6 +6658,17 @@ async function _ec_renderStep3(pop) {
       </div>
 
       <div style="margin-bottom:12px;">
+        <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">
+          CC — עותק גלוי <span style="font-weight:400; color:var(--muted); font-size:11px;">(לכולם — בנוסף לאנשי קשר שמוגדרים ברמת הסמינר)</span>
+        </label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="ec_cc" value="${_esc(EC_STATE.cc)}" placeholder="email1@example.com, email2@example.com" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+          <button class="mini-btn" onclick="_ec_openCcPicker()" title="בחר מתוך רשימת אנשי קשר">📇 מאנשי קשר</button>
+        </div>
+        <div id="ec_cc_chips" style="margin-top:4px; min-height:18px;"></div>
+      </div>
+
+      <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">BCC (עותק נסתר — לארכיון עירוני, אופציונלי)</label>
         <input type="email" id="ec_bcc" value="${_esc(EC_STATE.bcc)}" placeholder="archive@beitar.muni.il" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
       </div>
@@ -6690,12 +6690,107 @@ async function _ec_renderStep3(pop) {
   // bind inputs
   document.getElementById('ec_subject').oninput  = (e) => { EC_STATE.subject = e.target.value; };
   document.getElementById('ec_body_text').oninput = (e) => { EC_STATE.bodyText = e.target.value; };
+  document.getElementById('ec_cc').oninput      = (e) => { EC_STATE.cc = e.target.value; };
   document.getElementById('ec_bcc').oninput     = (e) => { EC_STATE.bcc = e.target.value; localStorage.setItem('ec_bcc_default', e.target.value); };
+  _ec_renderCcChips();
   document.getElementById('ec_letter_date').oninput = (e) => {
     EC_STATE.letterDate = e.target.value ? new Date(e.target.value).toISOString() : null;
     // עדכן מועד גם בנתוני מכתבי הסמינר (שמשתמשים בתאריך)
     EC_STATE.recipients.forEach(r => { if (r.letter_data) r.letter_data.letter_date = EC_STATE.letterDate; });
   };
+}
+
+// ====== CC picker (מאנשי קשר כלליים) ======
+async function _ec_openCcPicker() {
+  document.getElementById('ec_cc_picker_scrim')?.remove();
+  const { data, error } = await sb.from('contacts').select('*').eq('is_active', true).order('name');
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  const contacts = data || [];
+
+  const scrim = document.createElement('div');
+  scrim.id = 'ec_cc_picker_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2600; display:flex; align-items:center; justify-content:center; padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) scrim.remove(); };
+
+  const pop = document.createElement('div');
+  pop.style.cssText = 'background:white; border-radius:12px; box-shadow:0 12px 36px rgba(0,0,0,0.3); max-width:600px; width:100%; max-height:80vh; display:flex; flex-direction:column;';
+
+  const picked = new Set(EC_STATE.ccContacts.map(c => c.id));
+
+  function render(filter = '') {
+    const f = filter.trim().toLowerCase();
+    const visible = contacts.filter(c => {
+      if (!f) return true;
+      return [c.title, c.name, c.role, c.email, c.notes].some(v => (v || '').toLowerCase().includes(f));
+    });
+    pop.innerHTML = `
+      <div style="padding:14px 18px; border-bottom:1px solid var(--border);">
+        <div style="font-weight:700; color:var(--deep); font-size:15px; margin-bottom:8px;">📇 בחירת אנשי קשר ל־CC</div>
+        <input id="ec_cc_search" placeholder="חיפוש בשם, תפקיד, מייל..." value="${_esc(filter)}"
+          style="width:100%; padding:7px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+      </div>
+      <div style="padding:8px 6px; overflow-y:auto; flex:1;">
+        ${visible.length === 0 ? `<div style="color:var(--muted); text-align:center; padding:20px;">אין אנשי קשר${contacts.length ? ' תואמים' : ''}.${contacts.length ? '' : ' הוסף ב"רשימות → אנשי קשר".'}</div>` :
+          visible.map(c => {
+            const isPicked = picked.has(c.id);
+            const display = `${c.title ? c.title + ' ' : ''}${c.name}${c.role ? ' — ' + c.role : ''}`;
+            return `<label style="display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; border-radius:6px; ${isPicked ? 'background:#dbeafe;' : ''}"
+              onmouseover="if(!this.querySelector('input').checked) this.style.background='#f0f9ff';"
+              onmouseout="if(!this.querySelector('input').checked) this.style.background='';">
+              <input type="checkbox" ${isPicked ? 'checked' : ''} data-cid="${c.id}" ${!c.email ? 'disabled' : ''}>
+              <div style="flex:1;">
+                <div style="font-weight:600; color:var(--deep);">${_esc(display)}</div>
+                <div style="font-size:11px; color:${c.email ? 'var(--accent)' : 'var(--bad)'};">${c.email ? _esc(c.email) : '⛔ ללא מייל'}</div>
+              </div>
+            </label>`;
+          }).join('')}
+      </div>
+      <div style="padding:10px 18px; border-top:1px solid var(--border); background:#f8fafc; display:flex; gap:8px;">
+        <button class="apply-big" id="ec_cc_apply" style="flex:1;">החל</button>
+        <button class="cancel-btn" onclick="document.getElementById('ec_cc_picker_scrim').remove();">ביטול</button>
+      </div>
+    `;
+    document.getElementById('ec_cc_search').oninput = (e) => render(e.target.value);
+    pop.querySelectorAll('input[data-cid]').forEach(cb => {
+      cb.onchange = () => {
+        const cid = parseInt(cb.dataset.cid, 10);
+        if (cb.checked) picked.add(cid);
+        else picked.delete(cid);
+      };
+    });
+    document.getElementById('ec_cc_apply').onclick = () => {
+      EC_STATE.ccContacts = contacts.filter(c => picked.has(c.id) && c.email);
+      scrim.remove();
+      _ec_renderCcChips();
+    };
+  }
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+  render();
+}
+
+function _ec_renderCcChips() {
+  const el = document.getElementById('ec_cc_chips');
+  if (!el) return;
+  if (!EC_STATE.ccContacts.length) { el.innerHTML = ''; return; }
+  el.innerHTML = EC_STATE.ccContacts.map(c => {
+    const lbl = `${c.title ? c.title + ' ' : ''}${c.name}`;
+    return `<span style="display:inline-block; background:#dbeafe; border:1px solid #93c5fd; border-radius:999px; padding:2px 8px 2px 4px; margin:2px; font-size:11px;">
+      <button onclick="EC_STATE.ccContacts = EC_STATE.ccContacts.filter(x => x.id !== ${c.id}); _ec_renderCcChips();" style="border:0; background:transparent; cursor:pointer; color:var(--bad); padding:0 4px;">×</button>
+      ${_esc(lbl)} <span style="color:var(--muted);">‹${_esc(c.email)}›</span>
+    </span>`;
+  }).join('');
+}
+
+function _ec_collectAllCcEmails(recipientCcEmails) {
+  // CC לאיש קשר ראשי = (extras של הסמינר) + (CC ידני) + (אנשי קשר שנבחרו)
+  const all = [
+    ...(recipientCcEmails || []),
+    ...(EC_STATE.cc || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean),
+    ...EC_STATE.ccContacts.map(c => c.email).filter(Boolean),
+  ];
+  // remove duplicates
+  return [...new Set(all)];
 }
 
 async function _ec_previewFirst() {
@@ -6740,6 +6835,7 @@ async function _ec_send() {
       // עטוף ב־.eml פשוט (לעתיד — לפי אסטרטגיית גרירה ל־Drafts)
       const emlContent = _ec_buildEml(r, pdfBlob, fname);
       folder.file(_ec_safeFilename(`${r.display_name}.eml`), emlContent);
+      const ccList = _ec_collectAllCcEmails(r.cc_emails);
       logRows.push({
         batch_id: batchId,
         template_id: EC_STATE.template.id,
@@ -6756,7 +6852,7 @@ async function _ec_send() {
         letter_date: (EC_STATE.letterDate || new Date().toISOString()).substring(0, 10),
         sent_by_user_id: CURRENT_USER && CURRENT_USER.id,
         sent_by_email: CURRENT_USER && CURRENT_USER.email,
-        metadata: { mock: true, bcc: EC_STATE.bcc || null },
+        metadata: { mock: true, cc: ccList, bcc: EC_STATE.bcc || null },
       });
       ok++;
     } catch (e) {
@@ -6790,12 +6886,16 @@ function _ec_safeFilename(name) {
 }
 
 function _ec_buildEml(r, pdfBlob, attachName) {
-  // EML פשוט עם attachment כ־base64. שימוש: גרירה ל־Drafts באאוטלוק.
-  // ⚠ זה placeholder לעתיד — כשנעבור ל־Gmail API, לא נצטרך EML.
-  // לכן כרגע אנחנו רק יוצרים EML פשוט עם metadata; לא base64-encoding (להאיץ).
+  // EML פשוט עם metadata. שימוש: גרירה ל־Drafts באאוטלוק (placeholder לעתיד).
+  // כשנעבור ל־Gmail API, לא נצטרך EML.
   const subject = EC_STATE.subject || EC_STATE.template.name;
   const body = EC_STATE.bodyText || '';
-  return `To: ${r.email}\nSubject: ${subject}\n\n${body}\n\n[Attachment: ${attachName}]\n`;
+  const ccList = _ec_collectAllCcEmails(r.cc_emails);
+  const headers = [`To: ${r.email}`];
+  if (ccList.length) headers.push(`Cc: ${ccList.join(', ')}`);
+  if (EC_STATE.bcc) headers.push(`Bcc: ${EC_STATE.bcc}`);
+  headers.push(`Subject: ${subject}`);
+  return `${headers.join('\n')}\n\n${body}\n\n[Attachment: ${attachName}]\n`;
 }
 
 // ============================================================
