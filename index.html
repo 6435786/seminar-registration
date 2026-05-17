@@ -6148,6 +6148,9 @@ async function resetTemplateSection(templateId) {
 // ============================================================
 const GMAIL_CLIENT_ID = '276433794504-l2rqn6a6dp75gpcoljqk77dask7prhor.apps.googleusercontent.com';
 const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+// שם השולח שמופיע אצל הנמען (לפני כתובת המייל)
+const GMAIL_FROM_NAME = 'וועדת השיבוץ העירונית - ביתר עילית';
+const GMAIL_FROM_EMAIL = 'shibutz.beitar@gmail.com';
 let _gmailTokenClient = null;
 let _gmailAccessToken = null;
 let _gmailTokenExpiresAt = 0;
@@ -6198,11 +6201,21 @@ function _utf8b64(s) {
   return btoa(unescape(encodeURIComponent(s)));
 }
 
-// בונה הודעת RFC 822 (MIME) עם attachment של PDF
+// קידוד שם תצוגה לכתובת מייל (RFC 2047)
+function _encodeAddressName(name, email) {
+  if (!name) return email;
+  const isAscii = /^[\x20-\x7E]*$/.test(name);
+  const encName = isAscii ? `"${name.replace(/"/g, '\\"')}"` : `=?UTF-8?B?${_utf8b64(name)}?=`;
+  return `${encName} <${email}>`;
+}
+
+// בונה הודעת RFC 822 (MIME) עם attachment של PDF — גוף HTML עם RTL
 async function _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachment }) {
   const boundary = '----=_BeitarSeminars_' + Math.random().toString(36).substring(2, 10);
   const lines = [];
-  if (from) lines.push(`From: ${from}`);
+  // From: עם שם תצוגה ממותג (לא משאירים את ברירת המחדל של Gmail)
+  const fromHeader = from || _encodeAddressName(GMAIL_FROM_NAME, GMAIL_FROM_EMAIL);
+  lines.push(`From: ${fromHeader}`);
   if (to)   lines.push(`To: ${to}`);
   if (cc && cc.length) lines.push(`Cc: ${cc.join(', ')}`);
   if (bcc) lines.push(`Bcc: ${bcc}`);
@@ -6212,12 +6225,20 @@ async function _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachm
   lines.push('');
   lines.push('');
 
-  // גוף טקסט
+  // גוף HTML עם RTL ו־UTF-8 מפורשים (יותר אמין מ־plain text ב־Gmail)
+  const htmlBody = `<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head><meta charset="UTF-8"></head>
+<body style="font-family: Arial, 'David Libre', serif; direction: rtl; text-align: right; font-size: 14px; line-height: 1.6; color: #000;">
+${(bodyText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}
+</body></html>`;
   lines.push(`--${boundary}`);
-  lines.push('Content-Type: text/plain; charset=UTF-8');
+  lines.push('Content-Type: text/html; charset=UTF-8');
   lines.push('Content-Transfer-Encoding: base64');
   lines.push('');
-  lines.push(_utf8b64(bodyText || ''));
+  // פיצול ל־76 תווים בשורה כדי לא לעבור גבולות RFC
+  const bodyB64 = _utf8b64(htmlBody);
+  lines.push(bodyB64.match(/.{1,76}/g).join('\r\n'));
   lines.push('');
 
   // קובץ מצורף (PDF)
@@ -6228,16 +6249,14 @@ async function _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachm
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     const b64 = btoa(binary);
     const fname = (attachment.filename || 'attachment.pdf').replace(/"/g, '');
-    // עברית בשם הקובץ: RFC 2047 ל־name, RFC 2231 ל־filename (תאימות מקסימלית)
+    // עברית בשם הקובץ: RFC 2047 encoded-word (Gmail מציג טוב)
     const isAscii = /^[\x20-\x7E]*$/.test(fname);
-    const nameField = isAscii ? `"${fname}"` : `"=?UTF-8?B?${_utf8b64(fname)}?="`;
-    const fnameStarField = isAscii ? `filename="${fname}"` : `filename*=UTF-8''${encodeURIComponent(fname)}`;
+    const fnameEnc = isAscii ? fname : `=?UTF-8?B?${_utf8b64(fname)}?=`;
     lines.push(`--${boundary}`);
-    lines.push(`Content-Type: ${attachment.mime || 'application/pdf'}; name=${nameField}`);
+    lines.push(`Content-Type: ${attachment.mime || 'application/pdf'}; name="${fnameEnc}"`);
     lines.push('Content-Transfer-Encoding: base64');
-    lines.push(`Content-Disposition: attachment; ${fnameStarField}`);
+    lines.push(`Content-Disposition: attachment; filename="${fnameEnc}"`);
     lines.push('');
-    // פיצול ל־76 תווים בשורה (תקן MIME)
     lines.push(b64.match(/.{1,76}/g).join('\r\n'));
     lines.push('');
   }
