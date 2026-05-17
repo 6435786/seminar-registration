@@ -6186,9 +6186,11 @@ async function ensureGmailToken(silent = false) {
   });
 }
 
-// סגנון b64url (URL-safe) — חובה ל־Gmail API
+// סגנון b64url (URL-safe) — חובה ל־Gmail API. בטוח ל־UTF-8 (עברית).
 function _b64url(s) {
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  // המר UTF-8 לבייטים, אז base64, אז URL-safe
+  const utf8 = unescape(encodeURIComponent(s));
+  return btoa(utf8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
 // UTF-8 → base64 (לשורת נושא בעברית)
@@ -6226,10 +6228,14 @@ async function _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachm
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     const b64 = btoa(binary);
     const fname = (attachment.filename || 'attachment.pdf').replace(/"/g, '');
+    // עברית בשם הקובץ: RFC 2047 ל־name, RFC 2231 ל־filename (תאימות מקסימלית)
+    const isAscii = /^[\x20-\x7E]*$/.test(fname);
+    const nameField = isAscii ? `"${fname}"` : `"=?UTF-8?B?${_utf8b64(fname)}?="`;
+    const fnameStarField = isAscii ? `filename="${fname}"` : `filename*=UTF-8''${encodeURIComponent(fname)}`;
     lines.push(`--${boundary}`);
-    lines.push(`Content-Type: ${attachment.mime || 'application/pdf'}; name="${fname}"`);
+    lines.push(`Content-Type: ${attachment.mime || 'application/pdf'}; name=${nameField}`);
     lines.push('Content-Transfer-Encoding: base64');
-    lines.push(`Content-Disposition: attachment; filename="${fname}"`);
+    lines.push(`Content-Disposition: attachment; ${fnameStarField}`);
     lines.push('');
     // פיצול ל־76 תווים בשורה (תקן MIME)
     lines.push(b64.match(/.{1,76}/g).join('\r\n'));
