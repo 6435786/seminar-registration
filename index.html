@@ -6254,8 +6254,8 @@ async function _buildMimeMessage({ from, to, cc, bcc, replyTo, subject, bodyText
   lines.push('Content-Type: text/plain; charset=UTF-8');
   lines.push('Content-Transfer-Encoding: base64');
   lines.push('');
-  const plainB64 = _utf8b64(bodyText || '');
-  lines.push(plainB64.match(/.{1,76}/g).join('\r\n'));
+  const plainB64 = _utf8b64(bodyText || ' ');  // לפחות תו אחד כדי שלא יהיה ריק
+  lines.push((plainB64.match(/.{1,76}/g) || [plainB64]).join('\r\n'));
   lines.push('');
 
   // HTML
@@ -6270,7 +6270,7 @@ ${(bodyText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
   lines.push('Content-Transfer-Encoding: base64');
   lines.push('');
   const htmlB64 = _utf8b64(htmlBody);
-  lines.push(htmlB64.match(/.{1,76}/g).join('\r\n'));
+  lines.push((htmlB64.match(/.{1,76}/g) || [htmlB64]).join('\r\n'));
   lines.push('');
   lines.push(`--${innerB}--`);
   lines.push('');
@@ -6290,7 +6290,7 @@ ${(bodyText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
     lines.push('Content-Transfer-Encoding: base64');
     lines.push(`Content-Disposition: attachment; filename="${fnameEnc}"`);
     lines.push('');
-    lines.push(b64.match(/.{1,76}/g).join('\r\n'));
+    lines.push((b64.match(/.{1,76}/g) || [b64]).join('\r\n'));
     lines.push('');
   }
 
