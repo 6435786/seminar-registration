@@ -5891,6 +5891,11 @@ const TEMPLATE_PLACEHOLDERS = {
 };
 
 async function openTemplateEditor(templateId) {
+  // 🚧 כרגע מוגבל ל־super_admin (במהלך פיתוח מערכת המיילים)
+  if (!isSuperAdmin()) {
+    alert('עורך התבניות זמין כרגע רק למנהל הראשי. בשלב הפיתוח של מערכת המיילים.');
+    return;
+  }
   // טען את התבנית מה־DB
   const { data: template, error } = await sb.from('form_templates').select('*').eq('id', templateId).single();
   if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
@@ -6040,6 +6045,11 @@ const EC_STATE = {
 };
 
 async function openEmailComposer() {
+  // 🚧 כרגע מוגבל ל־super_admin (במהלך פיתוח מערכת המיילים)
+  if (!isSuperAdmin()) {
+    alert('מערכת המיילים זמינה כרגע רק למנהל הראשי. בשלב פיתוח וייצוב.');
+    return;
+  }
   // אתחל state
   Object.assign(EC_STATE, {
     step: 1, template: null, recipients: [],
@@ -8923,6 +8933,12 @@ function applyRoleVisibility() {
     hide('btn_backup');
     hide('btn_restore');
     hide('btn_load_source');
+  }
+
+  // 🚧 מערכת מיילים — בשלב פיתוח. כרגע גלוי רק ל־super_admin עד שתיוצב
+  // ויאושר ע"י המשתמש להעברה ליתר התפקידים.
+  if (!isSuperAdmin()) {
+    hide('btn_hdr_email');
   }
 
   // לא־אדמין: מיזוג שורה תחתונה לתוך העליונה (הכל בשורה אחת)
