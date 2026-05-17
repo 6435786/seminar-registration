@@ -7154,11 +7154,11 @@ async function _ec_send() {
     btn.textContent = `מייצר ${i+1}/${EC_STATE.recipients.length}...`;
     try {
       const pdfBlob = await generateLetterPDF(slug, r.letter_data);
-      const fname = _ec_safeFilename(`${r.display_name}.pdf`);
+      const fname = _ec_recipientFilename(r, 'pdf');
       folder.file(fname, pdfBlob);
       // עטוף ב־.eml פשוט (לעתיד — לפי אסטרטגיית גרירה ל־Drafts)
       const emlContent = _ec_buildEml(r, pdfBlob, fname);
-      folder.file(_ec_safeFilename(`${r.display_name}.eml`), emlContent);
+      folder.file(_ec_recipientFilename(r, 'eml'), emlContent);
       const realCcList = _ec_collectAllCcEmails(r.cc_emails);
       const realToEmail = r.email;
       const realBcc = EC_STATE.bcc || null;
@@ -7223,6 +7223,19 @@ function _ec_safeFilename(name) {
   return name.replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
 }
 
+// שם קובץ ה־PDF המצורף — לסמינר: רק שם הסמינר. להורים: שם התלמידה.
+function _ec_recipientFilename(r, ext) {
+  let base;
+  if (r.kind === 'seminar' && r.letter_data && r.letter_data.seminar_name) {
+    base = r.letter_data.seminar_name;
+  } else if (r.kind === 'parents' && r.letter_data && r.letter_data.girl_full_name) {
+    base = r.letter_data.girl_full_name;
+  } else {
+    base = r.display_name || 'letter';
+  }
+  return _ec_safeFilename(`${base}.${ext || 'pdf'}`);
+}
+
 // =============== Send via Gmail (real API call) ===============
 async function _ec_sendViaGmail() {
   if (!EC_STATE.recipients.length) { toast('אין נמענים', 'warn'); return; }
@@ -7281,7 +7294,7 @@ async function _ec_sendViaGmail() {
         ? `🧪 מצב בדיקה — היה אמור להישלח ל: ${realTo}\nCC: ${realCc.join(', ') || '(אין)'}\nBCC: ${realBcc || '(אין)'}\n\n----\n\n`
         : '') + (EC_STATE.bodyText || '');
 
-      const filename = _ec_safeFilename(`${r.display_name}.pdf`);
+      const filename = _ec_recipientFilename(r, 'pdf');
       await sendGmailMessage({
         to: toEmail,
         cc: ccList,
