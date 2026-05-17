@@ -4714,28 +4714,30 @@ const LIST_TABS = [
     fields: [{ key: 'value', label: 'ערך', type: 'text' }] },
   { table: 'seminars',          label: 'סמינרים',           isEntity: true, sortField: 'name',
     fields: [
-      { key: 'name',             label: 'שם',       type: 'text' },
-      { key: 'institution_code', label: 'סמל',      type: 'text' },
-      { key: 'category',         label: 'קטגוריה',  type: 'enum', valuesRef: 'ENUM_INST_CAT' },
-      { key: 'contact_title',    label: 'תואר',     type: 'text', group: 'contact' },
-      { key: 'contact_name',     label: 'איש קשר',  type: 'text', group: 'contact' },
-      { key: 'contact_role',     label: 'תפקיד',    type: 'text', group: 'contact' },
-      { key: 'contact_phone',    label: 'טלפון',    type: 'text', group: 'contact' },
-      { key: 'contact_email',    label: 'מייל',     type: 'text', group: 'contact' },
-      { key: '_extra_contacts',  label: 'נוספים',   type: 'extra_contacts', group: 'contact' },
+      { key: 'name',             label: 'שם',         type: 'text' },
+      { key: 'institution_code', label: 'סמל',        type: 'text' },
+      { key: 'category',         label: 'קטגוריה',    type: 'enum', valuesRef: 'ENUM_INST_CAT' },
+      { key: 'contact_title',    label: 'תואר',       type: 'text', group: 'contact' },
+      { key: 'contact_name',     label: 'איש קשר',    type: 'text', group: 'contact' },
+      { key: 'contact_role',     label: 'תפקיד',      type: 'text', group: 'contact' },
+      { key: 'contact_phone',    label: 'טלפון',      type: 'text', group: 'contact' },
+      { key: 'contact_email',    label: 'מייל',       type: 'text', group: 'contact' },
+      { key: 'office_email',     label: 'מייל משרד',  type: 'text', group: 'contact' },
+      { key: 'secondary_email',  label: 'מייל נוסף',  type: 'text', group: 'contact' },
     ] },
   { table: 'source_schools',    label: 'מוסדות',            isEntity: true, sortField: 'name',
     fields: [
-      { key: 'name',             label: 'שם',        type: 'text' },
-      { key: 'institution_code', label: 'סמל',       type: 'text' },
-      { key: 'sector',           label: 'קטגוריה',   type: 'enum', valuesRef: 'ENUM_INST_CAT' },
-      { key: 'gender',           label: 'בנות/בנים', type: 'enum', values: ['בנות', 'בנים'] },
-      { key: 'contact_title',    label: 'תואר',      type: 'text', group: 'contact' },
-      { key: 'contact_name',     label: 'איש קשר',   type: 'text', group: 'contact' },
-      { key: 'contact_role',     label: 'תפקיד',     type: 'text', group: 'contact' },
-      { key: 'contact_phone',    label: 'טלפון',     type: 'text', group: 'contact' },
-      { key: 'contact_email',    label: 'מייל',      type: 'text', group: 'contact' },
-      { key: '_extra_contacts',  label: 'נוספים',    type: 'extra_contacts', group: 'contact' },
+      { key: 'name',             label: 'שם',         type: 'text' },
+      { key: 'institution_code', label: 'סמל',        type: 'text' },
+      { key: 'sector',           label: 'קטגוריה',    type: 'enum', valuesRef: 'ENUM_INST_CAT' },
+      { key: 'gender',           label: 'בנות/בנים',  type: 'enum', values: ['בנות', 'בנים'] },
+      { key: 'contact_title',    label: 'תואר',       type: 'text', group: 'contact' },
+      { key: 'contact_name',     label: 'איש קשר',    type: 'text', group: 'contact' },
+      { key: 'contact_role',     label: 'תפקיד',      type: 'text', group: 'contact' },
+      { key: 'contact_phone',    label: 'טלפון',      type: 'text', group: 'contact' },
+      { key: 'contact_email',    label: 'מייל',       type: 'text', group: 'contact' },
+      { key: 'office_email',     label: 'מייל משרד',  type: 'text', group: 'contact' },
+      { key: 'secondary_email',  label: 'מייל נוסף',  type: 'text', group: 'contact' },
     ] },
   { table: 'contacts',          label: 'אנשי קשר',          isEntity: true, sortField: 'name',
     fields: [
@@ -6519,18 +6521,17 @@ async function _ec_renderSeminarRecipients() {
       const hasEmail = !!(sem && sem.contact_email);
       const isSelected = EC_STATE._semSel.has(name);
       const girls = bySeminar[name];
-      const extra = sem && Array.isArray(sem.extra_contacts) ? sem.extra_contacts.length : 0;
-      const emailsCount = (hasEmail ? 1 : 0) + extra;
+      const ccCount = sem ? [sem.office_email, sem.secondary_email].filter(Boolean).length : 0;
       return `
         <tr style="background:${isSelected ? '#dbeafe' : 'white'};">
           <td style="padding:5px 8px; text-align:center; width:28px;">
-            <input type="checkbox" ${isSelected ? 'checked' : ''} ${!hasEmail && extra === 0 ? 'disabled' : ''}
+            <input type="checkbox" ${isSelected ? 'checked' : ''} ${!hasEmail ? 'disabled' : ''}
               data-sname="${_esc(name)}" class="ec_sem_cb">
           </td>
           <td style="padding:5px 8px;">${_esc(name)}</td>
           <td style="padding:5px 8px; text-align:center; color:var(--accent); font-weight:600;">${girls.length}</td>
-          <td style="padding:5px 8px; font-size:12px; ${hasEmail || extra ? '' : 'color:var(--bad);'}">
-            ${hasEmail ? _esc(sem.contact_email) : '⛔ אין מייל ראשי'}${extra ? ` + ${extra} נוספים` : ''}
+          <td style="padding:5px 8px; font-size:12px; ${hasEmail ? '' : 'color:var(--bad);'}">
+            ${hasEmail ? _esc(sem.contact_email) : '⛔ אין מייל ראשי'}${ccCount ? ` <span style="color:var(--muted);">+${ccCount} CC</span>` : ''}
           </td>
         </tr>
       `;
@@ -6569,7 +6570,7 @@ async function _ec_renderSeminarRecipients() {
     const all = e.target.checked;
     seminarsWithGirls.forEach(name => {
       const sem = (DATA.seminars || []).find(s => s.name === name);
-      if (sem && (sem.contact_email || (sem.extra_contacts && sem.extra_contacts.length))) {
+      if (sem && sem.contact_email) {
         if (all) EC_STATE._semSel.add(name);
         else EC_STATE._semSel.delete(name);
       }
@@ -6594,9 +6595,8 @@ function _ec_syncSeminarRecipients() {
       source_school: g.source_school_name || '',
     }));
     const contactFull = `${sem.contact_title || ''} ${sem.contact_name || ''}`.trim();
-    // extra_contacts כעת = CC אוטומטי על אותו מכתב (לא מכתב נפרד)
-    const extras = Array.isArray(sem.extra_contacts) ? sem.extra_contacts : [];
-    const ccFromSeminar = extras.map(c => c.email).filter(Boolean);
+    // CC אוטומטי: מייל משרד + מייל נוסף (אם קיימים)
+    const ccFromSeminar = [sem.office_email, sem.secondary_email].filter(Boolean);
     out.push({
       kind: 'seminar', ref_id: sem.id, email: sem.contact_email,
       cc_emails: ccFromSeminar,  // יתווסף ל־CC הגלובלי בעת השליחה
