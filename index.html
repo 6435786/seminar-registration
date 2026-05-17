@@ -7167,7 +7167,7 @@ function drawStudentsTable(pdf, girls, startY, opts = {}) {
   const headers = ['מוסד', 'שם פרטי', 'שם משפחה', 'מספר זהות', 'מס\''];
   const rowH = 7;
   const headH = 8;
-  const PAGE_BOTTOM = 265;  // מ"מ — אזור בטוח, מעל פוטר הניירת
+  const PAGE_BOTTOM = 251;  // מ"מ — אזור בטוח, מעל פוטר הניירת (~25 בנות/עמוד)
 
   const onNewPage = opts.onNewPage;  // () => yNew  (אופציונלי)
 
