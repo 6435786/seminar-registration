@@ -7081,10 +7081,10 @@ function drawStudentsTable(pdf, girls, startY, opts = {}) {
   const tableW = 178;  // מ"מ
   const leftX = (210 - tableW) / 2;
   // PDF צייר עמודות LEFT→RIGHT. סדר התצוגה הויזואלית (מימין לשמאל לקורא):
-  // מס' | מספר זהות | שם פרטי | שם משפחה | מוסד
+  // מס' | מספר זהות | שם משפחה | שם פרטי | מוסד
   // לכן index 0 = הקצה השמאלי (מוסד), index 4 = הקצה הימני (מס')
-  const colsW   = [54,      40,           36,         36,           12];
-  const headers = ['מוסד', 'שם משפחה', 'שם פרטי', 'מספר זהות', 'מס\''];
+  const colsW   = [54,      36,          40,           36,           12];
+  const headers = ['מוסד', 'שם פרטי', 'שם משפחה', 'מספר זהות', 'מס\''];
   const rowH = 7;
   const headH = 8;
   const PAGE_BOTTOM = 265;  // מ"מ — אזור בטוח, מעל פוטר הניירת
@@ -7114,7 +7114,12 @@ function drawStudentsTable(pdf, girls, startY, opts = {}) {
 
   pdf.setFont('David', 'normal');
   pdf.setFontSize(10.5);
-  const rows = girls || [];
+  // מיון אלפבתי לפי שם משפחה ואז שם פרטי (עברית)
+  const rows = [...(girls || [])].sort((a, b) => {
+    const f = (a.family_name || '').localeCompare(b.family_name || '', 'he');
+    if (f !== 0) return f;
+    return (a.first_name || '').localeCompare(b.first_name || '', 'he');
+  });
 
   if (rows.length === 0) {
     pdf.line(leftX, y, leftX + tableW, y);
@@ -7141,8 +7146,8 @@ function drawStudentsTable(pdf, girls, startY, opts = {}) {
     const g = rows[r];
     pdf.line(leftX, y, leftX + tableW, y);
     let cx = leftX;
-    // אותו סדר כמו headers: [מוסד, שם משפחה, שם פרטי, מספר זהות, מס']
-    const values = [g.source_school || '', g.family_name || '', g.first_name || '', g.national_id || '', String(r + 1)];
+    // אותו סדר כמו headers: [מוסד, שם פרטי, שם משפחה, מספר זהות, מס']
+    const values = [g.source_school || '', g.first_name || '', g.family_name || '', g.national_id || '', String(r + 1)];
     // עברית — bidi. מספרים (ת.ז + מס') — בלי bidi.
     const isHebCol = [true, true, true, false, false];
     for (let c = 0; c < colsW.length; c++) {
