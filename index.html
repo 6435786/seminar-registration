@@ -4737,6 +4737,15 @@ const LIST_TABS = [
       { key: 'contact_email',    label: 'מייל',      type: 'text', group: 'contact' },
       { key: '_extra_contacts',  label: 'נוספים',    type: 'extra_contacts', group: 'contact' },
     ] },
+  { table: 'contacts',          label: 'אנשי קשר',          isEntity: true, sortField: 'name',
+    fields: [
+      { key: 'title', label: 'תואר',    type: 'text' },
+      { key: 'name',  label: 'שם',      type: 'text' },
+      { key: 'role',  label: 'תפקיד',   type: 'text' },
+      { key: 'phone', label: 'טלפון',   type: 'text' },
+      { key: 'email', label: 'מייל',    type: 'text' },
+      { key: 'notes', label: 'הערות',   type: 'text' },
+    ] },
   { table: 'form_templates',    label: 'טפסי דוא"ל',         isEntity: true, sortField: 'sort_order',
     fields: [
       { key: 'name',           label: 'שם הטופס',    type: 'text' },
@@ -5219,6 +5228,18 @@ async function addListItem(table) {
     return _addTemplatePopup();
   }
 
+  // contacts — רק שם בהוספה, השאר ב־inline edit
+  if (table === 'contacts') {
+    const name = prompt('שם איש הקשר:');
+    if (!name) return;
+    const { error } = await sb.from('contacts').insert({ name });
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    LIST_EDIT_MODE['contacts'] = true;  // ענן עריכה לעדכון יתר השדות
+    await renderManageLists();
+    toast('נוסף ✓ — מלא את שאר השדות בעריכה');
+    return;
+  }
+
   if (isEntity) {
     const name = prompt('שם המוסד/סמינר:');
     if (!name) return;
@@ -5319,6 +5340,16 @@ async function saveListField(table, id, field, newValue, oldValue) {
 
 async function deleteListRow(table, id) {
   const tabDef = LIST_TABS.find(t => t.table === table);
+
+  // contacts — מחיקה פשוטה (אין FK ל־contacts)
+  if (table === 'contacts') {
+    if (!confirm('למחוק את איש הקשר?')) return;
+    const { error } = await sb.from('contacts').delete().eq('id', id);
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    toast('נמחק');
+    await renderManageLists();
+    return;
+  }
 
   // form_templates — בדיקת שימוש בלוג שליחות + מחיקת קובץ מ־Storage
   if (table === 'form_templates') {
