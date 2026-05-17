@@ -7008,8 +7008,9 @@ function drawWrappedRTL(pdf, text, rightX, leftX, y, opts = {}) {
 function drawStudentsTable(pdf, girls, startY, opts = {}) {
   const tableW = 178;  // מ"מ
   const leftX = (210 - tableW) / 2;
-  const colsW = [12, 36, 40, 36, 54]; // מ.ס., ת.ז., משפחה, פרטי, מוסד
-  const headers = ['מ.ס.', 'מספר זהות', 'שם משפחה', 'שם פרטי', 'מוסד'];
+  // סדר RTL: מימין לשמאל — מס', ת.ז., שם פרטי, שם משפחה, מוסד
+  const colsW = [12, 36, 36, 40, 54];
+  const headers = ['מס\'', 'מספר זהות', 'שם פרטי', 'שם משפחה', 'מוסד'];
   const rowH = 7;
   const headH = 8;
   const PAGE_BOTTOM = 265;  // מ"מ — אזור בטוח, מעל פוטר הניירת
@@ -7066,7 +7067,7 @@ function drawStudentsTable(pdf, girls, startY, opts = {}) {
     const g = rows[r];
     pdf.line(leftX, y, leftX + tableW, y);
     let cx = leftX;
-    const values = [String(r + 1), g.national_id || '', g.family_name || '', g.first_name || '', g.source_school || ''];
+    const values = [String(r + 1), g.national_id || '', g.first_name || '', g.family_name || '', g.source_school || ''];
     for (let c = 0; c < colsW.length; c++) {
       const w = colsW[c];
       if (c < colsW.length - 1) pdf.line(cx + w, y, cx + w, y + rowH);
@@ -7261,7 +7262,7 @@ function drawSeminarInitialLetter(pdf, data) {
   let y = 68;
   drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, T('contact_name', '{{contact_full}}'), RIGHT_X, y, { size: 12, bold: true });  y += 5;
-  drawRTL(pdf, T('contact_role', 'מנהל סמינר "{{seminar_name}}"'), RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, T('contact_role', 'מנהלת סמינר "{{seminar_name}}"'), RIGHT_X, y, { size: 12 });  y += 9;
   drawRTL(pdf, T('shalom', 'שלום רב,'), RIGHT_X, y, { size: 12 });  y += 10;
 
   drawCenteredRTL(pdf, T('subject', 'הנדון: שיבוץ תלמידות במוסדכם לשנה"ל {{school_year}}'), 105, y, { size: 13, bold: true });
