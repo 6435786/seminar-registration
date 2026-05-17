@@ -4867,9 +4867,15 @@ async function renderManageLists() {
       if (f.type === 'edit_sections') {
         const has = !!(item.content_json && item.content_json.sections);
         const display = has
-          ? `<span style="color:var(--accent); font-weight:600;">${Object.keys(item.content_json.sections).length} קטעים</span>`
-          : `<span style="color:var(--muted)">ברירת מחדל</span>`;
-        cells.push(`<td class="val-cell" style="text-align:center;">${display} <button class="mini-btn" onclick="openTemplateEditor(${item.id})" title="ערוך טקסטים של המכתב">✎ ערוך</button></td>`);
+          ? `<span style="color:var(--accent); font-weight:600; font-size:11px;">${Object.keys(item.content_json.sections).length} קטעים</span>`
+          : `<span style="color:var(--muted); font-size:11px;">ברירת מחדל</span>`;
+        cells.push(`<td class="val-cell" style="text-align:center; padding:6px;">
+          <button onclick="openTemplateEditor(${item.id}); return false;" title="פתח עורך מלא של טקסט המכתב"
+            style="background:linear-gradient(135deg, #0ea5e9, #0284c7); color:white; border:0; padding:8px 18px; border-radius:8px; cursor:pointer; font-family:inherit; font-size:13px; font-weight:600; box-shadow:0 2px 6px rgba(2,132,199,0.3); display:inline-flex; align-items:center; gap:6px;">
+            ✎ ערוך טקסטים
+          </button>
+          <div style="margin-top:3px;">${display}</div>
+        </td>`);
         return;
       }
       if (f.type === 'bool') {
@@ -4935,6 +4941,8 @@ async function renderManageLists() {
 
   const editBtnClass = editing ? 'save-btn' : 'cancel-btn';
   const editBtnLabel = editing ? '✓ סיים עריכה' : '✎ מצב עריכה';
+  // בטאב טפסים — אין צורך ב"מצב עריכה" כי כל שינוי נעשה דרך עורך התבניות הייעודי
+  const isTemplatesTab = tab.table === 'form_templates';
 
   document.getElementById('modal_body').innerHTML = `
     <div class="modal-header">
@@ -4949,14 +4957,17 @@ async function renderManageLists() {
 
       <div class="form-section" style="padding: 12px 14px;">
         <div style="display:flex; gap:8px; margin-bottom:12px; align-items:center; flex-wrap:wrap;">
-          <button class="${editBtnClass}" onclick="toggleListEditMode('${tab.table}')">${editBtnLabel}</button>
+          ${isTemplatesTab ? '' : `<button class="${editBtnClass}" onclick="toggleListEditMode('${tab.table}')">${editBtnLabel}</button>`}
           <button class="save-btn" onclick="addListItem('${tab.table}')">${addLabel}</button>
           ${sortBtn}
-          ${importBtn}
-          ${exportBtn}
+          ${isTemplatesTab ? '' : importBtn}
+          ${isTemplatesTab ? '' : exportBtn}
           <span style="margin-right:auto; color: var(--muted); font-size: 13px;">${items.length} פריטים${editing ? ' · מצב עריכה דלוק' : ''}</span>
         </div>
-        <table style="width:100%; font-size:14px;" class="${editing ? 'list-editing' : ''}">
+        ${isTemplatesTab ? `<div style="background:#f0f9ff; border:1px solid #7dd3fc; border-radius:6px; padding:8px 12px; margin-bottom:12px; color:var(--deep); font-size:12px;">
+          💡 לעריכת טקסטי המכתבים — לחץ על <b>"✎ ערוך טקסטים"</b> בכל שורה. עורך מלא ייפתח עם כל קטעי המכתב.
+        </div>` : ''}
+        <table style="width:100%; font-size:14px;" class="${editing && !isTemplatesTab ? 'list-editing' : ''}">
           <thead>${tableHeader}</thead>
           <tbody>${rowsHtml || `<tr><td colspan="${tab.fields.length + 3}" style="text-align:center;color:var(--muted);padding:20px">אין פריטים</td></tr>`}</tbody>
         </table>
