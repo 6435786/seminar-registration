@@ -6209,39 +6209,73 @@ function _encodeAddressName(name, email) {
   return `${encName} <${email}>`;
 }
 
-// בונה הודעת RFC 822 (MIME) עם attachment של PDF — גוף HTML עם RTL
-async function _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachment }) {
-  const boundary = '----=_BeitarSeminars_' + Math.random().toString(36).substring(2, 10);
+// פורמט תאריך RFC 5322 (Wed, 21 Oct 2025 07:28:00 +0000)
+function _rfc5322Date(d) {
+  d = d || new Date();
+  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  const pad = (n) => String(n).padStart(2, '0');
+  const offMin = -d.getTimezoneOffset();
+  const sign = offMin >= 0 ? '+' : '-';
+  const offH = pad(Math.floor(Math.abs(offMin) / 60));
+  const offM = pad(Math.abs(offMin) % 60);
+  return `${days[d.getDay()]}, ${pad(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${sign}${offH}${offM}`;
+}
+
+// בונה הודעת RFC 822 (MIME) עם multipart/alternative (plain+html) + attachment
+// מבנה זה מפחית סף ספאם ב־Gmail/Outlook (חוסר plain text הוא דגל אדום).
+async function _buildMimeMessage({ from, to, cc, bcc, replyTo, subject, bodyText, attachment }) {
+  const outerB = '----=_outer_' + Math.random().toString(36).substring(2, 10);
+  const innerB = '----=_inner_' + Math.random().toString(36).substring(2, 10);
   const lines = [];
-  // From: עם שם תצוגה ממותג (לא משאירים את ברירת המחדל של Gmail)
+
+  // === Headers ===
   const fromHeader = from || _encodeAddressName(GMAIL_FROM_NAME, GMAIL_FROM_EMAIL);
   lines.push(`From: ${fromHeader}`);
   if (to)   lines.push(`To: ${to}`);
   if (cc && cc.length) lines.push(`Cc: ${cc.join(', ')}`);
   if (bcc) lines.push(`Bcc: ${bcc}`);
+  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
   lines.push(`Subject: =?UTF-8?B?${_utf8b64(subject || '')}?=`);
+  lines.push(`Date: ${_rfc5322Date(new Date())}`);
+  lines.push(`Message-ID: <${Date.now()}.${Math.random().toString(36).substring(2)}@${GMAIL_FROM_EMAIL.split('@')[1]}>`);
   lines.push('MIME-Version: 1.0');
-  lines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  lines.push(`Content-Type: multipart/mixed; boundary="${outerB}"`);
   lines.push('');
   lines.push('');
 
-  // גוף HTML עם RTL ו־UTF-8 מפורשים (יותר אמין מ־plain text ב־Gmail)
+  // === outer part 1: multipart/alternative (plain + html) ===
+  lines.push(`--${outerB}`);
+  lines.push(`Content-Type: multipart/alternative; boundary="${innerB}"`);
+  lines.push('');
+
+  // plain text
+  lines.push(`--${innerB}`);
+  lines.push('Content-Type: text/plain; charset=UTF-8');
+  lines.push('Content-Transfer-Encoding: base64');
+  lines.push('');
+  const plainB64 = _utf8b64(bodyText || '');
+  lines.push(plainB64.match(/.{1,76}/g).join('\r\n'));
+  lines.push('');
+
+  // HTML
   const htmlBody = `<!DOCTYPE html>
 <html lang="he" dir="rtl">
 <head><meta charset="UTF-8"></head>
-<body style="font-family: Arial, 'David Libre', serif; direction: rtl; text-align: right; font-size: 14px; line-height: 1.6; color: #000;">
+<body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; font-size: 14px; line-height: 1.6; color: #000;">
 ${(bodyText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}
 </body></html>`;
-  lines.push(`--${boundary}`);
+  lines.push(`--${innerB}`);
   lines.push('Content-Type: text/html; charset=UTF-8');
   lines.push('Content-Transfer-Encoding: base64');
   lines.push('');
-  // פיצול ל־76 תווים בשורה כדי לא לעבור גבולות RFC
-  const bodyB64 = _utf8b64(htmlBody);
-  lines.push(bodyB64.match(/.{1,76}/g).join('\r\n'));
+  const htmlB64 = _utf8b64(htmlBody);
+  lines.push(htmlB64.match(/.{1,76}/g).join('\r\n'));
+  lines.push('');
+  lines.push(`--${innerB}--`);
   lines.push('');
 
-  // קובץ מצורף (PDF)
+  // === outer part 2: attachment ===
   if (attachment && attachment.blob) {
     const buf = await attachment.blob.arrayBuffer();
     const bytes = new Uint8Array(buf);
@@ -6249,10 +6283,9 @@ ${(bodyText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
     for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
     const b64 = btoa(binary);
     const fname = (attachment.filename || 'attachment.pdf').replace(/"/g, '');
-    // עברית בשם הקובץ: RFC 2047 encoded-word (Gmail מציג טוב)
     const isAscii = /^[\x20-\x7E]*$/.test(fname);
     const fnameEnc = isAscii ? fname : `=?UTF-8?B?${_utf8b64(fname)}?=`;
-    lines.push(`--${boundary}`);
+    lines.push(`--${outerB}`);
     lines.push(`Content-Type: ${attachment.mime || 'application/pdf'}; name="${fnameEnc}"`);
     lines.push('Content-Transfer-Encoding: base64');
     lines.push(`Content-Disposition: attachment; filename="${fnameEnc}"`);
@@ -6261,7 +6294,7 @@ ${(bodyText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&
     lines.push('');
   }
 
-  lines.push(`--${boundary}--`);
+  lines.push(`--${outerB}--`);
   return lines.join('\r\n');
 }
 
@@ -7304,20 +7337,20 @@ async function _ec_sendViaGmail() {
       const realBcc = EC_STATE.bcc || null;
       const realTo = r.email;
 
-      // מצב בדיקה: כל הכתובות → testEmail
+      // מצב בדיקה: כל הכתובות → testEmail. אבל הנושא והגוף נשארים נקיים
+      // (תגיות "בדיקה" ואימוג'י מעלים סף ספאם — הפרטים נשמרים ב־log).
       const toEmail  = EC_STATE.testMode ? EC_STATE.testEmail : realTo;
       const ccList   = EC_STATE.testMode ? [] : realCc;
       const bccEmail = EC_STATE.testMode ? null : realBcc;
-      const subject  = (EC_STATE.testMode ? '[בדיקה] ' : '') + EC_STATE.subject;
-      const bodyText = (EC_STATE.testMode
-        ? `🧪 מצב בדיקה — היה אמור להישלח ל: ${realTo}\nCC: ${realCc.join(', ') || '(אין)'}\nBCC: ${realBcc || '(אין)'}\n\n----\n\n`
-        : '') + (EC_STATE.bodyText || '');
+      const subject  = EC_STATE.subject;
+      const bodyText = EC_STATE.bodyText || '';
 
       const filename = _ec_recipientFilename(r, 'pdf');
       await sendGmailMessage({
         to: toEmail,
         cc: ccList,
         bcc: bccEmail,
+        replyTo: GMAIL_FROM_EMAIL,
         subject,
         bodyText,
         attachment: { blob: pdfBlob, filename, mime: 'application/pdf' },
