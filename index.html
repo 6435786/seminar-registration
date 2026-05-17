@@ -6691,8 +6691,10 @@ function _ec_syncSeminarRecipients() {
       source_school: g.source_school_name || '',
     }));
     const contactFull = `${sem.contact_title || ''} ${sem.contact_name || ''}`.trim();
-    // CC אוטומטי: מייל משרד + מייל נוסף (אם קיימים)
-    const ccFromSeminar = [sem.office_email, sem.secondary_email].filter(Boolean);
+    // CC אוטומטי: מייל משרד + מייל נוסף (אם קיימים) — עם תוויות + ברירת מחדל enabled=true
+    const ccFromSeminar = [];
+    if (sem.office_email)    ccFromSeminar.push({ email: sem.office_email,    label: 'מייל משרד', enabled: true });
+    if (sem.secondary_email) ccFromSeminar.push({ email: sem.secondary_email, label: 'מייל נוסף', enabled: true });
     out.push({
       kind: 'seminar', ref_id: sem.id, email: sem.contact_email,
       cc_emails: ccFromSeminar,  // יתווסף ל־CC הגלובלי בעת השליחה
@@ -6753,9 +6755,11 @@ async function _ec_renderStep3(pop) {
         <textarea id="ec_body_text" rows="3" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px; resize:vertical;">${_esc(EC_STATE.bodyText || 'שלום רב,\n\nמצ"ב מכתב שיבוץ. נא לעיין בקובץ המצורף.\n\nבברכה,\nאגף החינוך — עיריית ביתר עילית')}</textarea>
       </div>
 
+      ${_ec_renderSeminarCcSection()}
+
       <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">
-          CC — עותק גלוי <span style="font-weight:400; color:var(--muted); font-size:11px;">(לכולם — בנוסף לאנשי קשר שמוגדרים ברמת הסמינר)</span>
+          CC נוסף <span style="font-weight:400; color:var(--muted); font-size:11px;">(לכולם — בנוסף לאנשי קשר של הסמינר)</span>
         </label>
         <div style="display:flex; gap:6px;">
           <input type="text" id="ec_cc" value="${_esc(EC_STATE.cc)}" placeholder="email1@example.com, email2@example.com" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
@@ -6824,12 +6828,51 @@ async function _ec_renderStep3(pop) {
   document.getElementById('ec_body_text').oninput = (e) => { EC_STATE.bodyText = e.target.value; };
   document.getElementById('ec_cc').oninput      = (e) => { EC_STATE.cc = e.target.value; };
   document.getElementById('ec_bcc').oninput     = (e) => { EC_STATE.bcc = e.target.value; localStorage.setItem('ec_bcc_default', e.target.value); };
+  // checkboxes של CC מהסמינר — מעדכנים את recipient.cc_emails[i].enabled
+  document.querySelectorAll('[data-sem-cc]').forEach(cb => {
+    cb.onchange = () => {
+      const i = parseInt(cb.dataset.semCc, 10);
+      const r = EC_STATE.recipients[0];
+      if (!r || !r.cc_emails || !r.cc_emails[i]) return;
+      if (typeof r.cc_emails[i] === 'string') {
+        r.cc_emails[i] = { email: r.cc_emails[i], enabled: cb.checked };
+      } else {
+        r.cc_emails[i].enabled = cb.checked;
+      }
+    };
+  });
   _ec_renderCcChips();
   document.getElementById('ec_letter_date').oninput = (e) => {
     EC_STATE.letterDate = e.target.value ? new Date(e.target.value).toISOString() : null;
     // עדכן מועד גם בנתוני מכתבי הסמינר (שמשתמשים בתאריך)
     EC_STATE.recipients.forEach(r => { if (r.letter_data) r.letter_data.letter_date = EC_STATE.letterDate; });
   };
+}
+
+// ====== CC מהסמינר — כל אחד עם checkbox ======
+function _ec_renderSeminarCcSection() {
+  // רלוונטי רק לסמינרים (single-select, אז יש בדיוק נמען אחד)
+  const r = EC_STATE.recipients[0];
+  if (!r || r.kind !== 'seminar') return '';
+  const ccs = r.cc_emails || [];
+  if (!ccs.length) return '';
+  return `
+    <div style="margin-bottom:12px; background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:10px 12px;">
+      <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:6px;">
+        📋 כתובות CC של הסמינר <span style="font-weight:400; color:var(--muted); font-size:11px;">(הורד סימון כדי לא לכלול)</span>
+      </label>
+      ${ccs.map((c, i) => {
+        const item = typeof c === 'string' ? { email: c, label: '', enabled: true } : c;
+        return `
+          <label style="display:flex; align-items:center; gap:8px; padding:4px 0; cursor:pointer; font-size:13px;">
+            <input type="checkbox" ${item.enabled !== false ? 'checked' : ''} data-sem-cc="${i}" style="width:16px; height:16px;">
+            <span style="color:var(--deep); min-width:75px;">${_esc(item.label || 'CC')}:</span>
+            <span style="color:var(--accent); direction:ltr;">${_esc(item.email)}</span>
+          </label>
+        `;
+      }).join('')}
+    </div>
+  `;
 }
 
 // ====== CC picker (מאנשי קשר כלליים) ======
@@ -6915,9 +6958,13 @@ function _ec_renderCcChips() {
 }
 
 function _ec_collectAllCcEmails(recipientCcEmails) {
-  // CC לאיש קשר ראשי = (extras של הסמינר) + (CC ידני) + (אנשי קשר שנבחרו)
+  // CC לאיש קשר ראשי = (CCs של הסמינר שעדיין enabled) + (CC ידני) + (אנשי קשר שנבחרו)
+  const recipCcEnabled = (recipientCcEmails || [])
+    .map(c => typeof c === 'string' ? { email: c, enabled: true } : c)
+    .filter(c => c && c.enabled !== false && c.email)
+    .map(c => c.email);
   const all = [
-    ...(recipientCcEmails || []),
+    ...recipCcEnabled,
     ...(EC_STATE.cc || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean),
     ...EC_STATE.ccContacts.map(c => c.email).filter(Boolean),
   ];
