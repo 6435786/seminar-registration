@@ -5934,6 +5934,71 @@ const TEMPLATE_PLACEHOLDERS = {
   ],
 };
 
+// תוכן ברירת מחדל לכל תבנית — לשחזור באמצעות כפתור "↻ אפס לברירת מחדל".
+// חייב להישאר מסונכרן עם migrate_14_template_content.py + תיקונים בהמשך.
+const TEMPLATE_DEFAULT_CONTENT = {
+  parents: { sections: {
+    greeting:          'לכבוד',
+    addressee:         'הורי התלמידה {{girl_full_name}}',
+    email_line:        'בדוא"ל {{parent_email}}',
+    shalom:            'שלום וברכה,',
+    subject:           'הנדון: מענה לפנייתכם לשיבוץ בתכם לשנה"ל {{school_year}}',
+    body:              'במענה לפנייתכם אודות בקשת שיבוץ לתיכון עבור בתכם תחי\' לשנת הלימודים {{school_year}} לאחר עיון בפנייתכם ובחינת ההיבטים, ובהתבסס על כלל השיקולים הנ"ל, הוחלט כי בתכם תשובץ בסמינר: {{seminar_full}}.',
+    rabanim_note:      'החלטה זו הינה על דעת וועדת הרבנים העירונית.',
+    registration_note: 'הקבלה לסמינר מותנית ברישום לסמינר ועמידה בכללי הקבלה.',
+    blessing:          'באיחולי הצלחה ורוב נחת',
+    signature_open:    'בברכה,',
+    signer_name:       'יהודה קורנבליט',
+    signer_role:       'מנהל אגף החינוך',
+    signer_dept:       'עיריית ביתר עילית',
+    footer_appeal:     'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך',
+  } },
+  seminar_initial: { sections: {
+    greeting:         'לכבוד',
+    contact_name:     '{{contact_full}}',
+    contact_role:     'מנהלת סמינר "{{seminar_name}}"',
+    shalom:           'שלום רב,',
+    subject:          'הנדון: שיבוץ תלמידות במוסדכם לשנה"ל {{school_year}}',
+    para1:            'שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\')',
+    para2:            'כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.',
+    para3:            'לאחר דין ודברים שהתנהל בוועדת הרבנים העירונית ולאחר עבודת צוות מעמיקה ע"פ הנחיות משרד החינוך וגורמי נוספים ברשות, הוחלט שבבית ספרכם תשובצנה תלמידות בנוסף לאלו שכבר משובצות אצלכם.',
+    parents_note:     'הודעה להורים תשלח בהמשך ועם פנייתם אליכם הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.',
+    attachment_note:  'רצ"ב רשימת התלמידות.',
+    appeal_note:      'השגה על השיבוץ ניתן להגיש התייחסות עניינית בכתב לכתובת דוא"ל seminar@5888111.co.il עד 3 ימי עבודה מיום קבלת מכתב שיבוץ זה. מכתבכם יוצג בוועדת הרבנים.',
+    meshrad_chinuch:  'כאמור בהנחיות ניתן לערער לועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.',
+    signature_open:   'בברכה,',
+    signer_name:      'יהודה קורנבליט',
+    signer_role:      'מנהל אגף החינוך',
+    copies_label:     'העתקים:',
+    copies_line1:     'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך',
+    copies_line2:     'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך',
+    copies_line3:     'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך',
+    copies_line4:     'וועדת ערר - מחוז חרדי',
+    table_title:      'רשימת תלמידות לשיבוץ — {{seminar_name}}',
+  } },
+  seminar_final: { sections: {
+    greeting:         'לכבוד',
+    contact_name:     '{{contact_full}}',
+    contact_role:     'הנהלת סמינר {{seminar_name}}',
+    shalom:           'שלום רב,',
+    subject:          'הנדון: מענה לערעור - שיבוץ תלמידות סופי לשנה"ל {{school_year}}',
+    para1:            'בהמשך להודעת השיבוץ שנשלחה אליכם ולאחר קבלת המענה ממכם התקיימה ישיבת היוועצות עם וועדת הרבנים העירונית ולהלן מסקנותיה.',
+    para2:            'להזכירכם שיבוץ תלמידים בבתי ספר הינו בתחום סמכותה ואחריותה של הרשות המקומית. (הוראות כלליות סע\' 7א\') כהמשך לתהליך הרישום ועפ"י נוהל משה"ח כפי שמופיע בהנחיות, אנו בשלב של החלטות שיבוץ סופיות ומלאות למוסדות החינוך.',
+    parents_note:     'העתק החלטת השיבוץ נשלח להורים, הנכם מתבקשים להסדיר עמם את תהליכי הרישום והקבלה.',
+    attachment_note:  'רצ"ב רשימת התלמידות.',
+    appeal_note:      'כאמור בהנחיות ניתן לערער לוועדת הערר במחוז בדוא"ל vaadat_arar@education.gov.il.',
+    signature_open:   'בברכה,',
+    signer_name:      'יהודה קורנבליט',
+    signer_role:      'מנהל אגף החינוך',
+    copies_label:     'העתקים: וועדת הרבנים העירונית',
+    copies_line1:     'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך',
+    copies_line2:     'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך',
+    copies_line3:     'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך',
+    copies_line4:     'וועדת ערר - מחוז חרדי',
+    table_title:      'רשימת תלמידות לשיבוץ — {{seminar_name}}',
+  } },
+};
+
 async function openTemplateEditor(templateId) {
   // 🚧 כרגע מוגבל ל־super_admin (במהלך פיתוח מערכת המיילים)
   if (!isSuperAdmin()) {
@@ -6051,20 +6116,23 @@ async function openTemplateEditor(templateId) {
   };
 }
 
-// אפסון התבנית לברירת המחדל המקורית
+// אפסון התבנית לברירת המחדל המקורית — משחזר את הטקסט המוטמע בקוד
 async function resetTemplateSection(templateId) {
-  if (!confirm('לאפס את כל הטקסטים של תבנית זו לברירת המחדל המקורית? פעולה זו תמחק את העריכות הנוכחיות.')) return;
-  // ברירת המחדל היא לפנות ל־migration original — אבל אנחנו לא יכולים לקרוא ל־migration מהדפדפן.
-  // במקום זה: מוחקים את ה־content_json, ובפעם הבאה ש־ensureFormTemplateContent רץ — הוא יקבל null
-  // וה־draw functions ייפלו לברירות המחדל ההארדקוד שלהן (שזה אכן הטקסט המקורי).
+  // קודם נשלוף את ה־slug של התבנית כדי לבדוק שיש לנו ברירת מחדל זמינה
+  const { data: tpl, error: e1 } = await sb.from('form_templates').select('slug, name').eq('id', templateId).single();
+  if (e1) { toast('שגיאה: ' + e1.message, 'warn'); return; }
+  const defaults = TEMPLATE_DEFAULT_CONTENT[tpl.slug];
+  if (!defaults) {
+    alert(`אין ברירת מחדל מוגדרת בקוד עבור התבנית "${tpl.name}". פנה למפתח.`);
+    return;
+  }
+  if (!confirm(`לאפס את כל הטקסטים של "${tpl.name}" לברירת המחדל המקורית?\nכל שינוי שביצעת בעורך יידרס.`)) return;
   const { error } = await sb.from('form_templates').update({
-    content_json: null,
+    content_json: defaults,
     updated_at: new Date().toISOString(),
   }).eq('id', templateId);
   if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
-  // ננקה את ה־cache לפי slug
-  const { data } = await sb.from('form_templates').select('slug').eq('id', templateId).single();
-  if (data) invalidateFormTemplateCache(data.slug);
+  invalidateFormTemplateCache(tpl.slug);
   toast('הותאם לברירת מחדל ✓');
   document.getElementById('tpl_editor_scrim')?.remove();
   await renderManageLists();
