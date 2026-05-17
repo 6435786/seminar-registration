@@ -22,6 +22,8 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <!-- JSZip — לבניית ZIP של PDFים לשליחת מיילים -->
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<!-- Google Identity Services — לאימות OAuth של Gmail API -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --bg: #ffffff;
@@ -6139,6 +6141,128 @@ async function resetTemplateSection(templateId) {
 }
 
 // ============================================================
+// Gmail OAuth + Send API
+// ============================================================
+// משתמש ב־Google Identity Services (GIS) לקבלת access token,
+// ושולח דרך Gmail REST API (gmail.send scope בלבד).
+// ============================================================
+const GMAIL_CLIENT_ID = '276433794504-l2rqn6a6dp75gpcoljqk77dask7prhor.apps.googleusercontent.com';
+const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
+let _gmailTokenClient = null;
+let _gmailAccessToken = null;
+let _gmailTokenExpiresAt = 0;
+
+function _initGmailTokenClient() {
+  if (_gmailTokenClient) return _gmailTokenClient;
+  if (!window.google || !window.google.accounts) return null;
+  _gmailTokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: GMAIL_CLIENT_ID,
+    scope: GMAIL_SCOPE,
+    callback: '', // נקבע פר-קריאה
+  });
+  return _gmailTokenClient;
+}
+
+// מבקש access token. אם יש cached וחי — מחזיר. אחרת פותח OAuth.
+// silent=true → ינסה לחדש ברקע ללא חלון popup (חוזר על OAuth שכבר אושר)
+async function ensureGmailToken(silent = false) {
+  if (_gmailAccessToken && Date.now() < _gmailTokenExpiresAt - 60000) {
+    return _gmailAccessToken;
+  }
+  return new Promise((resolve, reject) => {
+    const client = _initGmailTokenClient();
+    if (!client) return reject(new Error('Google Identity Services לא נטענה. רענן את הדף.'));
+    client.callback = (response) => {
+      if (response.error) {
+        reject(new Error('שגיאת OAuth: ' + response.error + (response.error_description ? ' — ' + response.error_description : '')));
+        return;
+      }
+      _gmailAccessToken = response.access_token;
+      _gmailTokenExpiresAt = Date.now() + ((response.expires_in || 3600) * 1000);
+      resolve(_gmailAccessToken);
+    };
+    // prompt: '' = silent (אם המשתמש כבר אישר), prompt: 'consent' = חדש
+    client.requestAccessToken({ prompt: silent ? '' : 'consent' });
+  });
+}
+
+// סגנון b64url (URL-safe) — חובה ל־Gmail API
+function _b64url(s) {
+  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// UTF-8 → base64 (לשורת נושא בעברית)
+function _utf8b64(s) {
+  return btoa(unescape(encodeURIComponent(s)));
+}
+
+// בונה הודעת RFC 822 (MIME) עם attachment של PDF
+async function _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachment }) {
+  const boundary = '----=_BeitarSeminars_' + Math.random().toString(36).substring(2, 10);
+  const lines = [];
+  if (from) lines.push(`From: ${from}`);
+  if (to)   lines.push(`To: ${to}`);
+  if (cc && cc.length) lines.push(`Cc: ${cc.join(', ')}`);
+  if (bcc) lines.push(`Bcc: ${bcc}`);
+  lines.push(`Subject: =?UTF-8?B?${_utf8b64(subject || '')}?=`);
+  lines.push('MIME-Version: 1.0');
+  lines.push(`Content-Type: multipart/mixed; boundary="${boundary}"`);
+  lines.push('');
+  lines.push('');
+
+  // גוף טקסט
+  lines.push(`--${boundary}`);
+  lines.push('Content-Type: text/plain; charset=UTF-8');
+  lines.push('Content-Transfer-Encoding: base64');
+  lines.push('');
+  lines.push(_utf8b64(bodyText || ''));
+  lines.push('');
+
+  // קובץ מצורף (PDF)
+  if (attachment && attachment.blob) {
+    const buf = await attachment.blob.arrayBuffer();
+    const bytes = new Uint8Array(buf);
+    let binary = '';
+    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
+    const b64 = btoa(binary);
+    const fname = (attachment.filename || 'attachment.pdf').replace(/"/g, '');
+    lines.push(`--${boundary}`);
+    lines.push(`Content-Type: ${attachment.mime || 'application/pdf'}; name="${fname}"`);
+    lines.push('Content-Transfer-Encoding: base64');
+    lines.push(`Content-Disposition: attachment; filename="${fname}"`);
+    lines.push('');
+    // פיצול ל־76 תווים בשורה (תקן MIME)
+    lines.push(b64.match(/.{1,76}/g).join('\r\n'));
+    lines.push('');
+  }
+
+  lines.push(`--${boundary}--`);
+  return lines.join('\r\n');
+}
+
+async function sendGmailMessage({ from, to, cc, bcc, subject, bodyText, attachment }) {
+  const token = await ensureGmailToken(true);  // נסה silent קודם
+  const raw = await _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachment });
+  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + token,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ raw: _b64url(raw) }),
+  });
+  if (!res.ok) {
+    let errMsg = `Gmail API ${res.status}`;
+    try {
+      const errJson = await res.json();
+      if (errJson.error && errJson.error.message) errMsg = errJson.error.message;
+    } catch (e) {}
+    throw new Error(errMsg);
+  }
+  return await res.json();
+}
+
+// ============================================================
 // Email composer — UI לשליחת מיילים מתבנית
 // ============================================================
 // 3 שלבים: בחירת תבנית → בחירת נמענים → גוף+שליחה
@@ -6803,14 +6927,16 @@ async function _ec_renderStep3(pop) {
         <button class="cancel-btn" onclick="_ec_previewFirst()">👁 תצוגה מקדימה (PDF ראשון)</button>
       </div>
     </div>
-    <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
+    <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc; flex-wrap:wrap;">
       <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();">← חזור</button>
-      <button class="apply-big" id="ec_send_btn" style="flex:1; ${EC_STATE.testMode ? '' : 'background: linear-gradient(135deg, #dc2626, #b91c1c);'}">
-        ${EC_STATE.testMode ? '🧪 ייצא לבדיקה' : '🔴 ייצא ושלח אמיתית'}
+      <button class="cancel-btn" id="ec_zip_btn" title="יורד ZIP עם PDFים — לבדיקה ויזואלית, בלי שליחה" style="background:#f0f9ff;">📦 ZIP בלבד</button>
+      <button class="apply-big" id="ec_gmail_btn" style="flex:1; ${EC_STATE.testMode ? '' : 'background: linear-gradient(135deg, #dc2626, #b91c1c);'}">
+        ${EC_STATE.testMode ? '🧪 שלח דרך Gmail (לבדיקה)' : '🔴 שלח דרך Gmail (אמיתי!)'}
       </button>
     </div>
   `;
-  document.getElementById('ec_send_btn').onclick = _ec_send;
+  document.getElementById('ec_zip_btn').onclick = _ec_send;
+  document.getElementById('ec_gmail_btn').onclick = _ec_sendViaGmail;
   // טוגל מצב בדיקה
   const tm = document.getElementById('ec_test_mode');
   if (tm) tm.onchange = (e) => {
@@ -7089,6 +7215,125 @@ async function _ec_send() {
 
 function _ec_safeFilename(name) {
   return name.replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
+}
+
+// =============== Send via Gmail (real API call) ===============
+async function _ec_sendViaGmail() {
+  if (!EC_STATE.recipients.length) { toast('אין נמענים', 'warn'); return; }
+  if (!EC_STATE.subject.trim()) { toast('נושא חובה', 'warn'); return; }
+
+  // ולידציה למצב בדיקה
+  if (EC_STATE.testMode) {
+    const te = (EC_STATE.testEmail || '').trim();
+    if (!te || !te.includes('@')) {
+      alert('🧪 במצב בדיקה — חובה למלא כתובת בדיקה תקינה.');
+      return;
+    }
+    if (!confirm(`🧪 שליחה לבדיקה דרך Gmail\n\nכל המיילים ישלחו לכתובת:\n${te}\n(${EC_STATE.recipients.length} מיילים — TO/CC/BCC יופנו לבדיקה)\n\nלהמשיך?`)) return;
+  } else {
+    const emails = EC_STATE.recipients.map(r => `• ${r.display_name} → ${r.email}`).join('\n');
+    if (!confirm(`🔴 שליחה אמיתית דרך Gmail!\n\nאתה עומד לשלוח ל־${EC_STATE.recipients.length} נמענים אמיתיים:\n\n${emails.substring(0, 500)}${emails.length > 500 ? '\n...' : ''}\n\nלהמשיך?`)) return;
+    if (!confirm(`⚠️ אישור אחרון!\n\nזה לא ניתן לביטול. ${EC_STATE.recipients.length} מכתבים אמיתיים יישלחו עכשיו.\n\nבטוח?`)) return;
+  }
+
+  const btn = document.getElementById('ec_gmail_btn');
+  btn.disabled = true;
+  btn.textContent = 'מתחבר ל־Gmail...';
+
+  // וודא token — אם זה הפעם הראשונה ייפתח חלון אישור OAuth
+  let token;
+  try {
+    token = await ensureGmailToken(false);
+  } catch (e) {
+    alert('שגיאה בהתחברות ל־Gmail: ' + e.message);
+    btn.disabled = false;
+    btn.textContent = EC_STATE.testMode ? '🧪 שלח דרך Gmail (לבדיקה)' : '🔴 שלח דרך Gmail (אמיתי!)';
+    return;
+  }
+
+  const slug = EC_STATE.template.slug;
+  const batchId = (crypto.randomUUID ? crypto.randomUUID() : ('batch_' + Date.now()));
+  const logRows = [];
+  let ok = 0, fail = 0;
+  const failures = [];
+
+  for (let i = 0; i < EC_STATE.recipients.length; i++) {
+    const r = EC_STATE.recipients[i];
+    btn.textContent = `שולח ${i+1}/${EC_STATE.recipients.length}...`;
+    try {
+      const pdfBlob = await generateLetterPDF(slug, r.letter_data);
+      const realCc = _ec_collectAllCcEmails(r.cc_emails);
+      const realBcc = EC_STATE.bcc || null;
+      const realTo = r.email;
+
+      // מצב בדיקה: כל הכתובות → testEmail
+      const toEmail  = EC_STATE.testMode ? EC_STATE.testEmail : realTo;
+      const ccList   = EC_STATE.testMode ? [] : realCc;
+      const bccEmail = EC_STATE.testMode ? null : realBcc;
+      const subject  = (EC_STATE.testMode ? '[בדיקה] ' : '') + EC_STATE.subject;
+      const bodyText = (EC_STATE.testMode
+        ? `🧪 מצב בדיקה — היה אמור להישלח ל: ${realTo}\nCC: ${realCc.join(', ') || '(אין)'}\nBCC: ${realBcc || '(אין)'}\n\n----\n\n`
+        : '') + (EC_STATE.bodyText || '');
+
+      const filename = _ec_safeFilename(`${r.display_name}.pdf`);
+      await sendGmailMessage({
+        to: toEmail,
+        cc: ccList,
+        bcc: bccEmail,
+        subject,
+        bodyText,
+        attachment: { blob: pdfBlob, filename, mime: 'application/pdf' },
+      });
+
+      logRows.push({
+        batch_id: batchId,
+        template_id: EC_STATE.template.id,
+        template_slug: slug,
+        recipient_email: toEmail,
+        recipient_name: (EC_STATE.testMode ? '🧪 ' : '') + r.display_name,
+        recipient_kind: r.kind,
+        recipient_ref_id: r.ref_id,
+        subject,
+        body_preview: (EC_STATE.bodyText || '').substring(0, 300),
+        season_id: CURRENT_SEASON_ID,
+        girl_ids: r.kind === 'parents' ? [r.ref_id] : (r.letter_data.girls || []).map(g => g.id).filter(Boolean),
+        status_filters: EC_STATE.statusFilters,
+        letter_date: (EC_STATE.letterDate || new Date().toISOString()).substring(0, 10),
+        sent_by_user_id: CURRENT_USER && CURRENT_USER.id,
+        sent_by_email: CURRENT_USER && CURRENT_USER.email,
+        metadata: {
+          mock: false,
+          via: 'gmail',
+          test_mode: EC_STATE.testMode,
+          cc: ccList,
+          bcc: bccEmail,
+          real_recipient_email: EC_STATE.testMode ? realTo : undefined,
+          real_cc: EC_STATE.testMode ? realCc : undefined,
+          real_bcc: EC_STATE.testMode ? realBcc : undefined,
+        },
+      });
+      ok++;
+    } catch (e) {
+      console.error('Gmail send failed for', r, e);
+      fail++;
+      failures.push(`${r.display_name}: ${e.message}`);
+    }
+  }
+
+  if (logRows.length) {
+    const { error } = await sb.from('email_send_log').insert(logRows);
+    if (error) console.warn('email_send_log insert failed:', error.message);
+  }
+
+  btn.disabled = false;
+  btn.textContent = EC_STATE.testMode ? '🧪 שלח דרך Gmail (לבדיקה)' : '🔴 שלח דרך Gmail (אמיתי!)';
+
+  if (fail === 0) {
+    alert(`✅ נשלחו ${ok} מיילים בהצלחה!${EC_STATE.testMode ? `\n\n(במצב בדיקה — כולם הלכו ל־${EC_STATE.testEmail})` : ''}`);
+    document.getElementById('ec_scrim')?.remove();
+  } else {
+    alert(`⚠️ נשלחו ${ok}, נכשלו ${fail}.\n\nכישלונות:\n${failures.join('\n')}`);
+  }
 }
 
 function _ec_buildEml(r, pdfBlob, attachName) {
