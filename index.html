@@ -6031,6 +6031,10 @@ async function openTemplateEditor(templateId) {
     return out;
   }
 
+  // חייבים להכניס ל־DOM לפני שמחפשים אלמנטים ב־getElementById
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+
   document.getElementById('tpl_editor_cancel').onclick = confirmClose;
   document.getElementById('tpl_editor_save').onclick = async () => {
     const sections = collectChanges();
@@ -6045,9 +6049,6 @@ async function openTemplateEditor(templateId) {
     scrim.remove();
     await renderManageLists();
   };
-
-  scrim.appendChild(pop);
-  document.body.appendChild(scrim);
 }
 
 // אפסון התבנית לברירת המחדל המקורית
