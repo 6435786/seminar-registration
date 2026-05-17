@@ -6295,18 +6295,33 @@ async function _ec_openHistory() {
             <thead>
               <tr style="background:#f8fafc;">
                 <th style="padding:5px 8px; text-align:right;">שם נמען</th>
-                <th style="padding:5px 8px; text-align:right;">מייל</th>
+                <th style="padding:5px 8px; text-align:right;">TO + CC + BCC</th>
                 <th style="padding:5px 8px; text-align:right;">נושא</th>
               </tr>
             </thead>
             <tbody>
-              ${b.rows.map(r => `
-                <tr>
-                  <td style="padding:4px 8px;">${_esc(r.recipient_name || '')}</td>
-                  <td style="padding:4px 8px; font-size:11px; color:var(--accent);">${_esc(r.recipient_email || '')}</td>
-                  <td style="padding:4px 8px; color:var(--muted);">${_esc(r.subject || '')}</td>
-                </tr>
-              `).join('')}
+              ${b.rows.map(r => {
+                // אסוף את כל הכתובות לתצוגה
+                const md = r.metadata || {};
+                const testMode = !!md.test_mode;
+                // ב־test mode מציגים את ה־real_*; ב־real מציגים מה שנשלח בפועל
+                const toEmail = testMode ? (md.real_recipient_email || r.recipient_email) : r.recipient_email;
+                const ccList  = testMode ? (md.real_cc || []) : (md.cc || []);
+                const bccVal  = testMode ? (md.real_bcc || null) : (md.bcc || null);
+                const emails = [
+                  `<div><b>TO:</b> ${_esc(toEmail || '')}</div>`,
+                  ...((ccList || []).filter(Boolean).map(c => `<div style="color:#0284c7;"><b>CC:</b> ${_esc(c)}</div>`)),
+                  bccVal ? `<div style="color:#7c3aed;"><b>BCC:</b> ${_esc(bccVal)}</div>` : '',
+                  testMode ? `<div style="color:#92400e; font-size:10px; margin-top:3px;">🧪 בדיקה — נשלח בפועל ל: ${_esc(r.recipient_email || '')}</div>` : '',
+                ].filter(Boolean).join('');
+                return `
+                  <tr>
+                    <td style="padding:6px 8px; vertical-align:top;">${_esc(r.recipient_name || '')}</td>
+                    <td style="padding:6px 8px; font-size:11px;">${emails}</td>
+                    <td style="padding:6px 8px; color:var(--muted); vertical-align:top;">${_esc(r.subject || '')}</td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
