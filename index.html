@@ -6077,6 +6077,8 @@ const EC_STATE = {
   ccContacts: [],               // אנשי קשר שנבחרו מהרשימה
   bcc: '',
   letterDate: null,             // ISO string; null = today
+  testMode: true,               // 🧪 ברירת מחדל: ON — בטוח. עד שתבטל ידנית.
+  testEmail: '',                // כתובת לבדיקות — כל המיילים יעברו לשם במצב test
 };
 
 async function openEmailComposer() {
@@ -6093,6 +6095,9 @@ async function openEmailComposer() {
     cc: '', ccContacts: [],
     bcc: localStorage.getItem('ec_bcc_default') || '',
     letterDate: null,
+    // מצב בדיקה — נשמר ב־localStorage. ברירת מחדל: ON (בטוח)
+    testMode: localStorage.getItem('ec_test_mode') !== 'off',
+    testEmail: localStorage.getItem('ec_test_email') || (CURRENT_USER && CURRENT_USER.email) || '',
   });
   await _ec_renderModal();
 }
@@ -6669,8 +6674,30 @@ async function _ec_renderStep3(pop) {
         <input type="email" id="ec_bcc" value="${_esc(EC_STATE.bcc)}" placeholder="archive@beitar.muni.il" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
       </div>
 
-      <div style="background:#fffbea; border:1px solid #fde68a; border-radius:8px; padding:10px 12px; font-size:12px; color:#92400e; margin-bottom:14px;">
-        <b>⚠ במצב נוכחי</b> — אינטגרציית Gmail עדיין לא מחוברת. לחיצה על "ייצא" תוריד ZIP עם כל ה־PDFים, ותתעד את השליחה ב"היסטוריית שליחות". כשנחבר את Gmail — המיילים ישלחו אוטומטית.
+      <div style="background:${EC_STATE.testMode ? '#fef3c7' : '#fee2e2'}; border:2px solid ${EC_STATE.testMode ? '#facc15' : '#fca5a5'}; border-radius:8px; padding:10px 12px; margin-bottom:14px;">
+        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14px;">
+          <input type="checkbox" id="ec_test_mode" ${EC_STATE.testMode ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;">
+          <span style="font-weight:700; color:${EC_STATE.testMode ? '#92400e' : '#991b1b'};">
+            ${EC_STATE.testMode ? '🧪 מצב בדיקה — כל המיילים ייצאו לכתובת בדיקה בלבד' : '🔴 שליחה אמיתית — המיילים יישלחו לנמענים בפועל!'}
+          </span>
+        </label>
+        ${EC_STATE.testMode ? `
+          <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+            <label style="font-size:12px; color:#92400e; min-width:90px;">כתובת בדיקה:</label>
+            <input type="email" id="ec_test_email" value="${_esc(EC_STATE.testEmail)}" placeholder="testme@gmail.com" style="flex:1; padding:6px 10px; border:1px solid #facc15; border-radius:6px; font-family:inherit; font-size:13px;">
+          </div>
+          <div style="margin-top:6px; font-size:11px; color:#92400e;">
+            🛡 כל ה־TO/CC/BCC יוחלפו בכתובת הזאת. שם הנמען האמיתי יישאר בלוג. ה־PDFים נוצרים עם הנתונים האמיתיים — כדי שתראה איך הם נראים בפועל.
+          </div>
+        ` : `
+          <div style="margin-top:6px; font-size:11px; color:#991b1b;">
+            ⚠ אתה עומד לשלוח ל־${EC_STATE.recipients.length} נמענים אמיתיים. ודא שהכל מדויק.
+          </div>
+        `}
+      </div>
+
+      <div style="background:#fffbea; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; font-size:12px; color:#92400e; margin-bottom:14px;">
+        <b>📦 מצב נוכחי</b> — Gmail עוד לא מחובר. השליחה היא ייצוא ZIP (לבדיקה ויזואלית). כשנחבר Gmail — אותו flow, אבל המיילים ישלחו אמיתית (במצב bdiקה יישלחו רק לכתובת הבדיקה).
       </div>
 
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -6679,10 +6706,24 @@ async function _ec_renderStep3(pop) {
     </div>
     <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
       <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();">← חזור</button>
-      <button class="apply-big" id="ec_send_btn" style="flex:1;">📤 ייצא ושלח (Mock — יורד ZIP)</button>
+      <button class="apply-big" id="ec_send_btn" style="flex:1; ${EC_STATE.testMode ? '' : 'background: linear-gradient(135deg, #dc2626, #b91c1c);'}">
+        ${EC_STATE.testMode ? '🧪 ייצא לבדיקה' : '🔴 ייצא ושלח אמיתית'}
+      </button>
     </div>
   `;
   document.getElementById('ec_send_btn').onclick = _ec_send;
+  // טוגל מצב בדיקה
+  const tm = document.getElementById('ec_test_mode');
+  if (tm) tm.onchange = (e) => {
+    EC_STATE.testMode = e.target.checked;
+    localStorage.setItem('ec_test_mode', e.target.checked ? 'on' : 'off');
+    _ec_renderStep();  // רינדור מחדש כדי לעדכן צבעים/כפתורים
+  };
+  const te = document.getElementById('ec_test_email');
+  if (te) te.oninput = (e) => {
+    EC_STATE.testEmail = e.target.value;
+    localStorage.setItem('ec_test_email', e.target.value);
+  };
   // bind inputs
   document.getElementById('ec_subject').oninput  = (e) => { EC_STATE.subject = e.target.value; };
   document.getElementById('ec_body_text').oninput = (e) => { EC_STATE.bodyText = e.target.value; };
@@ -6808,7 +6849,20 @@ async function _ec_send() {
   }
   if (!EC_STATE.subject.trim()) { toast('נושא חובה', 'warn'); return; }
 
-  if (!confirm(`לייצא ZIP עם ${EC_STATE.recipients.length} מיילים?\n\n(בשלב הזה — לא נשלח באמת. יורד ZIP + נרשם בהיסטוריה.)`)) return;
+  // ולידציה למצב בדיקה
+  if (EC_STATE.testMode) {
+    const te = (EC_STATE.testEmail || '').trim();
+    if (!te || !te.includes('@')) {
+      alert('🧪 במצב בדיקה — חובה למלא כתובת בדיקה תקינה.');
+      return;
+    }
+    if (!confirm(`🧪 מצב בדיקה\n\nכל המיילים ישלחו לכתובת: ${te}\n(${EC_STATE.recipients.length} מיילים — כל אחד עם ה־PDF המלא, כאילו לנמען האמיתי, אבל TO/CC/BCC יופנו לבדיקה)\n\nלהמשיך?`)) return;
+  } else {
+    // שליחה אמיתית — דרישה כפולה לאישור
+    const emails = EC_STATE.recipients.map(r => `• ${r.display_name} → ${r.email}`).join('\n');
+    if (!confirm(`🔴 שליחה אמיתית — אתה עומד לשלוח ל־${EC_STATE.recipients.length} נמענים אמיתיים:\n\n${emails.substring(0, 500)}${emails.length > 500 ? '\n...' : ''}\n\nלהמשיך?`)) return;
+    if (!confirm(`⚠️ אישור אחרון!\n\nזה לא ניתן לביטול. ${EC_STATE.recipients.length} מכתבים יעופו לכתובות האמיתיות.\n\nבטוח?`)) return;
+  }
 
   const btn = document.getElementById('ec_send_btn');
   btn.disabled = true;
@@ -6831,16 +6885,22 @@ async function _ec_send() {
       // עטוף ב־.eml פשוט (לעתיד — לפי אסטרטגיית גרירה ל־Drafts)
       const emlContent = _ec_buildEml(r, pdfBlob, fname);
       folder.file(_ec_safeFilename(`${r.display_name}.eml`), emlContent);
-      const ccList = _ec_collectAllCcEmails(r.cc_emails);
+      const realCcList = _ec_collectAllCcEmails(r.cc_emails);
+      const realToEmail = r.email;
+      const realBcc = EC_STATE.bcc || null;
+      // במצב בדיקה — מחליפים את הכל לכתובת הבדיקה
+      const effectiveTo  = EC_STATE.testMode ? EC_STATE.testEmail : realToEmail;
+      const effectiveCc  = EC_STATE.testMode ? [] : realCcList;
+      const effectiveBcc = EC_STATE.testMode ? null : realBcc;
       logRows.push({
         batch_id: batchId,
         template_id: EC_STATE.template.id,
         template_slug: slug,
-        recipient_email: r.email,
-        recipient_name: r.display_name,
+        recipient_email: effectiveTo,
+        recipient_name: (EC_STATE.testMode ? '🧪 ' : '') + r.display_name,
         recipient_kind: r.kind,
         recipient_ref_id: r.ref_id,
-        subject: EC_STATE.subject,
+        subject: (EC_STATE.testMode ? '[בדיקה] ' : '') + EC_STATE.subject,
         body_preview: (EC_STATE.bodyText || '').substring(0, 300),
         season_id: CURRENT_SEASON_ID,
         girl_ids: r.kind === 'parents' ? [r.ref_id] : (r.letter_data.girls || []).map(g => g.id).filter(Boolean),
@@ -6848,7 +6908,15 @@ async function _ec_send() {
         letter_date: (EC_STATE.letterDate || new Date().toISOString()).substring(0, 10),
         sent_by_user_id: CURRENT_USER && CURRENT_USER.id,
         sent_by_email: CURRENT_USER && CURRENT_USER.email,
-        metadata: { mock: true, cc: ccList, bcc: EC_STATE.bcc || null },
+        metadata: {
+          mock: true,
+          test_mode: EC_STATE.testMode,
+          cc: effectiveCc,
+          bcc: effectiveBcc,
+          real_recipient_email: EC_STATE.testMode ? realToEmail : undefined,
+          real_cc: EC_STATE.testMode ? realCcList : undefined,
+          real_bcc: EC_STATE.testMode ? realBcc : undefined,
+        },
       });
       ok++;
     } catch (e) {
@@ -6884,14 +6952,22 @@ function _ec_safeFilename(name) {
 function _ec_buildEml(r, pdfBlob, attachName) {
   // EML פשוט עם metadata. שימוש: גרירה ל־Drafts באאוטלוק (placeholder לעתיד).
   // כשנעבור ל־Gmail API, לא נצטרך EML.
-  const subject = EC_STATE.subject || EC_STATE.template.name;
+  const subject = (EC_STATE.testMode ? '[בדיקה] ' : '') + (EC_STATE.subject || EC_STATE.template.name);
   const body = EC_STATE.bodyText || '';
-  const ccList = _ec_collectAllCcEmails(r.cc_emails);
-  const headers = [`To: ${r.email}`];
+  const realCc = _ec_collectAllCcEmails(r.cc_emails);
+  // במצב בדיקה — מחליפים TO/CC/BCC לכתובת אחת
+  const toEmail = EC_STATE.testMode ? EC_STATE.testEmail : r.email;
+  const ccList  = EC_STATE.testMode ? [] : realCc;
+  const bcc     = EC_STATE.testMode ? '' : EC_STATE.bcc;
+  const headers = [`To: ${toEmail}`];
   if (ccList.length) headers.push(`Cc: ${ccList.join(', ')}`);
-  if (EC_STATE.bcc) headers.push(`Bcc: ${EC_STATE.bcc}`);
+  if (bcc) headers.push(`Bcc: ${bcc}`);
   headers.push(`Subject: ${subject}`);
-  return `${headers.join('\n')}\n\n${body}\n\n[Attachment: ${attachName}]\n`;
+  let testInfo = '';
+  if (EC_STATE.testMode) {
+    testInfo = `\n\n--- 🧪 מצב בדיקה ---\nנמען אמיתי: ${r.email}\nCC אמיתי: ${realCc.join(', ') || '(אין)'}\nBCC אמיתי: ${EC_STATE.bcc || '(אין)'}\n---\n`;
+  }
+  return `${headers.join('\n')}\n\n${body}${testInfo}\n[Attachment: ${attachName}]\n`;
 }
 
 // ============================================================
