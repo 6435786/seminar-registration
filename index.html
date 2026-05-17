@@ -7080,9 +7080,11 @@ function drawWrappedRTL(pdf, text, rightX, leftX, y, opts = {}) {
 function drawStudentsTable(pdf, girls, startY, opts = {}) {
   const tableW = 178;  // מ"מ
   const leftX = (210 - tableW) / 2;
-  // סדר RTL: מימין לשמאל — מס', ת.ז., שם פרטי, שם משפחה, מוסד
-  const colsW = [12, 36, 36, 40, 54];
-  const headers = ['מס\'', 'מספר זהות', 'שם פרטי', 'שם משפחה', 'מוסד'];
+  // PDF צייר עמודות LEFT→RIGHT. סדר התצוגה הויזואלית (מימין לשמאל לקורא):
+  // מס' | מספר זהות | שם פרטי | שם משפחה | מוסד
+  // לכן index 0 = הקצה השמאלי (מוסד), index 4 = הקצה הימני (מס')
+  const colsW   = [54,      40,           36,         36,           12];
+  const headers = ['מוסד', 'שם משפחה', 'שם פרטי', 'מספר זהות', 'מס\''];
   const rowH = 7;
   const headH = 8;
   const PAGE_BOTTOM = 265;  // מ"מ — אזור בטוח, מעל פוטר הניירת
@@ -7139,13 +7141,16 @@ function drawStudentsTable(pdf, girls, startY, opts = {}) {
     const g = rows[r];
     pdf.line(leftX, y, leftX + tableW, y);
     let cx = leftX;
-    const values = [String(r + 1), g.national_id || '', g.first_name || '', g.family_name || '', g.source_school || ''];
+    // אותו סדר כמו headers: [מוסד, שם משפחה, שם פרטי, מספר זהות, מס']
+    const values = [g.source_school || '', g.family_name || '', g.first_name || '', g.national_id || '', String(r + 1)];
+    // עברית — bidi. מספרים (ת.ז + מס') — בלי bidi.
+    const isHebCol = [true, true, true, false, false];
     for (let c = 0; c < colsW.length; c++) {
       const w = colsW[c];
       if (c < colsW.length - 1) pdf.line(cx + w, y, cx + w, y + rowH);
       const v = values[c];
-      if (c <= 1) pdf.text(v, cx + w / 2, y + 5, { align: 'center' });
-      else        pdf.text(bidi(v), cx + w / 2, y + 5, { align: 'center' });
+      if (isHebCol[c]) pdf.text(bidi(v), cx + w / 2, y + 5, { align: 'center' });
+      else             pdf.text(v,       cx + w / 2, y + 5, { align: 'center' });
       cx += w;
     }
     y += rowH;
