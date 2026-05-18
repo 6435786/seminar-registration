@@ -6184,9 +6184,19 @@ async function ensureGmailToken(silent = false) {
       _gmailTokenExpiresAt = Date.now() + ((response.expires_in || 3600) * 1000);
       resolve(_gmailAccessToken);
     };
-    // prompt: '' = silent (אם המשתמש כבר אישר), prompt: 'consent' = חדש
-    client.requestAccessToken({ prompt: silent ? '' : 'consent' });
+    // select_account = מאלץ את המשתמש לבחור איזה חשבון לחבר (מונע "תקיעה" עם חשבון לא נכון)
+    // hint = רמז לגוגל איזה חשבון רצוי
+    client.requestAccessToken({
+      prompt: silent ? '' : 'select_account',
+      hint: GMAIL_FROM_EMAIL,
+    });
   });
+}
+
+// ניקוי token cached — שימושי כשרוצים להתחבר מחדש (לדוגמה החלפת חשבון)
+function clearGmailToken() {
+  _gmailAccessToken = null;
+  _gmailTokenExpiresAt = 0;
 }
 
 // סגנון b64url (URL-safe) — חובה ל־Gmail API. בטוח ל־UTF-8 (עברית).
