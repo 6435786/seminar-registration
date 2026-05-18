@@ -6211,16 +6211,20 @@ function _utf8b64(s) {
   return btoa(unescape(encodeURIComponent(s)));
 }
 
-// קידוד שם תצוגה לכתובת מייל
-// גישה: UTF-8 ישיר בכותרת (RFC 6532 — תקני וגם Gmail/Outlook מודרניים תומכים).
-// ניסיון RFC 2047 encoded-words לא עבד טוב עם עברית; UTF-8 ישיר עובד.
+// קידוד שם תצוגה לכתובת מייל (RFC 2047 encoded-words, מפוצל ל־chunks קצרים)
+// כל encoded-word ≤ 75 תווים כפי שמחייב התקן. Gmail מפענח נכון.
 function _encodeAddressName(name, email) {
   if (!name) return email;
-  // עוטף בגרשיים אם יש תווים מיוחדים בשם
-  const quoted = /[(),:;<>@\[\\\]]/.test(name)
-    ? `"${name.replace(/"/g, '\\"')}"`
-    : name;
-  return `${quoted} <${email}>`;
+  const isAscii = /^[\x20-\x7E]*$/.test(name);
+  if (isAscii) return `"${name.replace(/"/g, '\\"')}" <${email}>`;
+  // עברית/לא־ASCII: פיצול לחתיכות של 8 תווים (~38 תווים ב־encoded-word, מתחת ל־75 בבטחה)
+  const CHARS_PER_CHUNK = 8;
+  const chunks = [];
+  for (let i = 0; i < name.length; i += CHARS_PER_CHUNK) {
+    chunks.push(name.substring(i, i + CHARS_PER_CHUNK));
+  }
+  const encoded = chunks.map(c => `=?UTF-8?B?${_utf8b64(c)}?=`).join(' ');
+  return `${encoded} <${email}>`;
 }
 
 // פורמט תאריך RFC 5322 (Wed, 21 Oct 2025 07:28:00 +0000)
