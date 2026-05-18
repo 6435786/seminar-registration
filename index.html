@@ -6256,7 +6256,7 @@ async function openEmailComposer() {
   Object.assign(EC_STATE, {
     step: 1, template: null, recipients: [],
     statusFilters: ['ועדת רבנים'],
-    _parentSeminarFilter: '',  // סינון לפי סמינר ב־"מכתב להורים" — ריק = הכל
+    _parentSemSet: null,       // Set של סמינרים מסומנים, null = יאותחל ל"הכל"
     _parentSel: null,          // בחירת בנות (Set של ids), null = יאותחל אוטומטית
     subject: '', bodyText: '',
     cc: '', ccContacts: [],
@@ -6523,6 +6523,54 @@ async function _ec_renderParentsRecipients() {
   // ניצור רשימה של בנות לפי סטטוס שיבוץ
   // ROWS היא הרשימה הראשית עם נתונים מוצלבים (joined)
   const allStatuses = ENUM_STATUS || [];
+
+  // === שלב 1: סינון לפי סטטוס ===
+  const afterStatus = (ROWS || []).filter(r => {
+    const status = r.placement_status;
+    return EC_STATE.statusFilters.includes(status);
+  });
+
+  // === שלב 2: רשימת סמינרים אפשריים (לפילטר ה־checkboxes) ===
+  const seminarOptions = [...new Set(afterStatus.map(g => g.placement_seminar).filter(Boolean))].sort();
+
+  // הסט _parentSemSet הוא מערכת ה-סמינרים המסומנים. ברירת מחדל: הכל.
+  if (!EC_STATE._parentSemSet || !(EC_STATE._parentSemSet instanceof Set)) {
+    EC_STATE._parentSemSet = new Set(seminarOptions);
+  } else {
+    // נקה סמינרים שלא קיימים יותר (כי סטטוס השתנה)
+    EC_STATE._parentSemSet = new Set([...EC_STATE._parentSemSet].filter(s => seminarOptions.includes(s)));
+    // אם הופך לריק כי כל הסמינרים הקודמים נעלמו — חזור ל"הכל"
+    if (EC_STATE._parentSemSet.size === 0 && seminarOptions.length > 0) {
+      EC_STATE._parentSemSet = new Set(seminarOptions);
+    }
+  }
+  const semSet = EC_STATE._parentSemSet;
+
+  // === שלב 3: סינון לפי סמינר ===
+  const matchingGirls = afterStatus.filter(g => g.placement_seminar && semSet.has(g.placement_seminar));
+
+  // === בנה HTML של הפילטרים ===
+  const seminarFilterHtml = seminarOptions.length === 0 ? '' : `
+    <div style="background:#f0fdf4; border:1px solid #bbf7d0; border-radius:8px; padding:8px 12px; margin-top:6px;">
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+        <div style="font-size:12px; font-weight:600; color:var(--deep);">סנן לפי סמינר:</div>
+        <button class="mini-btn" onclick="_ec_setAllSeminars(true)" style="padding:2px 8px; font-size:11px;">בחר הכל</button>
+        <button class="mini-btn" onclick="_ec_setAllSeminars(false)" style="padding:2px 8px; font-size:11px;">נקה הכל</button>
+        <span style="font-size:11px; color:var(--muted); margin-right:auto;">${semSet.size}/${seminarOptions.length} סמינרים נבחרים</span>
+      </div>
+      <div style="display:flex; flex-wrap:wrap; gap:4px;">
+        ${seminarOptions.map(s => {
+          const checked = semSet.has(s);
+          const count = afterStatus.filter(g => g.placement_seminar === s).length;
+          return `<label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:white; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:12px; ${checked ? 'border-color:#22c55e; background:#dcfce7;' : ''}">
+            <input type="checkbox" ${checked ? 'checked' : ''} onchange="_ec_toggleSeminarFilter('${_esc(s)}', this.checked)" style="margin:0;">
+            <span>${_esc(s)} <span style="color:var(--muted); font-size:11px;">(${count})</span></span>
+          </label>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+
   const filtersHtml = `
     <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:8px 12px;">
       <div style="font-size:12px; font-weight:600; color:var(--deep); margin-bottom:6px;">סנן לפי סטטוס:</div>
@@ -6536,29 +6584,9 @@ async function _ec_renderParentsRecipients() {
         }).join('')}
       </div>
     </div>
+    ${seminarFilterHtml}
   `;
   document.getElementById('ec_recip_filter').innerHTML = filtersHtml;
-
-  // === שלב 1: סינון לפי סטטוס ===
-  const afterStatus = (ROWS || []).filter(r => {
-    const status = r.placement_status;
-    return EC_STATE.statusFilters.includes(status);
-  });
-
-  // === שלב 2: רשימת סמינרים אפשריים (לפילטר העמודה) ===
-  const seminarOptions = [...new Set(afterStatus.map(g => g.placement_seminar).filter(Boolean))].sort();
-
-  // אם הסינון הנוכחי כבר לא רלוונטי (כי סטטוס השתנה) — אפס
-  let semFilter = EC_STATE._parentSeminarFilter || '';
-  if (semFilter && !seminarOptions.includes(semFilter)) {
-    semFilter = '';
-    EC_STATE._parentSeminarFilter = '';
-  }
-
-  // === שלב 3: סינון לפי סמינר (אם נבחר) ===
-  const matchingGirls = semFilter
-    ? afterStatus.filter(g => g.placement_seminar === semFilter)
-    : afterStatus;
 
   // כל בת עם email = נמען. אם אין email — בנפרד.
   const list = document.getElementById('ec_recip_list');
@@ -6605,35 +6633,25 @@ async function _ec_renderParentsRecipients() {
 
   EC_STATE._parentGirls = matchingGirls;
 
-  // dropdown של סמינרים בכותרת העמודה
-  const seminarDropdown = `
-    <select id="ec_parent_seminar_filter" style="width:100%; padding:3px 6px; border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:12px; background:white; font-weight:600;">
-      <option value="">סמינר — הכל (${afterStatus.length})</option>
-      ${seminarOptions.map(s => `<option value="${_esc(s)}" ${s === semFilter ? 'selected' : ''}>${_esc(s)} (${afterStatus.filter(g => g.placement_seminar === s).length})</option>`).join('')}
-    </select>
-  `;
-
   list.innerHTML = `
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+      <span style="font-size:12px; color:var(--muted);">בחירת בנות:</span>
+      <button class="mini-btn" onclick="_ec_setAllGirls(true)" style="padding:2px 8px; font-size:11px;">בחר את כל הגלויות</button>
+      <button class="mini-btn" onclick="_ec_setAllGirls(false)" style="padding:2px 8px; font-size:11px;">נקה הכל</button>
+      <span style="font-size:11px; color:var(--muted); margin-right:auto;" id="ec_parent_sel_count">${EC_STATE._parentSel.size}/${matchingGirls.length} נבחרו</span>
+    </div>
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
       <thead>
         <tr style="background:#eff6ff;">
           <th style="padding:6px 8px; width:28px;"><input type="checkbox" id="ec_parent_all"></th>
           <th style="padding:6px 8px; text-align:right;">שם תלמידה</th>
-          <th style="padding:4px 6px; text-align:right; min-width:160px;">${seminarDropdown}</th>
+          <th style="padding:6px 8px; text-align:right;">סמינר</th>
           <th style="padding:6px 8px; text-align:right;">מייל</th>
         </tr>
       </thead>
       <tbody id="ec_parent_rows">${buildRows()}</tbody>
     </table>
   `;
-
-  // הצמדת dropdown הסמינר
-  document.getElementById('ec_parent_seminar_filter').onchange = (e) => {
-    EC_STATE._parentSeminarFilter = e.target.value;
-    // כלל: שינוי סינון מאפס את הבחירה (כדי שמה שמסומן יהיה רק במה שמוצג)
-    EC_STATE._parentSel = null;
-    _ec_renderParentsRecipients();
-  };
 
   function refreshRows() {
     document.getElementById('ec_parent_rows').innerHTML = buildRows();
@@ -6694,7 +6712,41 @@ function _ec_toggleStatusFilter(status, checked) {
   } else {
     EC_STATE.statusFilters = EC_STATE.statusFilters.filter(s => s !== status);
   }
-  EC_STATE._parentSel = null;  // איפוס בחירה כדי לאתחל מחדש
+  // שינוי סטטוס משנה את רשימת הסמינרים — אתחל גם פילטר סמינר וגם בחירה
+  EC_STATE._parentSemSet = null;
+  EC_STATE._parentSel = null;
+  _ec_renderParentsRecipients();
+}
+
+// === פילטר סמינר (בחירה מרובה) ===
+function _ec_toggleSeminarFilter(seminar, checked) {
+  if (!EC_STATE._parentSemSet) EC_STATE._parentSemSet = new Set();
+  if (checked) EC_STATE._parentSemSet.add(seminar);
+  else         EC_STATE._parentSemSet.delete(seminar);
+  // שינוי סינון מאפס בחירה (כלל: מה שלא גלוי — לא נשלח)
+  EC_STATE._parentSel = null;
+  _ec_renderParentsRecipients();
+}
+
+function _ec_setAllSeminars(on) {
+  // בחר/נקה את כל הסמינרים האפשריים (לפי הסטטוס הנוכחי)
+  const afterStatus = (ROWS || []).filter(r => EC_STATE.statusFilters.includes(r.placement_status));
+  const seminarOptions = [...new Set(afterStatus.map(g => g.placement_seminar).filter(Boolean))];
+  EC_STATE._parentSemSet = on ? new Set(seminarOptions) : new Set();
+  EC_STATE._parentSel = null;
+  _ec_renderParentsRecipients();
+}
+
+// === בחירה מרובה של בנות ===
+function _ec_setAllGirls(on) {
+  // בחר/נקה את כל הבנות הגלויות (רק עם מייל)
+  const girls = EC_STATE._parentGirls || [];
+  if (!EC_STATE._parentSel) EC_STATE._parentSel = new Set();
+  if (on) {
+    girls.forEach(g => { if (g.email) EC_STATE._parentSel.add(g.id); });
+  } else {
+    EC_STATE._parentSel = new Set();
+  }
   _ec_renderParentsRecipients();
 }
 
