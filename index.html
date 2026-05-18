@@ -1964,7 +1964,15 @@ let EDIT_MODE = false;
 const BULK_SELECTED = new Set();  // ת.ז של בנות שנבחרו לפעולה מרובה
 
 function setEditMode(on) {
-  EDIT_MODE = !!on;
+  on = !!on;
+  if (on === EDIT_MODE) return;  // אין שינוי
+  // בכניסה למצב עריכה — אישור אחד עם המלצת גיבוי
+  if (on && !EDIT_MODE) {
+    if (!confirm('⚠️ אתה נכנס למצב עריכה.\n\nעריכת פרטי תלמידות היא פעולה רגישה. מומלץ לבצע גיבוי לפני שינויים נרחבים (כפתור 💾 גיבוי בכותרת).\n\nלהמשיך?')) {
+      return;
+    }
+  }
+  EDIT_MODE = on;
   document.body.classList.toggle('edit-mode', EDIT_MODE);
   document.getElementById('edit_label').textContent = EDIT_MODE ? 'מצב עריכה דלוק' : 'מצב עריכה כבוי';
   document.getElementById('btn_add').style.display = EDIT_MODE ? '' : 'none';
@@ -2957,11 +2965,10 @@ function startEdit(td, nid) {
   const row = ROWS.find(r => r.national_id === nid);
   if (!row) return;
 
-  // אזהרות
+  // אזהרה ספציפית רק לת.ז. (קריטית — שובר קשרי רישום ואחים).
+  // שאר השדות (כולל warn) נערכים מהר ללא אישור — כי כבר אישרת בכניסה למצב עריכה.
   if (col.edit.type === 'id') {
     if (!confirm(`⚠️ אתה עומד לשנות את תעודת הזהות של ${row.family_name} ${row.first_name}.\n\nזהו שדה זיהוי קריטי. טעות כאן יכולה לנתק את התלמידה מהרישומים והאחים שלה.\n\nלהמשיך?`)) return;
-  } else if (col.edit.warn) {
-    if (!confirm(`⚠️ עריכת "${col.label}" של ${row.family_name} ${row.first_name}.\n\nזהו פרט אישי/רגיש. לוודא שהשינוי נכון לפני שמירה.\n\nלהמשיך?`)) return;
   }
 
   const originalValue = row[key] ?? '';
