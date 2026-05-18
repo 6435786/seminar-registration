@@ -6009,9 +6009,8 @@ const TEMPLATE_DEFAULT_CONTENT = {
 };
 
 async function openTemplateEditor(templateId) {
-  // 🚧 כרגע מוגבל ל־super_admin (במהלך פיתוח מערכת המיילים)
-  if (!isSuperAdmin()) {
-    alert('עורך התבניות זמין כרגע רק למנהל הראשי. בשלב הפיתוח של מערכת המיילים.');
+  if (!isAdmin()) {
+    alert('עורך התבניות זמין רק למנהלים.');
     return;
   }
   // טען את התבנית מה־DB
@@ -6249,15 +6248,16 @@ const EC_STATE = {
 };
 
 async function openEmailComposer() {
-  // 🚧 כרגע מוגבל ל־super_admin (במהלך פיתוח מערכת המיילים)
-  if (!isSuperAdmin()) {
-    alert('מערכת המיילים זמינה כרגע רק למנהל הראשי. בשלב פיתוח וייצוב.');
+  if (!isAdmin()) {
+    alert('מערכת המיילים זמינה רק למנהלים.');
     return;
   }
   // אתחל state
   Object.assign(EC_STATE, {
     step: 1, template: null, recipients: [],
     statusFilters: ['ועדת רבנים'],
+    _parentSeminarFilter: '',  // סינון לפי סמינר ב־"מכתב להורים" — ריק = הכל
+    _parentSel: null,          // בחירת בנות (Set של ids), null = יאותחל אוטומטית
     subject: '', bodyText: '',
     cc: '', ccContacts: [],
     bcc: localStorage.getItem('ec_bcc_default') || '',
@@ -6301,11 +6301,15 @@ function _ec_stepHeader() {
         <div style="font-weight:700; color:var(--deep); font-size:17px;">שליחת מיילים</div>
         <div style="color:var(--muted); font-size:12px; margin-top:2px;">
           ${stepNames.map((n, i) => {
-            const cur = i + 1 === EC_STATE.step;
-            const done = i + 1 < EC_STATE.step;
+            const stepNum = i + 1;
+            const cur = stepNum === EC_STATE.step;
+            const done = stepNum < EC_STATE.step;
             const color = cur ? 'var(--deep)' : (done ? 'var(--accent)' : 'var(--muted)');
             const weight = cur ? '700' : '500';
-            return `<span style="color:${color}; font-weight:${weight};">${n}</span>`;
+            // שלבים שכבר עברנו עליהם — קליקאביליים לחזרה
+            return done
+              ? `<a href="#" onclick="event.preventDefault(); EC_STATE.step=${stepNum}; _ec_renderStep();" style="color:${color}; font-weight:${weight}; text-decoration:underline; cursor:pointer;" title="חזור לשלב ${stepNum}">${n}</a>`
+              : `<span style="color:${color}; font-weight:${weight};">${n}</span>`;
           }).join('  ◀  ')}
         </div>
       </div>
@@ -6535,27 +6539,49 @@ async function _ec_renderParentsRecipients() {
   `;
   document.getElementById('ec_recip_filter').innerHTML = filtersHtml;
 
-  // סנן את ROWS לפי סטטוס
-  const matchingGirls = (ROWS || []).filter(r => {
+  // === שלב 1: סינון לפי סטטוס ===
+  const afterStatus = (ROWS || []).filter(r => {
     const status = r.placement_status;
     return EC_STATE.statusFilters.includes(status);
   });
 
+  // === שלב 2: רשימת סמינרים אפשריים (לפילטר העמודה) ===
+  const seminarOptions = [...new Set(afterStatus.map(g => g.placement_seminar).filter(Boolean))].sort();
+
+  // אם הסינון הנוכחי כבר לא רלוונטי (כי סטטוס השתנה) — אפס
+  let semFilter = EC_STATE._parentSeminarFilter || '';
+  if (semFilter && !seminarOptions.includes(semFilter)) {
+    semFilter = '';
+    EC_STATE._parentSeminarFilter = '';
+  }
+
+  // === שלב 3: סינון לפי סמינר (אם נבחר) ===
+  const matchingGirls = semFilter
+    ? afterStatus.filter(g => g.placement_seminar === semFilter)
+    : afterStatus;
+
   // כל בת עם email = נמען. אם אין email — בנפרד.
   const list = document.getElementById('ec_recip_list');
   if (matchingGirls.length === 0) {
-    list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">לא נמצאו בנות עם הסטטוסים שנבחרו.</div>`;
+    list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">לא נמצאו בנות עם הסינונים שנבחרו.</div>`;
     EC_STATE.recipients = [];
+    EC_STATE._parentSel = new Set();
+    EC_STATE._parentGirls = [];
     _ec_updateRecipientCount();
     return;
   }
 
-  // ברירת מחדל — כל הבנות עם מייל מסומנות
-  // נשמר את הבחירה הקודמת אם קיימת
-  const prevSelected = new Set(EC_STATE.recipients.map(r => r.ref_id));
-  const initialSelected = prevSelected.size > 0
-    ? prevSelected
-    : new Set(matchingGirls.filter(g => g.email).map(g => g.id));
+  // ברירת מחדל — כל הבנות הגלויות עם מייל מסומנות.
+  // **כלל יסוד: מה שלא גלוי — לא נבחר ולא נשלח.** כל שינוי סינון מאפס בחירה.
+  if (!EC_STATE._parentSel) {
+    EC_STATE._parentSel = new Set(matchingGirls.filter(g => g.email).map(g => g.id));
+  } else {
+    // קיים — סנן רק את הגלויים (נקנה שמסתננת מגנה מבחירות "מתות")
+    const visibleIds = new Set(matchingGirls.map(g => g.id));
+    const cleaned = new Set();
+    EC_STATE._parentSel.forEach(id => { if (visibleIds.has(id)) cleaned.add(id); });
+    EC_STATE._parentSel = cleaned;
+  }
 
   function buildRows() {
     return matchingGirls.map(g => {
@@ -6577,8 +6603,15 @@ async function _ec_renderParentsRecipients() {
     }).join('');
   }
 
-  EC_STATE._parentSel = initialSelected;
   EC_STATE._parentGirls = matchingGirls;
+
+  // dropdown של סמינרים בכותרת העמודה
+  const seminarDropdown = `
+    <select id="ec_parent_seminar_filter" style="width:100%; padding:3px 6px; border:1px solid var(--border); border-radius:4px; font-family:inherit; font-size:12px; background:white; font-weight:600;">
+      <option value="">סמינר — הכל (${afterStatus.length})</option>
+      ${seminarOptions.map(s => `<option value="${_esc(s)}" ${s === semFilter ? 'selected' : ''}>${_esc(s)} (${afterStatus.filter(g => g.placement_seminar === s).length})</option>`).join('')}
+    </select>
+  `;
 
   list.innerHTML = `
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
@@ -6586,13 +6619,22 @@ async function _ec_renderParentsRecipients() {
         <tr style="background:#eff6ff;">
           <th style="padding:6px 8px; width:28px;"><input type="checkbox" id="ec_parent_all"></th>
           <th style="padding:6px 8px; text-align:right;">שם תלמידה</th>
-          <th style="padding:6px 8px; text-align:right;">סמינר</th>
+          <th style="padding:4px 6px; text-align:right; min-width:160px;">${seminarDropdown}</th>
           <th style="padding:6px 8px; text-align:right;">מייל</th>
         </tr>
       </thead>
       <tbody id="ec_parent_rows">${buildRows()}</tbody>
     </table>
   `;
+
+  // הצמדת dropdown הסמינר
+  document.getElementById('ec_parent_seminar_filter').onchange = (e) => {
+    EC_STATE._parentSeminarFilter = e.target.value;
+    // כלל: שינוי סינון מאפס את הבחירה (כדי שמה שמסומן יהיה רק במה שמוצג)
+    EC_STATE._parentSel = null;
+    _ec_renderParentsRecipients();
+  };
+
   function refreshRows() {
     document.getElementById('ec_parent_rows').innerHTML = buildRows();
     bindCbs();
@@ -6860,30 +6902,17 @@ async function _ec_renderStep3(pop) {
         <input type="email" id="ec_bcc" value="${_esc(EC_STATE.bcc)}" placeholder="archive@beitar.muni.il" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
       </div>
 
-      <div style="background:${EC_STATE.testMode ? '#fef3c7' : '#fee2e2'}; border:2px solid ${EC_STATE.testMode ? '#facc15' : '#fca5a5'}; border-radius:8px; padding:10px 12px; margin-bottom:14px;">
-        <label style="display:flex; align-items:center; gap:10px; cursor:pointer; font-size:14px;">
-          <input type="checkbox" id="ec_test_mode" ${EC_STATE.testMode ? 'checked' : ''} style="width:18px; height:18px; cursor:pointer;">
-          <span style="font-weight:700; color:${EC_STATE.testMode ? '#92400e' : '#991b1b'};">
-            ${EC_STATE.testMode ? '🧪 מצב בדיקה — כל המיילים ייצאו לכתובת בדיקה בלבד' : '🔴 שליחה אמיתית — המיילים יישלחו לנמענים בפועל!'}
-          </span>
+      <div style="margin-bottom:14px; padding:10px 12px; background:#f8fafc; border:1px solid var(--border); border-radius:6px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px;">
+          <input type="checkbox" id="ec_test_mode" ${EC_STATE.testMode ? 'checked' : ''} style="width:16px; height:16px; cursor:pointer;">
+          <span style="color:var(--deep);">שלח מייל נסיון <span style="font-weight:400; color:var(--muted);">(במקום לשלוח לנמענים האמיתיים)</span></span>
         </label>
         ${EC_STATE.testMode ? `
           <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
-            <label style="font-size:12px; color:#92400e; min-width:90px;">כתובת בדיקה:</label>
-            <input type="email" id="ec_test_email" value="${_esc(EC_STATE.testEmail)}" placeholder="testme@gmail.com" style="flex:1; padding:6px 10px; border:1px solid #facc15; border-radius:6px; font-family:inherit; font-size:13px;">
+            <label style="font-size:12px; color:var(--muted); min-width:80px;">כתובת בדיקה:</label>
+            <input type="email" id="ec_test_email" value="${_esc(EC_STATE.testEmail)}" placeholder="testme@gmail.com" style="flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:5px; font-family:inherit; font-size:13px;">
           </div>
-          <div style="margin-top:6px; font-size:11px; color:#92400e;">
-            🛡 כל ה־TO/CC/BCC יוחלפו בכתובת הזאת. שם הנמען האמיתי יישאר בלוג. ה־PDFים נוצרים עם הנתונים האמיתיים — כדי שתראה איך הם נראים בפועל.
-          </div>
-        ` : `
-          <div style="margin-top:6px; font-size:11px; color:#991b1b;">
-            ⚠ אתה עומד לשלוח ל־${EC_STATE.recipients.length} נמענים אמיתיים. ודא שהכל מדויק.
-          </div>
-        `}
-      </div>
-
-      <div style="background:#fffbea; border:1px solid #fde68a; border-radius:8px; padding:8px 12px; font-size:12px; color:#92400e; margin-bottom:14px;">
-        <b>📦 מצב נוכחי</b> — Gmail עוד לא מחובר. השליחה היא ייצוא ZIP (לבדיקה ויזואלית). כשנחבר Gmail — אותו flow, אבל המיילים ישלחו אמיתית (במצב bdiקה יישלחו רק לכתובת הבדיקה).
+        ` : ''}
       </div>
 
       <div style="display:flex; gap:8px; flex-wrap:wrap;">
@@ -6893,8 +6922,8 @@ async function _ec_renderStep3(pop) {
     <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc; flex-wrap:wrap;">
       <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();">← חזור</button>
       <button class="cancel-btn" id="ec_zip_btn" title="יורד ZIP עם PDFים — לבדיקה ויזואלית, בלי שליחה" style="background:#f0f9ff;">📦 ZIP בלבד</button>
-      <button class="apply-big" id="ec_gmail_btn" style="flex:1; ${EC_STATE.testMode ? '' : 'background: linear-gradient(135deg, #dc2626, #b91c1c);'}">
-        ${EC_STATE.testMode ? '🧪 שלח דרך Gmail (לבדיקה)' : '🔴 שלח דרך Gmail (אמיתי!)'}
+      <button class="apply-big" id="ec_gmail_btn" style="flex:1;">
+        ${EC_STATE.testMode ? '🧪 שלח מייל נסיון' : '✉ שלח מיילים'}
       </button>
     </div>
   `;
@@ -7202,22 +7231,22 @@ async function _ec_sendViaGmail() {
   if (EC_STATE.testMode) {
     const te = (EC_STATE.testEmail || '').trim();
     if (!te || !te.includes('@')) {
-      alert('🧪 במצב בדיקה — חובה למלא כתובת בדיקה תקינה.');
+      alert('סומן "שלח מייל נסיון" — חובה למלא כתובת בדיקה תקינה.');
       return;
     }
-    if (!confirm(`🧪 שליחה לבדיקה דרך Gmail\n\nכל המיילים ישלחו לכתובת:\n${te}\n(${EC_STATE.recipients.length} מיילים — TO/CC/BCC יופנו לבדיקה)\n\nלהמשיך?`)) return;
+    if (!confirm(`שליחת נסיון\n\nכל המיילים ישלחו לכתובת:\n${te}\n(${EC_STATE.recipients.length} מיילים — TO/CC/BCC יופנו לכתובת הבדיקה)\n\nלהמשיך?`)) return;
   } else {
-    // הצג את כל הכתובות (TO + BCC) לפני שליחה אמיתית
+    // הצג את כל הכתובות (TO + BCC) לפני שליחה
     const lines = EC_STATE.recipients.map(r => {
       const realCc = _ec_collectAllCcEmails(r.cc_emails);
       const allBccs = [...realCc];
       if (EC_STATE.bcc) allBccs.push(EC_STATE.bcc);
-      let s = `📧 ${r.display_name}\n   TO: ${r.email}`;
+      let s = `${r.display_name}\n   TO: ${r.email}`;
       if (allBccs.length) s += `\n   BCC: ${allBccs.join(', ')}`;
       return s;
     }).join('\n\n');
-    if (!confirm(`🔴 שליחה אמיתית דרך Gmail!\n\nאתה עומד לשלוח ${EC_STATE.recipients.length} מיילים:\n\n${lines}\n\n(כל הנמענים מוסתרים זה מזה — כל אחד יראה רק את עצמו)\n\nלהמשיך?`)) return;
-    if (!confirm(`⚠️ אישור אחרון!\n\nזה לא ניתן לביטול. ${EC_STATE.recipients.length} מכתבים אמיתיים יישלחו עכשיו.\n\nבטוח?`)) return;
+    if (!confirm(`אתה עומד לשלוח ${EC_STATE.recipients.length} מיילים:\n\n${lines}\n\n(כל הנמענים מוסתרים זה מזה — כל אחד יראה רק את עצמו)\n\nלהמשיך?`)) return;
+    if (!confirm(`אישור אחרון — ${EC_STATE.recipients.length} מכתבים יישלחו עכשיו.\nבטוח?`)) return;
   }
 
   const btn = document.getElementById('ec_gmail_btn');
@@ -9515,9 +9544,8 @@ function applyRoleVisibility() {
     hide('btn_load_source');
   }
 
-  // 🚧 מערכת מיילים — בשלב פיתוח. כרגע גלוי רק ל־super_admin עד שתיוצב
-  // ויאושר ע"י המשתמש להעברה ליתר התפקידים.
-  if (!isSuperAdmin()) {
+  // מערכת המיילים — זמינה לכל המנהלים. מי שאינו אדמין לא יראה את הכפתור.
+  if (!isAdmin()) {
     hide('btn_hdr_email');
   }
 
