@@ -1930,13 +1930,15 @@ const ALL_COLS = [
   // שיבוץ — ללא warn (שגרה)
   { group: 'שיבוץ', key: 'placement_seminar',label: 'שיבוץ',   width: 110, default: true, bold: true, edit: { type: 'seminar', table: 'placements' } },
   { group: 'שיבוץ', key: 'placement_status', label: 'סטטוס',   width: 100, default: true, badge: true, edit: { type: 'enum', values: ENUM_STATUS, table: 'placements', dbField: 'status' } },
+  // מכתב הורים — מוסתר כברירת מחדל. מתמלא אוטומטית בשליחה אמיתית; ניתן לאיפוס ידני.
+  { group: 'שיבוץ', key: 'parent_letter_sent_at', label: 'מכתב הורים', width: 90, default: false, edit: { type: 'parent_letter', table: 'placements', dbField: 'parent_letter_sent_at' } },
   { group: 'שיבוץ', key: 'notes',            label: 'הערה',      width: 150, default: true,  edit: { type: 'text', table: 'girls', dbField: 'notes' } },
   // אחים
   { group: 'אחים', key: 'sibling_inst_display', label: 'מוסדות אחים', width: 180, default: true, edit: { type: 'readonly' }, siblings: true, filterFromKey: 'sibling_institutions' },
 ];
 
 // גרסה של ברירות המחדל — מעלים מספר → איפוס חד־פעמי לכל המשתמשים הקיימים
-const COL_PREFS_VERSION = 3;
+const COL_PREFS_VERSION = 4;
 function loadColPrefs() {
   try {
     const storedVersion = parseInt(localStorage.getItem('col_prefs_version') || '0');
@@ -2279,6 +2281,7 @@ function buildRows() {
       placement_seminar: plcSem,
       placement_status: plc.status || '',
       placement_note: plc.notes || '',
+      parent_letter_sent_at: plc.parent_letter_sent_at || null,
       siblings: sibs,
       sibling_institutions: sibInstNames,      // array — לסינון
       sibling_categories: sibCategories,       // array — לסינון עליון
@@ -2455,6 +2458,14 @@ function renderCell(col, r) {
   if (col.siblings) {
     if (!r.sibling_count) return '<span style="color:var(--muted)">—</span>';
     return `<span class="sib-cell" data-nid="${r.national_id}" title="לחץ לפרטי אחים">${v || ''} <span style="color:var(--muted); font-size:11px;">👥</span></span>`;
+  }
+  // מכתב הורים — checkmark אם נשלח, ריק אם לא. ריחוף = תאריך + שעה
+  if (col.edit && col.edit.type === 'parent_letter') {
+    if (!v) return '<span style="color:var(--muted)">—</span>';
+    const d = new Date(v);
+    const tip = d.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'2-digit' }) + ' ' +
+                d.toLocaleTimeString('he-IL', { hour:'2-digit', minute:'2-digit' });
+    return `<span style="color:#059669; font-weight:600;" title="נשלח: ${tip}">✓</span>`;
   }
   // ת.ז — אם לא תקינה, להציג בצבע שונה
   if ((col.key === 'national_id' || col.key === 'mother_national_id' || col.key === 'father_national_id') && v && !isValidIsraeliId(v)) {
@@ -2971,6 +2982,28 @@ function startEdit(td, nid) {
     if (!confirm(`⚠️ אתה עומד לשנות את תעודת הזהות של ${row.family_name} ${row.first_name}.\n\nזהו שדה זיהוי קריטי. טעות כאן יכולה לנתק את התלמידה מהרישומים והאחים שלה.\n\nלהמשיך?`)) return;
   }
 
+  // מכתב הורים — toggle ישיר בלחיצה (בלי control). מחיקה ידנית מאפסת ל־NULL,
+  // ושליחה אמיתית הבאה תמלא מחדש.
+  if (col.edit.type === 'parent_letter') {
+    const currentVal = row[key];
+    const newVal = currentVal ? null : new Date().toISOString();
+    td.innerHTML = `<span class="save-indicator saving">⏳</span>`;
+    try {
+      await saveEdit(row, col, newVal);
+      await auditLog('placements', row.id, 'update',
+        { [col.key]: currentVal }, { [col.key]: newVal });
+      await refreshRow(row.national_id);
+      const updated = ROWS.find(r => r.national_id === row.national_id) || row;
+      td.innerHTML = renderCell(col, updated);
+      toast(newVal ? 'סומן: נשלח ✓' : 'הסימון הוסר');
+    } catch (e) {
+      console.error('save failed:', e);
+      toast('שגיאה: ' + (e.message || e), 'warn');
+      td.innerHTML = renderCell(col, row);
+    }
+    return;
+  }
+
   const originalValue = row[key] ?? '';
 
   // יצירת ה־control
@@ -3328,6 +3361,7 @@ async function loadTimelineForGirl(girl) {
     source_school_id: 'בי״ס מוצא',
     seminar_id: 'סמינר', response: 'תשובה', class_type: 'א-ו',
     preference_order: 'העדפה', status: 'סטטוס', is_final: 'סופי',
+    parent_letter_sent_at: 'מכתב הורים נשלח',
   };
   const PREF_LABELS = { pref_1: 'העדפה 1', pref_2: 'העדפה 2', advance: 'מקדמת' };
 
@@ -3339,6 +3373,11 @@ async function loadTimelineForGirl(girl) {
       return s ? s.name : `#${val}`;
     }
     if (key === 'preference_order') return PREF_LABELS[val] || val;
+    if (key === 'parent_letter_sent_at' && val) {
+      const d = new Date(val);
+      return d.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'2-digit' }) + ' ' +
+             d.toLocaleTimeString('he-IL', { hour:'2-digit', minute:'2-digit' });
+    }
     if (typeof val === 'boolean') return val ? '✓ כן' : '— לא';
     return String(val);
   };
@@ -6608,19 +6647,34 @@ async function _ec_renderParentsRecipients() {
     EC_STATE._parentSel = cleaned;
   }
 
+  // פורמט תאריך + שעה (לטולטיפ)
+  function _fmtSent(ts) {
+    if (!ts) return '';
+    const d = new Date(ts);
+    return d.toLocaleDateString('he-IL', { day:'2-digit', month:'2-digit', year:'2-digit' }) + ' ' +
+           d.toLocaleTimeString('he-IL', { hour:'2-digit', minute:'2-digit' });
+  }
+
   function buildRows() {
     return matchingGirls.map(g => {
       const fullName = `${g.first_name || ''} ${g.family_name || ''}`.trim();
       const hasEmail = !!g.email;
       const isSelected = EC_STATE._parentSel.has(g.id);
       const seminarText = g.placement_seminar || '—';
+      const alreadySent = !!g.parent_letter_sent_at;
+      // צבע רקע: עדיפות לאדום אם קיבלה כבר; אחרת — תכלת כשמסומנת
+      const bg = alreadySent
+        ? (isSelected ? '#fecaca' : '#fee2e2')   // אדום עז יותר אם גם נבחרה
+        : (isSelected ? '#dbeafe' : 'white');
+      const sentTip = alreadySent ? `title="קיבלה מכתב: ${_fmtSent(g.parent_letter_sent_at)}"` : '';
+      const sentBadge = alreadySent ? ` <span style="color:#dc2626; font-size:11px; font-weight:600;" ${sentTip}>✉ נשלח</span>` : '';
       return `
-        <tr style="background:${isSelected ? '#dbeafe' : 'white'};">
+        <tr style="background:${bg};">
           <td style="padding:4px 8px; text-align:center; width:28px;">
             <input type="checkbox" ${isSelected ? 'checked' : ''} ${!hasEmail ? 'disabled' : ''}
               data-gid="${g.id}" class="ec_parent_cb">
           </td>
-          <td style="padding:4px 8px;">${_esc(fullName)}</td>
+          <td style="padding:4px 8px;">${_esc(fullName)}${sentBadge}</td>
           <td style="padding:4px 8px; color:var(--muted); font-size:12px;">${_esc(seminarText)}</td>
           <td style="padding:4px 8px; font-size:12px; ${hasEmail ? '' : 'color:var(--bad);'}">${hasEmail ? _esc(g.email) : '⛔ ללא מייל'}</td>
         </tr>
@@ -6630,7 +6684,18 @@ async function _ec_renderParentsRecipients() {
 
   EC_STATE._parentGirls = matchingGirls;
 
+  // ספירת בנות שכבר קיבלו מכתב (להודעה למעלה)
+  const alreadySentCount = matchingGirls.filter(g => g.parent_letter_sent_at).length;
+  const sentNoticeHtml = alreadySentCount === 0 ? '' : `
+    <div style="background:#fef2f2; border:1px solid #fecaca; border-radius:6px; padding:6px 10px; margin-bottom:8px; font-size:12px; color:#991b1b; display:flex; align-items:center; gap:6px;">
+      <span style="font-size:14px;">⚠</span>
+      <span><b>${alreadySentCount}</b> ${alreadySentCount === 1 ? 'בת' : 'בנות'} מסומנות באדום — כבר נשלח אליהן מכתב.
+      <span style="color:#7f1d1d; font-weight:400;">(בריחוף תראה תאריך + שעה. אפשר להמשיך ולסמן אותן אם רוצים לשלוח שוב.)</span></span>
+    </div>
+  `;
+
   list.innerHTML = `
+    ${sentNoticeHtml}
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
       <span style="font-size:12px; color:var(--muted);">בחירת בנות:</span>
       <button class="mini-btn" onclick="_ec_setAllGirls(true)" style="padding:2px 8px; font-size:11px;">בחר הכל</button>
@@ -7382,8 +7447,36 @@ async function _ec_sendViaGmail() {
     if (error) console.warn('email_send_log insert failed:', error.message);
   }
 
+  // === סימון בנות שקיבלו מכתב הורים ===
+  // רק בשליחה אמיתית (לא נסיון), רק לתבנית parents, רק עבור בנות שהשליחה הצליחה.
+  if (!EC_STATE.testMode && EC_STATE.template.recipient_kind === 'parents') {
+    const sentGirlIds = logRows
+      .filter(l => l.recipient_kind === 'parents' && l.recipient_ref_id)
+      .map(l => l.recipient_ref_id);
+    if (sentGirlIds.length > 0) {
+      const nowIso = new Date().toISOString();
+      const { error: plcErr } = await sb.from('placements')
+        .update({ parent_letter_sent_at: nowIso })
+        .in('girl_id', sentGirlIds)
+        .eq('season_id', CURRENT_SEASON_ID);
+      if (plcErr) {
+        console.warn('parent_letter_sent_at update failed:', plcErr.message);
+      } else {
+        // עדכן ROWS המקומי (לרענון תצוגה בלי לטעון מ־DB)
+        sentGirlIds.forEach(gid => {
+          const r = (ROWS || []).find(x => x.id === gid);
+          if (r) {
+            r.parent_letter_sent_at = nowIso;
+            if (r._plc) r._plc.parent_letter_sent_at = nowIso;
+          }
+        });
+        if (typeof applyFilters === 'function') applyFilters();
+      }
+    }
+  }
+
   btn.disabled = false;
-  btn.textContent = EC_STATE.testMode ? '🧪 שלח דרך Gmail (לבדיקה)' : '🔴 שלח דרך Gmail (אמיתי!)';
+  btn.textContent = EC_STATE.testMode ? '🧪 שלח מייל נסיון' : '✉ שלח מיילים';
 
   if (fail === 0) {
     alert(`✅ נשלחו ${ok} מיילים בהצלחה!${EC_STATE.testMode ? `\n\n(במצב בדיקה — כולם הלכו ל־${EC_STATE.testEmail})` : ''}`);
