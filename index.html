@@ -6249,7 +6249,9 @@ async function _buildMimeMessage({ from, to, cc, bcc, replyTo, subject, bodyText
   lines.push(`From: ${fromHeader}`);
   if (to)   lines.push(`To: ${to}`);
   if (cc && cc.length) lines.push(`Cc: ${cc.join(', ')}`);
-  if (bcc) lines.push(`Bcc: ${bcc}`);
+  // bcc יכול להיות מחרוזת בודדת או מערך
+  const bccArr = Array.isArray(bcc) ? bcc.filter(Boolean) : (bcc ? [bcc] : []);
+  if (bccArr.length) lines.push(`Bcc: ${bccArr.join(', ')}`);
   if (replyTo) lines.push(`Reply-To: ${replyTo}`);
   lines.push(`Subject: =?UTF-8?B?${_utf8b64(subject || '')}?=`);
   lines.push(`Date: ${_rfc5322Date(new Date())}`);
@@ -7317,8 +7319,16 @@ async function _ec_sendViaGmail() {
     }
     if (!confirm(`🧪 שליחה לבדיקה דרך Gmail\n\nכל המיילים ישלחו לכתובת:\n${te}\n(${EC_STATE.recipients.length} מיילים — TO/CC/BCC יופנו לבדיקה)\n\nלהמשיך?`)) return;
   } else {
-    const emails = EC_STATE.recipients.map(r => `• ${r.display_name} → ${r.email}`).join('\n');
-    if (!confirm(`🔴 שליחה אמיתית דרך Gmail!\n\nאתה עומד לשלוח ל־${EC_STATE.recipients.length} נמענים אמיתיים:\n\n${emails.substring(0, 500)}${emails.length > 500 ? '\n...' : ''}\n\nלהמשיך?`)) return;
+    // הצג את כל הכתובות (TO + BCC) לפני שליחה אמיתית
+    const lines = EC_STATE.recipients.map(r => {
+      const realCc = _ec_collectAllCcEmails(r.cc_emails);
+      const allBccs = [...realCc];
+      if (EC_STATE.bcc) allBccs.push(EC_STATE.bcc);
+      let s = `📧 ${r.display_name}\n   TO: ${r.email}`;
+      if (allBccs.length) s += `\n   BCC: ${allBccs.join(', ')}`;
+      return s;
+    }).join('\n\n');
+    if (!confirm(`🔴 שליחה אמיתית דרך Gmail!\n\nאתה עומד לשלוח ${EC_STATE.recipients.length} מיילים:\n\n${lines}\n\n(כל הנמענים מוסתרים זה מזה — כל אחד יראה רק את עצמו)\n\nלהמשיך?`)) return;
     if (!confirm(`⚠️ אישור אחרון!\n\nזה לא ניתן לביטול. ${EC_STATE.recipients.length} מכתבים אמיתיים יישלחו עכשיו.\n\nבטוח?`)) return;
   }
 
@@ -7352,19 +7362,24 @@ async function _ec_sendViaGmail() {
       const realBcc = EC_STATE.bcc || null;
       const realTo = r.email;
 
-      // מצב בדיקה: כל הכתובות → testEmail. אבל הנושא והגוף נשארים נקיים
-      // (תגיות "בדיקה" ואימוג'י מעלים סף ספאם — הפרטים נשמרים ב־log).
-      const toEmail  = EC_STATE.testMode ? EC_STATE.testEmail : realTo;
-      const ccList   = EC_STATE.testMode ? [] : realCc;
-      const bccEmail = EC_STATE.testMode ? null : realBcc;
-      const subject  = EC_STATE.subject;
-      const bodyText = EC_STATE.bodyText || '';
+      // 🔒 פרטיות: כל כתובות העזר (משרד/נוסף/contacts/CC ידני) הופכות ל־BCC
+      //          + הארכיון. כל נמען רואה רק את עצמו ב־TO. אף אחד לא רואה אחרים.
+      // CC נשאר ריק לחלוטין.
+      const realBccCombined = [...realCc];
+      if (realBcc) realBccCombined.push(realBcc);
+
+      // מצב בדיקה: TO → testEmail, BCC מתבטל
+      const toEmail   = EC_STATE.testMode ? EC_STATE.testEmail : realTo;
+      const ccList    = [];  // תמיד ריק — לפרטיות
+      const bccList   = EC_STATE.testMode ? [] : realBccCombined;
+      const subject   = EC_STATE.subject;
+      const bodyText  = EC_STATE.bodyText || '';
 
       const filename = _ec_recipientFilename(r, 'pdf');
       await sendGmailMessage({
         to: toEmail,
         cc: ccList,
-        bcc: bccEmail,
+        bcc: bccList,
         replyTo: GMAIL_FROM_EMAIL,
         subject,
         bodyText,
@@ -7391,11 +7406,9 @@ async function _ec_sendViaGmail() {
           mock: false,
           via: 'gmail',
           test_mode: EC_STATE.testMode,
-          cc: ccList,
-          bcc: bccEmail,
+          bcc_list: bccList,
           real_recipient_email: EC_STATE.testMode ? realTo : undefined,
-          real_cc: EC_STATE.testMode ? realCc : undefined,
-          real_bcc: EC_STATE.testMode ? realBcc : undefined,
+          real_bcc_list: EC_STATE.testMode ? realBccCombined : undefined,
         },
       });
       ok++;
