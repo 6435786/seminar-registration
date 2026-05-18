@@ -22,8 +22,8 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <!-- JSZip — לבניית ZIP של PDFים לשליחת מיילים -->
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
-<!-- Google Identity Services — לאימות OAuth של Gmail API -->
-<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- שליחת מיילים: דרך Supabase Edge Function (send-email) שמתחזה לחשבון shibutz@chinuchb.co.il
+     באמצעות Service Account + Domain-Wide Delegation. הלקוח לא מתחבר ל־Google ישירות. -->
 <style>
   :root {
     --bg: #ffffff;
@@ -6148,204 +6148,81 @@ async function resetTemplateSection(templateId) {
 }
 
 // ============================================================
-// Gmail OAuth + Send API
+// שליחת מייל — דרך Supabase Edge Function (send-email)
 // ============================================================
-// משתמש ב־Google Identity Services (GIS) לקבלת access token,
-// ושולח דרך Gmail REST API (gmail.send scope בלבד).
+// המייל נשלח server-side: הפונקציה ב־Supabase מתחזה ל־
+// shibutz@chinuchb.co.il (Service Account + Domain-Wide Delegation),
+// בונה MIME, ושולחת ל־Gmail API. הלקוח רק מעביר את הפרטים.
+//
+// יתרונות: אין OAuth בלקוח, כל אדמין יכול לשלוח בלי להתחבר ל־Google,
+// אותה דליברביליות (אותה תשתית Gmail בדיוק).
 // ============================================================
-const GMAIL_CLIENT_ID = '276433794504-l2rqn6a6dp75gpcoljqk77dask7prhor.apps.googleusercontent.com';
-const GMAIL_SCOPE = 'https://www.googleapis.com/auth/gmail.send';
-// שם השולח שמופיע אצל הנמען (לפני כתובת המייל)
 const GMAIL_FROM_NAME = 'וועדת השיבוץ העירונית - ביתר עילית';
 const GMAIL_FROM_EMAIL = 'shibutz@chinuchb.co.il';
-let _gmailTokenClient = null;
-let _gmailAccessToken = null;
-let _gmailTokenExpiresAt = 0;
 
-function _initGmailTokenClient() {
-  if (_gmailTokenClient) return _gmailTokenClient;
-  if (!window.google || !window.google.accounts) return null;
-  _gmailTokenClient = google.accounts.oauth2.initTokenClient({
-    client_id: GMAIL_CLIENT_ID,
-    scope: GMAIL_SCOPE,
-    callback: '', // נקבע פר-קריאה
-  });
-  return _gmailTokenClient;
-}
-
-// מבקש access token. אם יש cached וחי — מחזיר. אחרת פותח OAuth.
-// silent=true → ינסה לחדש ברקע ללא חלון popup (חוזר על OAuth שכבר אושר)
-async function ensureGmailToken(silent = false) {
-  if (_gmailAccessToken && Date.now() < _gmailTokenExpiresAt - 60000) {
-    return _gmailAccessToken;
+// המר Blob ל־base64 רגיל (לא URL-safe). השרת אחראי על הקידוד הסופי.
+async function _blobToBase64(blob) {
+  const buf = await blob.arrayBuffer();
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  // chunks של 32KB למניעת stack overflow על קבצים גדולים
+  const CHUNK = 0x8000;
+  for (let i = 0; i < bytes.length; i += CHUNK) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
   }
-  return new Promise((resolve, reject) => {
-    const client = _initGmailTokenClient();
-    if (!client) return reject(new Error('Google Identity Services לא נטענה. רענן את הדף.'));
-    client.callback = (response) => {
-      if (response.error) {
-        reject(new Error('שגיאת OAuth: ' + response.error + (response.error_description ? ' — ' + response.error_description : '')));
-        return;
-      }
-      _gmailAccessToken = response.access_token;
-      _gmailTokenExpiresAt = Date.now() + ((response.expires_in || 3600) * 1000);
-      resolve(_gmailAccessToken);
-    };
-    // select_account = מאלץ את המשתמש לבחור איזה חשבון לחבר (מונע "תקיעה" עם חשבון לא נכון)
-    // hint = רמז לגוגל איזה חשבון רצוי
-    client.requestAccessToken({
-      prompt: silent ? '' : 'select_account',
-      hint: GMAIL_FROM_EMAIL,
-    });
-  });
+  return btoa(binary);
 }
 
-// ניקוי token cached — שימושי כשרוצים להתחבר מחדש (לדוגמה החלפת חשבון)
-function clearGmailToken() {
-  _gmailAccessToken = null;
-  _gmailTokenExpiresAt = 0;
-}
-
-// סגנון b64url (URL-safe) — חובה ל־Gmail API. בטוח ל־UTF-8 (עברית).
-function _b64url(s) {
-  // המר UTF-8 לבייטים, אז base64, אז URL-safe
-  const utf8 = unescape(encodeURIComponent(s));
-  return btoa(utf8).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-// UTF-8 → base64 (לשורת נושא בעברית)
-function _utf8b64(s) {
-  return btoa(unescape(encodeURIComponent(s)));
-}
-
-// קידוד שם תצוגה לכתובת מייל (RFC 2047 encoded-words, מפוצל ל־chunks קצרים)
-// כל encoded-word ≤ 75 תווים כפי שמחייב התקן. Gmail מפענח נכון.
-function _encodeAddressName(name, email) {
-  if (!name) return email;
-  const isAscii = /^[\x20-\x7E]*$/.test(name);
-  if (isAscii) return `"${name.replace(/"/g, '\\"')}" <${email}>`;
-  // עברית/לא־ASCII: פיצול לחתיכות של 8 תווים (~38 תווים ב־encoded-word, מתחת ל־75 בבטחה)
-  const CHARS_PER_CHUNK = 8;
-  const chunks = [];
-  for (let i = 0; i < name.length; i += CHARS_PER_CHUNK) {
-    chunks.push(name.substring(i, i + CHARS_PER_CHUNK));
+// שולח מייל דרך ה־Edge Function. signature זהה לקוד הקודם.
+async function sendGmailMessage({ from, to, cc, bcc, replyTo, subject, bodyText, attachment }) {
+  // השג את ה־JWT של המשתמש המחובר (Supabase auth)
+  const { data: sessionData, error: sessionErr } = await sb.auth.getSession();
+  if (sessionErr || !sessionData?.session) {
+    throw new Error('לא מחובר — התחבר מחדש לאפליקציה');
   }
-  const encoded = chunks.map(c => `=?UTF-8?B?${_utf8b64(c)}?=`).join(' ');
-  return `${encoded} <${email}>`;
-}
+  const jwt = sessionData.session.access_token;
 
-// פורמט תאריך RFC 5322 (Wed, 21 Oct 2025 07:28:00 +0000)
-function _rfc5322Date(d) {
-  d = d || new Date();
-  const days = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-  const pad = (n) => String(n).padStart(2, '0');
-  const offMin = -d.getTimezoneOffset();
-  const sign = offMin >= 0 ? '+' : '-';
-  const offH = pad(Math.floor(Math.abs(offMin) / 60));
-  const offM = pad(Math.abs(offMin) % 60);
-  return `${days[d.getDay()]}, ${pad(d.getDate())} ${months[d.getMonth()]} ${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${sign}${offH}${offM}`;
-}
-
-// בונה הודעת RFC 822 (MIME) עם multipart/alternative (plain+html) + attachment
-// מבנה זה מפחית סף ספאם ב־Gmail/Outlook (חוסר plain text הוא דגל אדום).
-async function _buildMimeMessage({ from, to, cc, bcc, replyTo, subject, bodyText, attachment }) {
-  const outerB = '----=_outer_' + Math.random().toString(36).substring(2, 10);
-  const innerB = '----=_inner_' + Math.random().toString(36).substring(2, 10);
-  const lines = [];
-
-  // === Headers ===
-  // From: עם שם תצוגה ממותג (RFC 2047 chunked encoded-words)
-  const fromHeader = from || _encodeAddressName(GMAIL_FROM_NAME, GMAIL_FROM_EMAIL);
-  lines.push(`From: ${fromHeader}`);
-  if (to)   lines.push(`To: ${to}`);
-  if (cc && cc.length) lines.push(`Cc: ${cc.join(', ')}`);
-  // bcc יכול להיות מחרוזת בודדת או מערך
-  const bccArr = Array.isArray(bcc) ? bcc.filter(Boolean) : (bcc ? [bcc] : []);
-  if (bccArr.length) lines.push(`Bcc: ${bccArr.join(', ')}`);
-  if (replyTo) lines.push(`Reply-To: ${replyTo}`);
-  lines.push(`Subject: =?UTF-8?B?${_utf8b64(subject || '')}?=`);
-  lines.push(`Date: ${_rfc5322Date(new Date())}`);
-  lines.push(`Message-ID: <${Date.now()}.${Math.random().toString(36).substring(2)}@${GMAIL_FROM_EMAIL.split('@')[1]}>`);
-  lines.push('MIME-Version: 1.0');
-  lines.push(`Content-Type: multipart/mixed; boundary="${outerB}"`);
-  lines.push('');
-  lines.push('');
-
-  // === outer part 1: multipart/alternative (plain + html) ===
-  lines.push(`--${outerB}`);
-  lines.push(`Content-Type: multipart/alternative; boundary="${innerB}"`);
-  lines.push('');
-
-  // plain text
-  lines.push(`--${innerB}`);
-  lines.push('Content-Type: text/plain; charset=UTF-8');
-  lines.push('Content-Transfer-Encoding: base64');
-  lines.push('');
-  const plainB64 = _utf8b64(bodyText || ' ');  // לפחות תו אחד כדי שלא יהיה ריק
-  lines.push((plainB64.match(/.{1,76}/g) || [plainB64]).join('\r\n'));
-  lines.push('');
-
-  // HTML
-  const htmlBody = `<!DOCTYPE html>
-<html lang="he" dir="rtl">
-<head><meta charset="UTF-8"></head>
-<body style="font-family: Arial, sans-serif; direction: rtl; text-align: right; font-size: 14px; line-height: 1.6; color: #000;">
-${(bodyText || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}
-</body></html>`;
-  lines.push(`--${innerB}`);
-  lines.push('Content-Type: text/html; charset=UTF-8');
-  lines.push('Content-Transfer-Encoding: base64');
-  lines.push('');
-  const htmlB64 = _utf8b64(htmlBody);
-  lines.push((htmlB64.match(/.{1,76}/g) || [htmlB64]).join('\r\n'));
-  lines.push('');
-  lines.push(`--${innerB}--`);
-  lines.push('');
-
-  // === outer part 2: attachment ===
+  // המר את ה־attachment ל־base64 (אם יש)
+  let attachmentPayload = undefined;
   if (attachment && attachment.blob) {
-    const buf = await attachment.blob.arrayBuffer();
-    const bytes = new Uint8Array(buf);
-    let binary = '';
-    for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-    const b64 = btoa(binary);
-    const fname = (attachment.filename || 'attachment.pdf').replace(/"/g, '');
-    const isAscii = /^[\x20-\x7E]*$/.test(fname);
-    const fnameEnc = isAscii ? fname : `=?UTF-8?B?${_utf8b64(fname)}?=`;
-    lines.push(`--${outerB}`);
-    lines.push(`Content-Type: ${attachment.mime || 'application/pdf'}; name="${fnameEnc}"`);
-    lines.push('Content-Transfer-Encoding: base64');
-    lines.push(`Content-Disposition: attachment; filename="${fnameEnc}"`);
-    lines.push('');
-    lines.push((b64.match(/.{1,76}/g) || [b64]).join('\r\n'));
-    lines.push('');
+    attachmentPayload = {
+      filename: attachment.filename || 'attachment.pdf',
+      mime: attachment.mime || 'application/pdf',
+      base64: await _blobToBase64(attachment.blob),
+    };
   }
 
-  lines.push(`--${outerB}--`);
-  return lines.join('\r\n');
-}
+  // bcc: יכול להיות מחרוזת או מערך — נרמל למערך
+  const bccArr = Array.isArray(bcc) ? bcc.filter(Boolean) : (bcc ? [bcc] : []);
+  const ccArr  = Array.isArray(cc)  ? cc.filter(Boolean)  : (cc  ? [cc]  : []);
 
-async function sendGmailMessage({ from, to, cc, bcc, subject, bodyText, attachment }) {
-  const token = await ensureGmailToken(true);  // נסה silent קודם
-  const raw = await _buildMimeMessage({ from, to, cc, bcc, subject, bodyText, attachment });
-  const res = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+  // קרא ל־Edge Function
+  const fnUrl = `${window.SUPABASE_URL}/functions/v1/send-email`;
+  const res = await fetch(fnUrl, {
     method: 'POST',
     headers: {
-      'Authorization': 'Bearer ' + token,
+      'Authorization': 'Bearer ' + jwt,
       'Content-Type': 'application/json',
+      'apikey': window.SUPABASE_KEY,
     },
-    body: JSON.stringify({ raw: _b64url(raw) }),
+    body: JSON.stringify({
+      to,
+      cc: ccArr,
+      bcc: bccArr,
+      replyTo: replyTo || GMAIL_FROM_EMAIL,
+      subject,
+      bodyText,
+      attachment: attachmentPayload,
+    }),
   });
-  if (!res.ok) {
-    let errMsg = `Gmail API ${res.status}`;
-    try {
-      const errJson = await res.json();
-      if (errJson.error && errJson.error.message) errMsg = errJson.error.message;
-    } catch (e) {}
-    throw new Error(errMsg);
+
+  let result;
+  try { result = await res.json(); } catch { result = {}; }
+
+  if (!res.ok || result.error) {
+    throw new Error(result.error || `Edge Function ${res.status}`);
   }
-  return await res.json();
+  return result;  // { ok, message_id, thread_id, sent_by }
 }
 
 // ============================================================
@@ -7345,18 +7222,10 @@ async function _ec_sendViaGmail() {
 
   const btn = document.getElementById('ec_gmail_btn');
   btn.disabled = true;
-  btn.textContent = 'מתחבר ל־Gmail...';
+  btn.textContent = 'שולח...';
 
-  // וודא token — אם זה הפעם הראשונה ייפתח חלון אישור OAuth
-  let token;
-  try {
-    token = await ensureGmailToken(false);
-  } catch (e) {
-    alert('שגיאה בהתחברות ל־Gmail: ' + e.message);
-    btn.disabled = false;
-    btn.textContent = EC_STATE.testMode ? '🧪 שלח דרך Gmail (לבדיקה)' : '🔴 שלח דרך Gmail (אמיתי!)';
-    return;
-  }
+  // השליחה מתבצעת server-side דרך Edge Function — אין צורך ב־OAuth של המשתמש.
+  // האימות מתבצע מולה דרך ה־JWT הקיים של Supabase.
 
   const slug = EC_STATE.template.slug;
   const batchId = (crypto.randomUUID ? crypto.randomUUID() : ('batch_' + Date.now()));
