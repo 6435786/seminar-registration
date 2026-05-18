@@ -6230,8 +6230,10 @@ async function _buildMimeMessage({ from, to, cc, bcc, replyTo, subject, bodyText
   const lines = [];
 
   // === Headers ===
-  const fromHeader = from || _encodeAddressName(GMAIL_FROM_NAME, GMAIL_FROM_EMAIL);
-  lines.push(`From: ${fromHeader}`);
+  // From: רק אם הועבר במפורש. אחרת Gmail מזריק אוטומטית את כתובת המשתמש
+  // המאומת + שם התצוגה מהגדרות החשבון (Settings → Accounts → edit info).
+  // זה נראה הרבה יותר טוב מ־RFC 2047 encoded-word שלי.
+  if (from) lines.push(`From: ${from}`);
   if (to)   lines.push(`To: ${to}`);
   if (cc && cc.length) lines.push(`Cc: ${cc.join(', ')}`);
   if (bcc) lines.push(`Bcc: ${bcc}`);
