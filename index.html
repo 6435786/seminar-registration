@@ -6212,11 +6212,19 @@ function _utf8b64(s) {
 }
 
 // קידוד שם תצוגה לכתובת מייל (RFC 2047)
+// אם הטקסט לא ASCII — פיצול ל־encoded-words קצרים (≤ 75 תווים כל אחד, תקן RFC)
 function _encodeAddressName(name, email) {
   if (!name) return email;
   const isAscii = /^[\x20-\x7E]*$/.test(name);
-  const encName = isAscii ? `"${name.replace(/"/g, '\\"')}"` : `=?UTF-8?B?${_utf8b64(name)}?=`;
-  return `${encName} <${email}>`;
+  if (isAscii) return `"${name.replace(/"/g, '\\"')}" <${email}>`;
+  // עברית: פיצול לחתיכות של 10 תווים (כל אחת = ~40 תווים ב־encoded-word, מתחת ל־75)
+  const CHARS_PER_CHUNK = 10;
+  const chunks = [];
+  for (let i = 0; i < name.length; i += CHARS_PER_CHUNK) {
+    chunks.push(name.substring(i, i + CHARS_PER_CHUNK));
+  }
+  const encoded = chunks.map(c => `=?UTF-8?B?${_utf8b64(c)}?=`).join(' ');
+  return `${encoded} <${email}>`;
 }
 
 // פורמט תאריך RFC 5322 (Wed, 21 Oct 2025 07:28:00 +0000)
@@ -6240,10 +6248,9 @@ async function _buildMimeMessage({ from, to, cc, bcc, replyTo, subject, bodyText
   const lines = [];
 
   // === Headers ===
-  // From: רק אם הועבר במפורש. אחרת Gmail מזריק אוטומטית את כתובת המשתמש
-  // המאומת + שם התצוגה מהגדרות החשבון (Settings → Accounts → edit info).
-  // זה נראה הרבה יותר טוב מ־RFC 2047 encoded-word שלי.
-  if (from) lines.push(`From: ${from}`);
+  // From: עם שם תצוגה ממותג (RFC 2047 chunked encoded-words)
+  const fromHeader = from || _encodeAddressName(GMAIL_FROM_NAME, GMAIL_FROM_EMAIL);
+  lines.push(`From: ${fromHeader}`);
   if (to)   lines.push(`To: ${to}`);
   if (cc && cc.length) lines.push(`Cc: ${cc.join(', ')}`);
   if (bcc) lines.push(`Bcc: ${bcc}`);
