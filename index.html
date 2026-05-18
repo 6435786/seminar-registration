@@ -2959,7 +2959,7 @@ function resetAllFilters() {
 
 let _editing = null; // {td, col, nid, row, originalValue}
 
-function startEdit(td, nid) {
+async function startEdit(td, nid) {
   if (_editing) {
     _finishCurrent(true);
   }
