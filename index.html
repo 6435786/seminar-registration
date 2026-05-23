@@ -1739,7 +1739,7 @@
 
     <button class="ghost" id="btn_reset">איפוס</button>
     <button class="ghost" id="btn_cols">עמודות ▾</button>
-    <button class="ghost" id="btn_report" style="display:none;">📄 דוח לוועדה</button>
+    <button class="ghost" id="btn_report">📄 דוח לוועדה</button>
     <div class="popover" id="col_picker"></div>
   </div>
 
@@ -9644,9 +9644,9 @@ function applyRoleVisibility() {
 
   // "דוח לוועדה" — בשלב פיתוח (2026-05-24). זמין רק ל־super_admin.
   // אחרי ייצוב — להחליף ל־isAdmin() כדי לפתוח לכל המנהלים.
-  if (isSuperAdmin()) {
-    const btnReport = document.getElementById('btn_report');
-    if (btnReport) btnReport.style.display = '';
+  // הכפתור גלוי בברירת מחדל; אם לא super_admin → מסתיר.
+  if (!isSuperAdmin()) {
+    hide('btn_report');
   }
 
   // לא־אדמין: מיזוג שורה תחתונה לתוך העליונה (הכל בשורה אחת)
@@ -10441,7 +10441,15 @@ async function _rep_buildPDF(sections) {
     if (sectionTitle) {
       pdf.setFontSize(12);
       pdf.setTextColor(30, 58, 138);
-      pdf.text(bidi(`${sectionTitle} — ${sectionRowCount} ${sectionRowCount === 1 ? 'בת' : 'בנות'}`), PAGE_W / 2, MARGIN + 11, { align: 'center' });
+      // בהפרדה לפי סמינר — נוסיף את "סה"כ למוסד" (כמו בכותרות ה־inline)
+      let subText;
+      if (REPORT_STATE.separateBy === 'seminar') {
+        const totalAtInst = (ROWS || []).filter(r => r.placement_seminar === sectionTitle).length;
+        subText = `${sectionTitle} — ${sectionRowCount} בנות לשיבוץ (סה"כ למוסד ${totalAtInst} בנות)`;
+      } else {
+        subText = `${sectionTitle} — ${sectionRowCount} ${sectionRowCount === 1 ? 'בת' : 'בנות'}`;
+      }
+      pdf.text(bidi(subText), PAGE_W / 2, MARGIN + 11, { align: 'center' });
       pdf.setTextColor(0, 0, 0);
     }
     // אין קו אופקי נפרד — הטבלה עצמה ממוסגרת
@@ -10599,24 +10607,28 @@ async function _rep_buildPDF(sections) {
   }
 
   // === שורת כותרת בסגנון inline (לסמינרים ברצף) ===
-  // גוון רך + טקסט "X בנות לשיבוץ (סה"כ למוסד Y בנות)"
+  // קופסה קטנה במרכז עם מסגרת מעוגלת — לא חוצה את כל רוחב הטבלה
   function drawInlineSectionHeader(title, count, yTop) {
     const H = 8;
-    // רקע — תכלת עדין במקום הכחול הבוהק
-    pdf.setFillColor(219, 234, 254);   // #dbeafe
-    pdf.rect(tableLeftX, yTop, finalTableW, H, 'F');
     pdf.setFont('David', 'bold');
     pdf.setFontSize(11);
-    pdf.setTextColor(30, 58, 138);     // טקסט בכחול כהה על רקע תכלת
     // סה"כ למוסד = כל הבנות שמשובצות לסמינר הזה ב־ROWS (כולל מה שלא בדוח)
     const totalAtInst = (ROWS || []).filter(r => r.placement_seminar === title).length;
     const text = `${title} — ${count} בנות לשיבוץ (סה"כ למוסד ${totalAtInst} בנות)`;
+    const tw = pdf.getTextWidth(text);
+    const PAD = 5;
+    const boxW = tw + PAD * 2;
+    const boxX = PAGE_W / 2 - boxW / 2;
+
+    // קופסה: רקע בהיר + מסגרת כחולה דקה, פינות מעוגלות
+    pdf.setFillColor(248, 250, 252);   // #f8fafc — אפור בהיר מאוד
+    pdf.setDrawColor(30, 58, 138);     // מסגרת כחול כהה
+    pdf.setLineWidth(0.4);
+    pdf.roundedRect(boxX, yTop, boxW, H, 2, 2, 'FD');
+
+    pdf.setTextColor(30, 58, 138);
     pdf.text(bidi(text), PAGE_W / 2, yTop + 5.5, { align: 'center' });
     pdf.setTextColor(0, 0, 0);
-    // מסגרת
-    pdf.setDrawColor(150);
-    pdf.setLineWidth(0.25);
-    pdf.rect(tableLeftX, yTop, finalTableW, H);
     return H;
   }
 
@@ -10636,27 +10648,24 @@ async function _rep_buildPDF(sections) {
       const section = sections[si];
       if (!section.rows.length) continue;
 
-      // בין סקציות — קצת רווח + שורת כותרת inline (לא בראש הראשון)
-      if (si > 0) {
-        const GAP_BEFORE = 4;       // רווח לפני הכותרת — נשימה לעין
-        const INLINE_H = 8;
-        const firstRowH = rowHeight(section.rows[0]);
-        // smart break — אם אין מקום לרווח + כותרת + לפחות שורה אחת → עמוד חדש
-        if (y + GAP_BEFORE + INLINE_H + firstRowH > TABLE_BOTTOM) {
-          pdf.addPage();
-          pageNum++;
-          drawPageHeader('', 0);
-          y = drawTableHeader(TABLE_TOP);
-          _zebraReset();
-          pageMap.push({ sectionIdx: si, page: pageNum });
-          // בעמוד חדש — בלי GAP מיותר; הכותרת מיד
-        } else {
-          y += GAP_BEFORE;
-        }
-        drawInlineSectionHeader(section.title, section.rows.length, y);
-        y += INLINE_H;
-        _zebraReset();   // אחרי כותרת סמינר — להתחיל לבן
+      // כותרת inline לכל סקציה — כולל הראשונה (כדי שיהיה לעין על מה היא מסתכלת)
+      const GAP_BEFORE = (si > 0) ? 4 : 2;   // רווח קל לפני הכותרת
+      const INLINE_H = 8;
+      const firstRowH = rowHeight(section.rows[0]);
+      // smart break — אם אין מקום לרווח + כותרת + לפחות שורה אחת → עמוד חדש
+      if (y + GAP_BEFORE + INLINE_H + firstRowH > TABLE_BOTTOM) {
+        pdf.addPage();
+        pageNum++;
+        drawPageHeader('', 0);
+        y = drawTableHeader(TABLE_TOP);
+        _zebraReset();
+        pageMap.push({ sectionIdx: si, page: pageNum });
+      } else {
+        y += GAP_BEFORE;
       }
+      drawInlineSectionHeader(section.title, section.rows.length, y);
+      y += INLINE_H;
+      _zebraReset();   // אחרי כותרת סמינר — להתחיל לבן
 
       for (let ri = 0; ri < section.rows.length; ri++) {
         const r = section.rows[ri];
