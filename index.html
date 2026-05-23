@@ -9981,8 +9981,12 @@ function _rep_renderBody() {
         הצג סמינרים בנפרד <span style="color:var(--muted);font-size:11px;">(כל סמינר בעמוד נפרד, עם כותרת + עמוד X/Y)</span>
       </label>
       <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
+        <input type="checkbox" ${REPORT_STATE.separateBy === 'seminar_inline' ? 'checked' : ''} onchange="_rep_setSeparate('seminar_inline', this.checked)">
+        הצג סמינרים ברצף <span style="color:var(--muted);font-size:11px;">(שורת כותרת בין סמינר לסמינר, בלי עמוד חדש)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
         <input type="checkbox" ${REPORT_STATE.separateBy === 'sector' ? 'checked' : ''} onchange="_rep_setSeparate('sector', this.checked)">
-        הצג מגזרים בנפרד <span style="color:var(--muted);font-size:11px;">(סותר את "סמינרים בנפרד")</span>
+        הצג מגזרים בנפרד <span style="color:var(--muted);font-size:11px;">(סותר את האפשרויות הקודמות)</span>
       </label>
       <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:${REPORT_STATE.separateBy === 'sector' ? 'not-allowed' : 'pointer'};${REPORT_STATE.separateBy === 'sector' ? 'opacity:0.45;' : ''}">
         <input type="checkbox" ${REPORT_STATE.showChart ? 'checked' : ''} ${REPORT_STATE.separateBy === 'sector' ? 'disabled' : ''} onchange="REPORT_STATE.showChart = this.checked;">
@@ -10232,7 +10236,10 @@ function _rep_splitSections(rows) {
   if (REPORT_STATE.separateBy === 'none') {
     return [{ title: '', rows }];
   }
-  const field = REPORT_STATE.separateBy === 'seminar' ? 'placement_seminar' : 'sector';
+  // 'seminar' ו־'seminar_inline' — שניהם מקבצים לפי סמינר
+  const field = (REPORT_STATE.separateBy === 'seminar' || REPORT_STATE.separateBy === 'seminar_inline')
+    ? 'placement_seminar'
+    : 'sector';
   // קבץ
   const groups = {};
   rows.forEach(r => {
@@ -10281,10 +10288,10 @@ async function _rep_buildPDF(sections) {
   await embedDavidFont(pdf);
 
   const PAGE_W = 297, PAGE_H = 210;
-  const MARGIN = 10;
+  const MARGIN = 7;             // שוליים מצומצמים — קרוב יותר לקצה
   const usableW = PAGE_W - MARGIN * 2;
   const HEADER_H = 14;          // מקום לכותרת
-  const FOOTER_H = 8;           // מקום לפוטר
+  const FOOTER_H = 7;           // מקום לפוטר
   const TABLE_TOP = MARGIN + HEADER_H;
   const TABLE_BOTTOM = PAGE_H - MARGIN - FOOTER_H;
 
@@ -10447,7 +10454,8 @@ async function _rep_buildPDF(sections) {
     pdf.setFont('David', 'normal');
     pdf.setFontSize(10);
     pdf.setTextColor(100);
-    pdf.text(`עמוד ${pageNum} / ${totalPages}`, PAGE_W / 2, PAGE_H - MARGIN - 1, { align: 'center' });
+    // bidi חובה — אחרת "עמוד" נראה כ"דומע" במציג ה־PDF
+    pdf.text(bidi(`עמוד ${pageNum} / ${totalPages}`), PAGE_W / 2, PAGE_H - MARGIN - 1, { align: 'center' });
     pdf.setTextColor(0, 0, 0);
   }
 
@@ -10488,9 +10496,25 @@ async function _rep_buildPDF(sections) {
     const rh = rowHeight(r);
     pdf.setFont('David', 'normal');
     pdf.setFontSize(9);
-    pdf.setDrawColor(180);
-    pdf.setLineWidth(0.2);
+
+    // === Zebra striping: גוון בהיר על עמודות זוגיות ===
+    // ציור הרקעים תחילה — אחרת מכסים את הקווים והטקסט
     let x = tableLeftX;
+    for (let i = cols.length - 1; i >= 0; i--) {
+      const w = colW[i];
+      // הסדר הוויזואלי מימין: i=last → ימין; כל עמודה שנייה → גוון
+      const visualIdx = cols.length - 1 - i;
+      if (visualIdx % 2 === 1) {
+        pdf.setFillColor(241, 245, 249);   // #f1f5f9 — אפור בהיר עדין
+        pdf.rect(x, yTop, w, rh, 'F');
+      }
+      x += w;
+    }
+
+    // === מסגרת חיצונית + קווים אנכיים בין עמודות + תוכן ===
+    pdf.setDrawColor(150);
+    pdf.setLineWidth(0.25);
+    x = tableLeftX;
     for (let i = cols.length - 1; i >= 0; i--) {
       const w = colW[i];
       if (i > 0) pdf.line(x + w, yTop, x + w, yTop + rh);
@@ -10504,7 +10528,10 @@ async function _rep_buildPDF(sections) {
       });
       x += w;
     }
+    // קו תחתון של השורה + קווים אנכיים בקצוות (מסגרת חיצונית)
     pdf.line(tableLeftX, yTop + rh, tableLeftX + finalTableW, yTop + rh);
+    pdf.line(tableLeftX, yTop, tableLeftX, yTop + rh);                              // קצה ימין
+    pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + rh);  // קצה שמאל
     return rh;
   }
 
@@ -10577,78 +10604,151 @@ async function _rep_buildPDF(sections) {
     });
   }
 
+  // === שורת כותרת בסגנון inline (לסמינרים ברצף) ===
+  function drawInlineSectionHeader(title, count, yTop) {
+    const H = 8;
+    pdf.setFillColor(30, 58, 138);   // כחול כהה
+    pdf.rect(tableLeftX, yTop, finalTableW, H, 'F');
+    pdf.setFont('David', 'bold');
+    pdf.setFontSize(11);
+    pdf.setTextColor(255, 255, 255);
+    pdf.text(bidi(`${title} — ${count} ${count === 1 ? 'בת' : 'בנות'}`), PAGE_W / 2, yTop + 5.5, { align: 'center' });
+    pdf.setTextColor(0, 0, 0);
+    // קווי מסגרת חיצוניים — כדי שיתחבר חלק לקצוות
+    pdf.setDrawColor(150);
+    pdf.setLineWidth(0.25);
+    pdf.line(tableLeftX, yTop, tableLeftX, yTop + H);
+    pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + H);
+    return H;
+  }
+
   // ===== ציור כל סקציה =====
-  // קודם נחשב את העמודים לכל סקציה — לצורך הפוטר X/Y
-  // לוקח 2 מעברים: ראשון לחישוב פגינציה, שני לציור בפועל
-  // הגישה הפשוטה: לא מודדים מראש, אלא מציירים ובסוף עוברים שוב להוסיף את הפוטרים.
-  // עם jsPDF, נשנה את העמוד לאחור בעזרת setPage().
+  const pageMap = [];   // [{sectionIdx, page, totalInSection}]
+  const isInline = REPORT_STATE.separateBy === 'seminar_inline';
 
-  const pageMap = [];   // [{section, pageIdxInSection, totalPagesInSection}]
-  let isFirstPage = true;
-
-  for (let si = 0; si < sections.length; si++) {
-    const section = sections[si];
-    let pageOfSection = 1;
-    if (!isFirstPage) pdf.addPage();
-    isFirstPage = false;
-    drawPageHeader(section.title, section.rows.length);
+  if (isInline) {
+    // === מצב inline: רצף אחד; כותרות סמינר בתוך הזרימה; פגינציה רציפה ===
+    let pageNum = 1;
+    drawPageHeader('', 0);   // בלי כותרת סקציה — כי זה רצף
     let y = drawTableHeader(TABLE_TOP);
+    pageMap.push({ sectionIdx: 0, page: pageNum });
 
-    let pageStartIdx = pageMap.length;
-    pageMap.push({ sectionIdx: si, page: pageOfSection });
+    for (let si = 0; si < sections.length; si++) {
+      const section = sections[si];
+      if (!section.rows.length) continue;
 
-    for (let ri = 0; ri < section.rows.length; ri++) {
-      const r = section.rows[ri];
-      const rh = rowHeight(r);
-      if (y + rh > TABLE_BOTTOM) {
-        // עמוד חדש
-        pdf.addPage();
-        pageOfSection++;
-        drawPageHeader(section.title, section.rows.length);
-        y = drawTableHeader(TABLE_TOP);
-        pageMap.push({ sectionIdx: si, page: pageOfSection });
+      // בין סקציות — שורת כותרת inline (לא בראש הראשון)
+      if (si > 0) {
+        const INLINE_H = 8;
+        const firstRowH = rowHeight(section.rows[0]);
+        // smart break — אם אין מקום לכותרת + לפחות שורה אחת → עמוד חדש
+        if (y + INLINE_H + firstRowH > TABLE_BOTTOM) {
+          pdf.addPage();
+          pageNum++;
+          drawPageHeader('', 0);
+          y = drawTableHeader(TABLE_TOP);
+          pageMap.push({ sectionIdx: si, page: pageNum });
+        }
+        drawInlineSectionHeader(section.title, section.rows.length, y);
+        y += INLINE_H;
       }
-      drawRow(r, y);
-      y += rh;
+
+      for (let ri = 0; ri < section.rows.length; ri++) {
+        const r = section.rows[ri];
+        const rh = rowHeight(r);
+        if (y + rh > TABLE_BOTTOM) {
+          pdf.addPage();
+          pageNum++;
+          drawPageHeader('', 0);
+          y = drawTableHeader(TABLE_TOP);
+          pageMap.push({ sectionIdx: si, page: pageNum });
+        }
+        drawRow(r, y);
+        y += rh;
+      }
     }
 
-    // תרשים בסוף הסקציה (אם הופעל)
+    // תרשים בסוף (אם הופעל) — כלל האוכלוסייה
     if (REPORT_STATE.showChart) {
       const CHART_H = 60;
       if (y + 14 + CHART_H > TABLE_BOTTOM) {
         pdf.addPage();
-        pageOfSection++;
-        drawPageHeader(section.title, section.rows.length);
+        pageNum++;
+        drawPageHeader('', 0);
         y = TABLE_TOP;
-        pageMap.push({ sectionIdx: si, page: pageOfSection });
+        pageMap.push({ sectionIdx: 0, page: pageNum });
       }
-      const chartCenterX = PAGE_W / 2;
-      const chartCenterY = y + 8 + 25;
-
-      // בהפרדה לפי סמינר — העוגה מציגה את כל אוכלוסיית הסמינר (לא רק הסינון).
-      // בלי הפרדה — תמונת מצב מלאה: כל האוכלוסייה במערכת.
-      const sectionInfo = (REPORT_STATE.separateBy === 'seminar')
-        ? { groupingField: 'placement_seminar', groupingValue: section.title }
-        : { useAllRows: true };
-
-      // תווית מעל העוגה
       pdf.setFont('David', 'bold');
       pdf.setFontSize(10);
-      const pieLabel = (REPORT_STATE.separateBy === 'seminar')
-        ? `התפלגות מלאה — ${section.title} (כל הבנות במוסד)`
-        : `התפלגות לפי שיוך — כלל האוכלוסייה (${(ROWS || []).length} בנות)`;
-      pdf.text(bidi(pieLabel), PAGE_W / 2, y + 6, { align: 'center' });
-
-      drawSectorPie(sectionInfo, chartCenterX, chartCenterY, 22);
+      pdf.text(bidi(`התפלגות לפי שיוך — כלל האוכלוסייה (${(ROWS || []).length} בנות)`), PAGE_W / 2, y + 6, { align: 'center' });
+      drawSectorPie({ useAllRows: true }, PAGE_W / 2, y + 8 + 25, 22);
     }
 
-    // עדכן את total pages לסקציה (לפוטר)
-    for (let k = pageStartIdx; k < pageMap.length; k++) {
-      pageMap[k].totalInSection = pageOfSection;
+    // כל העמודים חולקים את אותו total
+    pageMap.forEach(p => { p.totalInSection = pageNum; });
+
+  } else {
+    // === מצב רגיל (none / seminar בנפרד / sector בנפרד) — כל סקציה בעמוד נפרד ===
+    let isFirstPage = true;
+    for (let si = 0; si < sections.length; si++) {
+      const section = sections[si];
+      let pageOfSection = 1;
+      if (!isFirstPage) pdf.addPage();
+      isFirstPage = false;
+      drawPageHeader(section.title, section.rows.length);
+      let y = drawTableHeader(TABLE_TOP);
+
+      let pageStartIdx = pageMap.length;
+      pageMap.push({ sectionIdx: si, page: pageOfSection });
+
+      for (let ri = 0; ri < section.rows.length; ri++) {
+        const r = section.rows[ri];
+        const rh = rowHeight(r);
+        if (y + rh > TABLE_BOTTOM) {
+          pdf.addPage();
+          pageOfSection++;
+          drawPageHeader(section.title, section.rows.length);
+          y = drawTableHeader(TABLE_TOP);
+          pageMap.push({ sectionIdx: si, page: pageOfSection });
+        }
+        drawRow(r, y);
+        y += rh;
+      }
+
+      // תרשים בסוף הסקציה
+      if (REPORT_STATE.showChart) {
+        const CHART_H = 60;
+        if (y + 14 + CHART_H > TABLE_BOTTOM) {
+          pdf.addPage();
+          pageOfSection++;
+          drawPageHeader(section.title, section.rows.length);
+          y = TABLE_TOP;
+          pageMap.push({ sectionIdx: si, page: pageOfSection });
+        }
+        const chartCenterX = PAGE_W / 2;
+        const chartCenterY = y + 8 + 25;
+
+        const sectionInfo = (REPORT_STATE.separateBy === 'seminar')
+          ? { groupingField: 'placement_seminar', groupingValue: section.title }
+          : { useAllRows: true };
+
+        pdf.setFont('David', 'bold');
+        pdf.setFontSize(10);
+        const pieLabel = (REPORT_STATE.separateBy === 'seminar')
+          ? `התפלגות מלאה — ${section.title} (כל הבנות במוסד)`
+          : `התפלגות לפי שיוך — כלל האוכלוסייה (${(ROWS || []).length} בנות)`;
+        pdf.text(bidi(pieLabel), PAGE_W / 2, y + 6, { align: 'center' });
+
+        drawSectorPie(sectionInfo, chartCenterX, chartCenterY, 22);
+      }
+
+      for (let k = pageStartIdx; k < pageMap.length; k++) {
+        pageMap[k].totalInSection = pageOfSection;
+      }
     }
   }
 
-  // עכשיו עבור על כל עמוד והוסף פוטר
+  // הוסף פוטר לכל עמוד
   for (let p = 0; p < pageMap.length; p++) {
     pdf.setPage(p + 1);
     const info = pageMap[p];
