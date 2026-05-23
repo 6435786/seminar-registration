@@ -1166,14 +1166,14 @@
     .filters .ms-btn { padding: 5px 8px; font-size: 12px; }
     .filters .ms-label { font-size: 10px; }
     .filters input[type=search] { max-width: 180px; font-size: 12px; }
-    /* כשכפתורי btn_cols/btn_problems עוברים ל־hdr-bottom — טקסט קצר */
-    .hdr-bottom #btn_cols, .hdr-bottom #btn_problems {
+    /* כשכפתורי btn_cols/btn_report עוברים ל־hdr-bottom — טקסט קצר */
+    .hdr-bottom #btn_cols, .hdr-bottom #btn_report {
       padding: 4px 10px; background: white; color: var(--deep);
       border: 1px solid #bae6fd; border-radius: 6px; font-size: 0;
     }
     .hdr-bottom #btn_cols::before { content: 'עמודות'; font-size: 12px; font-weight: 500; }
-    .hdr-bottom #btn_problems::before { content: 'לטיפול'; font-size: 12px; font-weight: 500; }
-    .hdr-bottom #btn_cols:hover, .hdr-bottom #btn_problems:hover { background: #f0f9ff; }
+    .hdr-bottom #btn_report::before { content: 'דוח'; font-size: 12px; font-weight: 500; }
+    .hdr-bottom #btn_cols:hover, .hdr-bottom #btn_report:hover { background: #f0f9ff; }
     /* "מצב עריכה" גם מתקצר */
     .edit-toggle { padding: 4px 10px; font-size: 11px; }
     .edit-toggle #edit_label { font-size: 11px; }
@@ -1480,9 +1480,9 @@
       border-radius: 8px; background: #f1f5f9; border: 0; color: #0f172a;
       min-height: 44px;
     }
-    /* הסתרת כפתורי "עמודות" ו"דרוש טיפול" בתוך פאנל הסינונים במובייל */
+    /* הסתרת כפתורי "עמודות" ו"דוח" בתוך פאנל הסינונים במובייל */
     body.mobile-filters-open .filters #btn_cols,
-    body.mobile-filters-open .filters #btn_problems { display: none !important; }
+    body.mobile-filters-open .filters #btn_report { display: none !important; }
 
     /* טבלה ראשית — רק 3 עמודות (full_name, placement_seminar, placement_status) */
     .table-wrap th:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]),
@@ -1739,9 +1739,8 @@
 
     <button class="ghost" id="btn_reset">איפוס</button>
     <button class="ghost" id="btn_cols">עמודות ▾</button>
-    <button class="ghost" id="btn_problems">🚨 דרוש טיפול</button>
+    <button class="ghost" id="btn_report" style="display:none;">📄 דוח לוועדה</button>
     <div class="popover" id="col_picker"></div>
-    <div class="popover" id="problems_picker"></div>
   </div>
 
   <div class="table-wrap">
@@ -9022,13 +9021,13 @@ async function deleteUser(email) {
   openManageUsers();
 }
 
-// כפתור "דרוש טיפול"
-document.getElementById('btn_problems').addEventListener('click', (e) => {
-  e.stopPropagation();
-  const pop = document.getElementById('problems_picker');
-  document.querySelectorAll('.popover.open').forEach(p => { if (p !== pop) p.classList.remove('open'); });
-  if (pop.classList.contains('open')) { pop.classList.remove('open'); return; }
-  openProblemsPicker(e.currentTarget, pop);
+// כפתור "דוח לוועדה" — בשלב פיתוח: רק super_admin רואה.
+document.getElementById('btn_report').addEventListener('click', () => {
+  if (!isSuperAdmin()) {
+    alert('הדוח בשלב פיתוח — זמין כרגע רק למנהל הראשי.');
+    return;
+  }
+  openCommitteeReport();
 });
 
 // כפתורי "תצוגות שמורות" + "הדפסה" בכותרת הראשית
@@ -9389,78 +9388,6 @@ function openChoosePrintColumns(savedVisibility) {
 }
 
 // ===============================================
-// "דרוש טיפול" — מסנן לפי סטטוסים פרט ל־"שיבוץ בהסכמה"
-// ===============================================
-function openProblemsPicker(btn, pop) {
-  const problematicStatuses = ENUM_STATUS.filter(s => s !== 'שיבוץ בהסכמה');
-  const saved = JSON.parse(localStorage.getItem('problem_prefs') || '{}');
-  const selectedSet = new Set(saved.statuses || problematicStatuses);
-  const includePlaced = saved.includePlaced !== undefined ? saved.includePlaced : false;
-
-  pop.innerHTML = `
-    <div class="actions" style="flex-wrap:wrap;">
-      <button type="button" data-act="apply" class="apply-inline">✓ סנן</button>
-      <button type="button" data-act="all">בחר הכל</button>
-      <button type="button" data-act="none">נקה</button>
-      <button type="button" class="close-x" data-act="cancel" title="ביטול">×</button>
-    </div>
-    <div style="font-weight:600; color:var(--deep); margin-bottom:6px; font-size:13px;">איזה סטטוסים לכלול?</div>
-    <div class="opts" id="probs_opts">
-      ${problematicStatuses.map(s => `
-        <label><input type="checkbox" class="prob-stat" value="${s}" ${selectedSet.has(s) ? 'checked' : ''}>${s}</label>
-      `).join('')}
-    </div>
-    <label style="display:flex; align-items:center; gap:6px; margin-top:10px; padding:6px 8px; background:#fff3bd; border-radius:5px; font-size:13px; font-weight:600;">
-      <input type="checkbox" id="prob_include_placed" ${includePlaced ? 'checked' : ''}>
-      לכלול גם בנות משובצות
-    </label>
-  `;
-
-  pop.style.minWidth = '260px';
-  pop.classList.add('open');
-  clampPopoverToViewport(pop, btn);
-
-  pop.querySelector('[data-act="all"]').addEventListener('click', () => {
-    pop.querySelectorAll('.prob-stat').forEach(cb => cb.checked = true);
-  });
-  pop.querySelector('[data-act="none"]').addEventListener('click', () => {
-    pop.querySelectorAll('.prob-stat').forEach(cb => cb.checked = false);
-  });
-  pop.querySelector('[data-act="apply"]').addEventListener('click', () => {
-    const picked = [...pop.querySelectorAll('.prob-stat:checked')].map(cb => cb.value);
-    const inclPlaced = pop.querySelector('#prob_include_placed').checked;
-    localStorage.setItem('problem_prefs', JSON.stringify({ statuses: picked, includePlaced: inclPlaced }));
-    applyProblemsFilter(picked, inclPlaced);
-    pop.classList.remove('open');
-  });
-  pop.querySelector('[data-act="cancel"]').addEventListener('click', () => pop.classList.remove('open'));
-}
-
-function applyProblemsFilter(statuses, includePlaced) {
-  // איפוס סינוני עמודות + סטטוס
-  Object.values(FILTER_STATE).forEach(s => s.clear());
-  Object.keys(COL_FILTERS).forEach(k => COL_FILTERS[k].clear());
-
-  // סטטוסים הנבחרים
-  if (!COL_FILTERS.placement_status) COL_FILTERS.placement_status = new Set();
-  statuses.forEach(s => COL_FILTERS.placement_status.add(s));
-
-  // לא נבחר "כלול משובצות" → גם לסנן placement_seminar לערכים לא משובצים
-  if (!includePlaced) {
-    if (!COL_FILTERS.placement_seminar) COL_FILTERS.placement_seminar = new Set();
-    UNPLACED_VALUES.forEach(v => COL_FILTERS.placement_seminar.add(v));
-  }
-
-  document.querySelectorAll('.ms-wrap').forEach(w => w._updateBtn && w._updateBtn());
-  renderHeader();
-  applyFilters();
-
-  const btn = document.getElementById('btn_problems');
-  btn.classList.add('active-filter');
-  toast(`הוחל סינון "דרוש טיפול" (${statuses.length} סטטוסים${includePlaced ? ', כולל משובצות' : ', רק ממתינות'})`);
-}
-
-// ===============================================
 // "תצוגות שמורות" — Supabase (מסונכרן בין כל המכשירים)
 // ===============================================
 let _savedViewsCache = null;
@@ -9715,6 +9642,13 @@ function applyRoleVisibility() {
     hide('btn_hdr_email');
   }
 
+  // "דוח לוועדה" — בשלב פיתוח (2026-05-24). זמין רק ל־super_admin.
+  // אחרי ייצוב — להחליף ל־isAdmin() כדי לפתוח לכל המנהלים.
+  if (isSuperAdmin()) {
+    const btnReport = document.getElementById('btn_report');
+    if (btnReport) btnReport.style.display = '';
+  }
+
   // לא־אדמין: מיזוג שורה תחתונה לתוך העליונה (הכל בשורה אחת)
   if (!isAdmin()) {
     const top = document.querySelector('.hdr-top');
@@ -9931,21 +9865,731 @@ function exportMainTableToExcel() {
   toast(`יוצאו ${data.length} תלמידות ✓`);
 }
 
-// מעביר את כפתורי "עמודות" ו"דרוש טיפול" לפי overflow אמיתי ב־.filters
+// ============================================================
+// דוח לוועדה — קונפיגורציה + הפקה ל־PDF
+// ============================================================
+// כפתור gated ב־isSuperAdmin() בשלב פיתוח (2026-05-24).
+// אחרי ייצוב — להחליף ל־isAdmin() ב־DOMContentLoaded.
+
+const REPORT_SORT_CATEGORIES = [
+  { value: 'placement_seminar', label: 'שיבוץ' },
+  { value: 'placement_status',  label: 'סטטוס' },
+  { value: 'sector',            label: 'שיוך' },
+];
+
+const REPORT_STATE = {
+  baseViewId: null,     // null = current view; else saved view id
+  sorts: [              // 3 levels: {cat, order: {value: rank}}
+    { cat: '', order: {} },
+    { cat: '', order: {} },
+    { cat: '', order: {} },
+  ],
+  separateBy: 'none',   // 'none' | 'seminar' | 'sector'
+  showChart: false,
+};
+
+let _reportPrefsCache = null;
+
+async function _loadReportPrefs() {
+  const { data, error } = await sb.from('report_preferences')
+    .select('*').order('created_at', { ascending: false });
+  if (error) { console.warn('load report_preferences:', error.message); return; }
+  _reportPrefsCache = data || [];
+}
+
+async function openCommitteeReport() {
+  // אתחל state — לכל פתיחה מתחיל נקי, בסיס = תצוגה נוכחית
+  Object.assign(REPORT_STATE, {
+    baseViewId: null,
+    sorts: [{cat:'',order:{}},{cat:'',order:{}},{cat:'',order:{}}],
+    separateBy: 'none',
+    showChart: false,
+  });
+  // טען העדפות שמורות אם עוד לא נטענו
+  if (_reportPrefsCache === null) await _loadReportPrefs();
+  _rep_renderModal();
+}
+
+function _rep_renderModal() {
+  document.getElementById('rep_scrim')?.remove();
+  const scrim = document.createElement('div');
+  scrim.id = 'rep_scrim';
+  scrim.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.55);z-index:2400;display:flex;align-items:center;justify-content:center;padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) scrim.remove(); };
+
+  const pop = document.createElement('div');
+  pop.id = 'rep_pop';
+  pop.style.cssText = 'background:white;border-radius:14px;box-shadow:0 16px 50px rgba(0,0,0,0.3);max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column;';
+  pop.innerHTML = `
+    <div style="padding:14px 22px;border-bottom:1px solid var(--border);background:linear-gradient(to bottom,#f8fafc,white);display:flex;align-items:center;gap:10px;">
+      <div style="font-size:22px;">📄</div>
+      <div style="flex:1;">
+        <div style="font-weight:700;color:var(--deep);font-size:17px;">דוח לוועדה</div>
+        <div style="color:var(--muted);font-size:12px;">קונפיגורציה לפני הפקה</div>
+      </div>
+      <button class="close" onclick="document.getElementById('rep_scrim').remove();">×</button>
+    </div>
+    <div id="rep_body" style="padding:14px 22px;overflow-y:auto;flex:1;"></div>
+    <div style="padding:12px 22px;border-top:1px solid var(--border);display:flex;gap:8px;background:#f8fafc;flex-wrap:wrap;">
+      <button class="cancel-btn" onclick="document.getElementById('rep_scrim').remove();">סגור</button>
+      <button class="cancel-btn" onclick="_rep_generate('print')">🖨 הצג לפני הדפסה</button>
+      <button class="apply-big" onclick="_rep_generate('download')" style="flex:1;">📄 הורד PDF</button>
+    </div>
+  `;
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+  _rep_renderBody();
+}
+
+function _rep_renderBody() {
+  const body = document.getElementById('rep_body');
+  if (!body) return;
+  const views = getSavedViews();
+  const prefs = _reportPrefsCache || [];
+
+  body.innerHTML = `
+    <!-- בסיס -->
+    <div style="margin-bottom:18px;">
+      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">בסיס (פילטרים + עמודות + מיון):</div>
+      <select id="rep_base" onchange="_rep_setBase(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:13px;">
+        <option value="">— תצוגה נוכחית (מה שמופיע במסך עכשיו) —</option>
+        ${views.map(v => `<option value="${v.id}" ${REPORT_STATE.baseViewId === v.id ? 'selected' : ''}>${_esc(v.name)}${v.is_shared ? ' 🔗' : ''}</option>`).join('')}
+      </select>
+    </div>
+
+    <!-- מיון -->
+    <div style="margin-bottom:18px;">
+      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">מיון (סדר עדיפויות):</div>
+      ${[0,1,2].map(i => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <span style="color:var(--muted);font-size:12px;min-width:50px;">מיון ${i+1}:</span>
+          <select onchange="_rep_setSortCat(${i}, this.value)" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;">
+            <option value="">— ללא —</option>
+            ${REPORT_SORT_CATEGORIES.map(c => `<option value="${c.value}" ${c.value === REPORT_STATE.sorts[i].cat ? 'selected' : ''}>${c.label}</option>`).join('')}
+          </select>
+          <button class="mini-btn" onclick="_rep_openOrderPopover(${i})" ${REPORT_STATE.sorts[i].cat ? '' : 'disabled'} style="${REPORT_STATE.sorts[i].cat ? '' : 'opacity:0.5;cursor:not-allowed;'}">סדר ערכים…</button>
+        </div>
+      `).join('')}
+      <div style="color:var(--muted);font-size:11px;margin-top:4px;">בתוך הכל — אלף-בית לפי שם מלא (קבוע)</div>
+    </div>
+
+    <!-- תצוגה -->
+    <div style="margin-bottom:18px;">
+      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">תצוגה בפלט:</div>
+      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
+        <input type="checkbox" ${REPORT_STATE.separateBy === 'seminar' ? 'checked' : ''} onchange="_rep_setSeparate('seminar', this.checked)">
+        הצג סמינרים בנפרד <span style="color:var(--muted);font-size:11px;">(כל סמינר בעמוד נפרד, עם כותרת + עמוד X/Y)</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
+        <input type="checkbox" ${REPORT_STATE.separateBy === 'sector' ? 'checked' : ''} onchange="_rep_setSeparate('sector', this.checked)">
+        הצג מגזרים בנפרד <span style="color:var(--muted);font-size:11px;">(סותר את "סמינרים בנפרד")</span>
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:${REPORT_STATE.separateBy === 'sector' ? 'not-allowed' : 'pointer'};${REPORT_STATE.separateBy === 'sector' ? 'opacity:0.45;' : ''}">
+        <input type="checkbox" ${REPORT_STATE.showChart ? 'checked' : ''} ${REPORT_STATE.separateBy === 'sector' ? 'disabled' : ''} onchange="REPORT_STATE.showChart = this.checked;">
+        הצג תרשים <span style="color:var(--muted);font-size:11px;">(עוגה — חלוקה לפי שיוך)</span>
+        ${REPORT_STATE.separateBy === 'sector' ? '<span style="color:var(--muted);font-size:11px;">— לא רלוונטי כשמגזרים בנפרד</span>' : ''}
+      </label>
+    </div>
+
+    <!-- העדפות שמורות -->
+    <div style="background:#f8fafc;border:1px solid var(--border);border-radius:6px;padding:10px 12px;">
+      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">העדפות שמורות:</div>
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <select id="rep_pref_picker" onchange="_rep_loadPreference(this.value)" style="flex:1;min-width:160px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:13px;">
+          <option value="">— בחר העדפה שמורה —</option>
+          ${prefs.map(p => `<option value="${p.id}">${_esc(p.name)}${p.user_id !== CURRENT_USER.id ? ' (משותפת)' : ''}</option>`).join('')}
+        </select>
+        <button class="mini-btn" onclick="_rep_savePreference()">💾 שמור הגדרות נוכחיות</button>
+      </div>
+    </div>
+  `;
+}
+
+function _rep_setBase(id) {
+  REPORT_STATE.baseViewId = id ? parseInt(id, 10) : null;
+}
+
+function _rep_setSortCat(idx, cat) {
+  REPORT_STATE.sorts[idx].cat = cat;
+  REPORT_STATE.sorts[idx].order = {};   // איפוס סדר הערכים
+  _rep_renderBody();
+}
+
+function _rep_setSeparate(which, on) {
+  if (on) {
+    REPORT_STATE.separateBy = which;
+    if (which === 'sector') REPORT_STATE.showChart = false;
+  } else if (REPORT_STATE.separateBy === which) {
+    REPORT_STATE.separateBy = 'none';
+  }
+  _rep_renderBody();
+}
+
+// === Popover של סדר ערכים — כל ערך + שדה מספר ===
+// הכלל: מספר זוכה על "ללא מספר". בין מספרים — קטן קודם.
+// הקלדת מספר קיים → דוחפת את כולם ממנו ומעלה ב־+1.
+function _rep_openOrderPopover(idx) {
+  const sort = REPORT_STATE.sorts[idx];
+  const cat = sort.cat;
+  if (!cat) return;
+
+  // אסוף ערכים אפשריים מהדאטה הנוכחי
+  const valuesSet = new Set();
+  (ROWS || []).forEach(r => {
+    const v = r[cat];
+    if (v) valuesSet.add(v);
+  });
+  const values = [...valuesSet].sort((a, b) => a.localeCompare(b, 'he'));
+
+  document.getElementById('rep_order_scrim')?.remove();
+  const scrim = document.createElement('div');
+  scrim.id = 'rep_order_scrim';
+  scrim.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:2500;display:flex;align-items:center;justify-content:center;padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) scrim.remove(); };
+
+  const pop = document.createElement('div');
+  pop.style.cssText = 'background:white;border-radius:10px;box-shadow:0 12px 36px rgba(0,0,0,0.25);max-width:420px;width:100%;max-height:80vh;display:flex;flex-direction:column;';
+
+  const catLabel = (REPORT_SORT_CATEGORIES.find(c => c.value === cat) || {}).label || cat;
+
+  const renderRows = () => {
+    // Sort values for display: by order (asc), then alphabetically
+    const display = [...values].sort((a, b) => {
+      const oa = sort.order[a];
+      const ob = sort.order[b];
+      if (oa != null && ob != null) return oa - ob;
+      if (oa != null) return -1;
+      if (ob != null) return 1;
+      return a.localeCompare(b, 'he');
+    });
+    return display.map(v => `
+      <div style="display:flex;align-items:center;gap:8px;padding:4px 6px;border-bottom:1px solid #f1f5f9;">
+        <input type="number" min="1" value="${sort.order[v] || ''}" placeholder="-"
+               onchange="_rep_setValueOrder(${idx}, '${_esc(v).replace(/'/g, "\\'")}', this.value)"
+               style="width:50px;padding:3px 5px;border:1px solid var(--border);border-radius:4px;text-align:center;">
+        <span style="flex:1;">${_esc(v)}</span>
+      </div>
+    `).join('');
+  };
+
+  pop.innerHTML = `
+    <div style="padding:12px 16px;border-bottom:1px solid var(--border);">
+      <div style="font-weight:700;color:var(--deep);">סדר ערכים — ${_esc(catLabel)}</div>
+      <div style="color:var(--muted);font-size:11px;margin-top:2px;">הקלד מספר ליד ערך כדי להעדיף אותו. הקלדת מספר קיים — דוחפת את האחרים למטה. ערכים ללא מספר — לפי אלף-בית בסוף.</div>
+    </div>
+    <div id="rep_order_rows" style="padding:8px 12px;overflow-y:auto;flex:1;">${renderRows()}</div>
+    <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;gap:8px;background:#f8fafc;">
+      <button class="cancel-btn" onclick="_rep_clearOrder(${idx})">🗑 נקה הכל</button>
+      <button class="apply-big" onclick="document.getElementById('rep_order_scrim').remove();" style="flex:1;">סיום</button>
+    </div>
+  `;
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+
+  // expose for re-render
+  pop._refresh = () => {
+    document.getElementById('rep_order_rows').innerHTML = renderRows();
+  };
+}
+
+function _rep_setValueOrder(idx, value, raw) {
+  const sort = REPORT_STATE.sorts[idx];
+  const n = parseInt(raw, 10);
+  if (!raw || isNaN(n) || n < 1) {
+    delete sort.order[value];
+  } else {
+    // אם הערך כבר בסדר — קודם נקה אותו
+    delete sort.order[value];
+    // דחוף כל מי שכרגע בערך n או יותר
+    Object.keys(sort.order).forEach(k => {
+      if (sort.order[k] >= n) sort.order[k] += 1;
+    });
+    sort.order[value] = n;
+    // נורמליזציה — סגור פערים (1,2,4 → 1,2,3)
+    const sorted = Object.entries(sort.order).sort((a, b) => a[1] - b[1]);
+    sort.order = {};
+    sorted.forEach(([k, _v], i) => { sort.order[k] = i + 1; });
+  }
+  // רענן את ה־popover
+  const pop = document.getElementById('rep_order_scrim')?.querySelector('div');
+  if (pop && pop._refresh) pop._refresh();
+}
+
+function _rep_clearOrder(idx) {
+  REPORT_STATE.sorts[idx].order = {};
+  const pop = document.getElementById('rep_order_scrim')?.querySelector('div');
+  if (pop && pop._refresh) pop._refresh();
+}
+
+async function _rep_savePreference() {
+  const name = prompt('שם להעדפה הזו:');
+  if (!name || !name.trim()) return;
+  const shared = confirm('לשתף עם כל המנהלים?\n\nאישור = משותפת. ביטול = רק לך.');
+  const { error } = await sb.from('report_preferences').insert({
+    user_id: CURRENT_USER.id,
+    name: name.trim(),
+    config: {
+      baseViewId: REPORT_STATE.baseViewId,
+      sorts: REPORT_STATE.sorts,
+      separateBy: REPORT_STATE.separateBy,
+      showChart: REPORT_STATE.showChart,
+    },
+    is_shared: shared,
+  });
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  await _loadReportPrefs();
+  _rep_renderBody();
+  toast('נשמר ✓');
+}
+
+function _rep_loadPreference(id) {
+  if (!id) return;
+  const prefs = _reportPrefsCache || [];
+  const p = prefs.find(x => x.id === parseInt(id, 10));
+  if (!p) return;
+  const c = p.config || {};
+  REPORT_STATE.baseViewId  = c.baseViewId ?? null;
+  REPORT_STATE.sorts       = (c.sorts && c.sorts.length === 3) ? c.sorts : [{cat:'',order:{}},{cat:'',order:{}},{cat:'',order:{}}];
+  REPORT_STATE.separateBy  = c.separateBy || 'none';
+  REPORT_STATE.showChart   = !!c.showChart;
+  _rep_renderBody();
+  toast(`נטענה העדפה: ${p.name}`);
+}
+
+// ============================================================
+// הפקת PDF — דוח לוועדה
+// ============================================================
+async function _rep_generate(action /* 'download' | 'print' */) {
+  try {
+    const closeBtn = document.querySelector('#rep_scrim .apply-big');
+    if (closeBtn) { closeBtn.disabled = true; closeBtn.textContent = 'מייצר...'; }
+
+    // החל את הבסיס אם נבחרה תצוגה שמורה (זמני — נחזיר state אחרי)
+    let savedState = null;
+    if (REPORT_STATE.baseViewId !== null) {
+      savedState = getCurrentFilterState();
+      const view = getSavedViews().find(v => v.id === REPORT_STATE.baseViewId);
+      if (view) applyFilterState(view.state);
+    }
+
+    // בנה את הדאטה — VIEW הוא כבר אחרי פילטרים, נמיין מחדש לפי REPORT_STATE.sorts
+    const rows = _rep_sortRows([...(VIEW || [])]);
+
+    // חלק לסקציות
+    const sections = _rep_splitSections(rows);
+
+    // ייצור PDF
+    const pdf = await _rep_buildPDF(sections);
+
+    // החזר state אם שונה
+    if (savedState) applyFilterState(savedState);
+
+    if (action === 'download') {
+      const ts = new Date().toISOString().slice(0, 10);
+      pdf.save(`דוח-ועדה-${ts}.pdf`);
+    } else {
+      // הצג בכרטיסיית דפדפן חדשה — המשתמש לוחץ הדפס
+      window.open(pdf.output('bloburl'), '_blank');
+    }
+
+    if (closeBtn) { closeBtn.disabled = false; closeBtn.textContent = '📄 הורד PDF'; }
+  } catch (e) {
+    console.error('report generate failed:', e);
+    alert('שגיאה ביצירת הדוח: ' + (e.message || e));
+    const closeBtn = document.querySelector('#rep_scrim .apply-big');
+    if (closeBtn) { closeBtn.disabled = false; closeBtn.textContent = '📄 הורד PDF'; }
+  }
+}
+
+function _rep_sortRows(rows) {
+  // מיון מולטי־רמתי לפי REPORT_STATE.sorts, ואז שם מלא
+  const activeSorts = REPORT_STATE.sorts.filter(s => s.cat);
+  rows.sort((a, b) => {
+    for (const s of activeSorts) {
+      const va = a[s.cat] || '';
+      const vb = b[s.cat] || '';
+      if (va === vb) continue;
+      const oa = s.order[va];
+      const ob = s.order[vb];
+      // ערכים עם order ממוספר → קודמים ללא order; בין הממוספרים — קטן קודם
+      if (oa != null && ob != null) return oa - ob;
+      if (oa != null) return -1;
+      if (ob != null) return 1;
+      // שניהם ללא order → אלף-בית
+      return va.localeCompare(vb, 'he');
+    }
+    // tiebreak: שם מלא
+    const na = `${a.family_name || ''} ${a.first_name || ''}`.trim();
+    const nb = `${b.family_name || ''} ${b.first_name || ''}`.trim();
+    return na.localeCompare(nb, 'he');
+  });
+  return rows;
+}
+
+function _rep_splitSections(rows) {
+  // החזרה: array של {title, rows}
+  if (REPORT_STATE.separateBy === 'none') {
+    return [{ title: '', rows }];
+  }
+  const field = REPORT_STATE.separateBy === 'seminar' ? 'placement_seminar' : 'sector';
+  // קבץ
+  const groups = {};
+  rows.forEach(r => {
+    const k = r[field] || '— ללא —';
+    if (!groups[k]) groups[k] = [];
+    groups[k].push(r);
+  });
+  // מיון הקבוצות — לפי order של מיון 1 אם הקטגוריה מתאימה, אחרת אלף-בית
+  const firstSort = REPORT_STATE.sorts.find(s => s.cat === field);
+  const keys = Object.keys(groups).sort((a, b) => {
+    if (firstSort) {
+      const oa = firstSort.order[a];
+      const ob = firstSort.order[b];
+      if (oa != null && ob != null) return oa - ob;
+      if (oa != null) return -1;
+      if (ob != null) return 1;
+    }
+    return a.localeCompare(b, 'he');
+  });
+  return keys.map(k => ({ title: k, rows: groups[k] }));
+}
+
+// בנה תוכן תא לעמודה — טיפול מיוחד למוסדות אחים
+function _rep_cellText(r, col) {
+  // מוסדות אחים — אגרגציה: שם מוסד + כמות, אלף-בית, שורה לכל מוסד
+  if (col.key === 'sibling_inst_display' || col.siblings) {
+    const names = r.sibling_institutions || [];
+    if (!names.length) return '—';
+    const counts = {};
+    names.forEach(n => { counts[n] = (counts[n] || 0) + 1; });
+    return Object.entries(counts)
+      .sort((a, b) => a[0].localeCompare(b[0], 'he'))
+      .map(([n, c]) => `${n} - ${c}`)
+      .join('\n');
+  }
+  const v = r[col.key];
+  if (v == null) return '';
+  if (Array.isArray(v)) return v.join(', ');
+  return String(v);
+}
+
+async function _rep_buildPDF(sections) {
+  // jsPDF — Landscape A4: 297mm × 210mm
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+  await embedDavidFont(pdf);
+
+  const PAGE_W = 297, PAGE_H = 210;
+  const MARGIN = 10;
+  const usableW = PAGE_W - MARGIN * 2;
+  const HEADER_H = 14;          // מקום לכותרת
+  const FOOTER_H = 8;           // מקום לפוטר
+  const TABLE_TOP = MARGIN + HEADER_H;
+  const TABLE_BOTTOM = PAGE_H - MARGIN - FOOTER_H;
+
+  // עמודות מהתצוגה הנוכחית (הבסיס כבר הוחל אם נצרך)
+  const cols = COLS.filter(c => c.visible);
+  if (!cols.length) throw new Error('אין עמודות נראות בתצוגה');
+
+  // חשב רוחבי עמודות אוטומטית
+  pdf.setFont('David', 'normal');
+  pdf.setFontSize(9);
+
+  function textW(s) {
+    if (!s) return 0;
+    return pdf.getTextWidth(s);
+  }
+
+  // לכל עמודה — מצא את הטקסט הכי רחב (כולל כותרת); תן רוחב טבעי + padding
+  const PADDING_X = 4;   // מ"מ — padding בכל צד
+  const MIN_W = 12;
+  const MAX_W = 70;      // גג לעמודה אחת
+
+  // אגרגציה של תכני התאים — נחשב לפעם אחת כדי לחשב רוחב + לרנדר
+  const allRows = sections.flatMap(s => s.rows);
+  const cellTextCache = new Map();  // row.id+colKey → text
+  function getCellText(r, col) {
+    const key = (r.id || r.national_id || '') + '|' + col.key;
+    if (cellTextCache.has(key)) return cellTextCache.get(key);
+    const t = _rep_cellText(r, col);
+    cellTextCache.set(key, t);
+    return t;
+  }
+
+  const naturalW = cols.map(col => {
+    let maxLine = textW(col.label);
+    for (const r of allRows) {
+      const text = getCellText(r, col);
+      text.split('\n').forEach(line => {
+        const w = textW(line);
+        if (w > maxLine) maxLine = w;
+      });
+    }
+    return Math.min(MAX_W, Math.max(MIN_W, maxLine + PADDING_X * 2));
+  });
+
+  let totalW = naturalW.reduce((a, b) => a + b, 0);
+
+  // אם רחב מדי — צמצם את ה"גמישות": מוסדות אחים והערה
+  const flexibleKeys = new Set(['sibling_inst_display', 'notes', 'placement_note']);
+  if (totalW > usableW) {
+    const overflow = totalW - usableW;
+    const flexIndices = cols.map((c, i) => flexibleKeys.has(c.key) || c.siblings ? i : -1).filter(i => i >= 0);
+    if (flexIndices.length > 0) {
+      // הורד בצורה פרופורציונלית מהעמודות הגמישות (לא מתחת ל־MIN_W)
+      const flexTotal = flexIndices.reduce((s, i) => s + naturalW[i], 0);
+      flexIndices.forEach(i => {
+        const share = (naturalW[i] / flexTotal) * overflow;
+        naturalW[i] = Math.max(MIN_W, naturalW[i] - share);
+      });
+      totalW = naturalW.reduce((a, b) => a + b, 0);
+    }
+    // אם עדיין רחב — צמצם הכל פרופורציונלית
+    if (totalW > usableW) {
+      const ratio = usableW / totalW;
+      for (let i = 0; i < naturalW.length; i++) {
+        naturalW[i] = Math.max(MIN_W, naturalW[i] * ratio);
+      }
+    }
+  }
+
+  // עכשיו cols עם רוחב סופי
+  const colW = naturalW;
+  const finalTableW = colW.reduce((a, b) => a + b, 0);
+  // ממורכז על הדף
+  const tableLeftX = MARGIN + (usableW - finalTableW) / 2;
+
+  // ===== Helpers per page =====
+  const headerDate = formatHebrewDateFull(new Date());
+
+  function drawPageHeader(sectionTitle, sectionRowCount) {
+    pdf.setFont('David', 'bold');
+    pdf.setFontSize(14);
+    // כותרת בצד ימין
+    pdf.text(bidi(`ועדת רבנים — ${headerDate}`), PAGE_W - MARGIN, MARGIN + 5, { align: 'right' });
+    if (sectionTitle) {
+      pdf.setFontSize(12);
+      pdf.setTextColor(30, 58, 138);
+      pdf.text(bidi(`${sectionTitle} — ${sectionRowCount} ${sectionRowCount === 1 ? 'בת' : 'בנות'}`), PAGE_W - MARGIN, MARGIN + 11, { align: 'right' });
+      pdf.setTextColor(0, 0, 0);
+    }
+    // קו תחתון
+    pdf.setDrawColor(180);
+    pdf.setLineWidth(0.3);
+    pdf.line(MARGIN, MARGIN + HEADER_H - 1, PAGE_W - MARGIN, MARGIN + HEADER_H - 1);
+  }
+
+  function drawPageFooter(pageNum, totalPages) {
+    pdf.setFont('David', 'normal');
+    pdf.setFontSize(10);
+    pdf.setTextColor(100);
+    pdf.text(`עמוד ${pageNum} / ${totalPages}`, PAGE_W / 2, PAGE_H - MARGIN - 1, { align: 'center' });
+    pdf.setTextColor(0, 0, 0);
+  }
+
+  function drawTableHeader(yTop) {
+    pdf.setFont('David', 'bold');
+    pdf.setFontSize(9.5);
+    pdf.setDrawColor(30, 58, 138);
+    pdf.setLineWidth(0.4);
+    pdf.setFillColor(219, 234, 254);
+    const HEAD_H = 7;
+    pdf.rect(tableLeftX, yTop, finalTableW, HEAD_H, 'FD');
+    let x = tableLeftX;
+    // ציור מימין לשמאל — נציג את העמודה הראשונה (cols[0]) בקצה הימני
+    for (let i = cols.length - 1; i >= 0; i--) {
+      const w = colW[i];
+      if (i > 0) pdf.line(x + w, yTop, x + w, yTop + HEAD_H);
+      pdf.text(bidi(cols[i].label || ''), x + w / 2, yTop + 4.8, { align: 'center' });
+      x += w;
+    }
+    return yTop + HEAD_H;
+  }
+
+  // חישוב גובה שורה לפי wrap (עברית)
+  function rowHeight(r) {
+    let maxLines = 1;
+    for (let i = 0; i < cols.length; i++) {
+      const text = getCellText(r, cols[i]);
+      const lines = text.split('\n');
+      let countLines = 0;
+      lines.forEach(line => {
+        const wrapped = pdf.splitTextToSize(line, colW[i] - PADDING_X);
+        countLines += wrapped.length;
+      });
+      if (countLines > maxLines) maxLines = countLines;
+    }
+    return Math.max(6, 3 + maxLines * 4);   // 4mm per line + 3 padding
+  }
+
+  function drawRow(r, yTop) {
+    const rh = rowHeight(r);
+    pdf.setFont('David', 'normal');
+    pdf.setFontSize(9);
+    // גבולות + תאים
+    pdf.setDrawColor(180);
+    pdf.setLineWidth(0.2);
+    let x = tableLeftX;
+    for (let i = cols.length - 1; i >= 0; i--) {
+      const w = colW[i];
+      if (i > 0) pdf.line(x + w, yTop, x + w, yTop + rh);
+      const text = getCellText(r, cols[i]);
+      const lines = text.split('\n').flatMap(l => pdf.splitTextToSize(l, w - PADDING_X));
+      lines.forEach((line, li) => {
+        // ניחוש: אם כל התווים בטקסט הם ספרות/לטיניים → ללא bidi
+        const looksHe = /[֐-׿]/.test(line);
+        const yy = yTop + 4 + li * 4;
+        if (looksHe) pdf.text(bidi(line), x + w / 2, yy, { align: 'center' });
+        else         pdf.text(line,       x + w / 2, yy, { align: 'center' });
+      });
+      x += w;
+    }
+    // תחתית
+    pdf.line(tableLeftX, yTop + rh, tableLeftX + finalTableW, yTop + rh);
+    return rh;
+  }
+
+  // === ציור עוגה לפי שיוך ===
+  function drawSectorPie(rows, centerX, centerY, radius) {
+    const counts = {};
+    rows.forEach(r => {
+      const k = r.sector || '— ללא שיוך —';
+      counts[k] = (counts[k] || 0) + 1;
+    });
+    const total = rows.length;
+    if (total === 0) return;
+    const entries = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+    const colors = [
+      [59, 130, 246],   // כחול
+      [16, 185, 129],   // ירוק
+      [245, 158, 11],   // ענבר
+      [239, 68, 68],    // אדום
+      [139, 92, 246],   // סגול
+      [107, 114, 128],  // אפור
+    ];
+
+    // צייר עוגה כסקטורים בעזרת canvas → image
+    const canvas = document.createElement('canvas');
+    const size = 300;
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    let start = -Math.PI / 2;
+    entries.forEach(([k, n], i) => {
+      const angle = (n / total) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.moveTo(size/2, size/2);
+      ctx.arc(size/2, size/2, size/2 - 4, start, start + angle);
+      ctx.closePath();
+      const [r,g,b] = colors[i % colors.length];
+      ctx.fillStyle = `rgb(${r},${g},${b})`;
+      ctx.fill();
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      start += angle;
+    });
+    const dataUrl = canvas.toDataURL('image/png');
+    const diam = radius * 2;
+    pdf.addImage(dataUrl, 'PNG', centerX - radius, centerY - radius, diam, diam);
+
+    // מקרא
+    pdf.setFont('David', 'normal');
+    pdf.setFontSize(9);
+    let ly = centerY - radius;
+    entries.forEach(([k, n], i) => {
+      const [r,g,b] = colors[i % colors.length];
+      pdf.setFillColor(r, g, b);
+      pdf.rect(centerX + radius + 6, ly, 4, 4, 'F');
+      const pct = Math.round((n / total) * 100);
+      pdf.text(bidi(`${k} — ${n} (${pct}%)`), centerX + radius + 12, ly + 3.5);
+      ly += 6;
+    });
+  }
+
+  // ===== ציור כל סקציה =====
+  // קודם נחשב את העמודים לכל סקציה — לצורך הפוטר X/Y
+  // לוקח 2 מעברים: ראשון לחישוב פגינציה, שני לציור בפועל
+  // הגישה הפשוטה: לא מודדים מראש, אלא מציירים ובסוף עוברים שוב להוסיף את הפוטרים.
+  // עם jsPDF, נשנה את העמוד לאחור בעזרת setPage().
+
+  const pageMap = [];   // [{section, pageIdxInSection, totalPagesInSection}]
+  let isFirstPage = true;
+
+  for (let si = 0; si < sections.length; si++) {
+    const section = sections[si];
+    let pageOfSection = 1;
+    if (!isFirstPage) pdf.addPage();
+    isFirstPage = false;
+    drawPageHeader(section.title, section.rows.length);
+    let y = drawTableHeader(TABLE_TOP);
+
+    let pageStartIdx = pageMap.length;
+    pageMap.push({ sectionIdx: si, page: pageOfSection });
+
+    for (let ri = 0; ri < section.rows.length; ri++) {
+      const r = section.rows[ri];
+      const rh = rowHeight(r);
+      if (y + rh > TABLE_BOTTOM) {
+        // עמוד חדש
+        pdf.addPage();
+        pageOfSection++;
+        drawPageHeader(section.title, section.rows.length);
+        y = drawTableHeader(TABLE_TOP);
+        pageMap.push({ sectionIdx: si, page: pageOfSection });
+      }
+      drawRow(r, y);
+      y += rh;
+    }
+
+    // תרשים בסוף הסקציה (אם הופעל)
+    if (REPORT_STATE.showChart) {
+      // בדוק אם יש מקום בעמוד הנוכחי; אחרת עמוד חדש
+      const CHART_H = 60;
+      if (y + 10 + CHART_H > TABLE_BOTTOM) {
+        pdf.addPage();
+        pageOfSection++;
+        drawPageHeader(section.title, section.rows.length);
+        y = TABLE_TOP;
+        pageMap.push({ sectionIdx: si, page: pageOfSection });
+      }
+      const chartCenterX = PAGE_W / 2;
+      const chartCenterY = y + 5 + 25;
+      drawSectorPie(section.rows, chartCenterX, chartCenterY, 22);
+    }
+
+    // עדכן את total pages לסקציה (לפוטר)
+    for (let k = pageStartIdx; k < pageMap.length; k++) {
+      pageMap[k].totalInSection = pageOfSection;
+    }
+  }
+
+  // עכשיו עבור על כל עמוד והוסף פוטר
+  for (let p = 0; p < pageMap.length; p++) {
+    pdf.setPage(p + 1);
+    const info = pageMap[p];
+    drawPageFooter(info.page, info.totalInSection);
+  }
+
+  return pdf;
+}
+
+// ============================================================
+
+// מעביר את כפתורי "עמודות" ו"דוח" לפי overflow אמיתי ב־.filters
 function arrangeResponsiveHeader() {
   const btnCols = document.getElementById('btn_cols');
-  const btnProbs = document.getElementById('btn_problems');
+  const btnReport = document.getElementById('btn_report');
   const filters = document.querySelector('.filters');
   const hdrBottom = document.querySelector('.hdr-bottom');
   const colPicker = document.getElementById('col_picker');
-  if (!btnCols || !btnProbs || !filters || !hdrBottom || !colPicker) return;
+  if (!btnCols || !btnReport || !filters || !hdrBottom || !colPicker) return;
 
   // במובייל תמיד מעבירים — אין עצם דיון על זה
   const isMobile = window.innerWidth <= 640;
 
   // קודם מחזירים למקום הטבעי (.filters) כדי למדוד
   if (btnCols.parentElement !== filters) filters.insertBefore(btnCols, colPicker);
-  if (btnProbs.parentElement !== filters) filters.insertBefore(btnProbs, colPicker);
+  if (btnReport.parentElement !== filters) filters.insertBefore(btnReport, colPicker);
 
   // בודק אם יש wrap — איזשהו פריט שיורד לשורה השנייה
   const items = Array.from(filters.children).filter(el => !el.classList.contains('popover'));
@@ -9955,7 +10599,7 @@ function arrangeResponsiveHeader() {
 
   if (isMobile || wrapped) {
     hdrBottom.appendChild(btnCols);
-    hdrBottom.appendChild(btnProbs);
+    hdrBottom.appendChild(btnReport);
   }
 }
 
