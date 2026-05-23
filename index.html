@@ -10777,21 +10777,26 @@ async function _rep_buildPDF(sections) {
 
 // ============================================================
 
-// מעביר את כפתורי "עמודות" ו"דוח" לפי overflow אמיתי ב־.filters
+// מעביר את כפתור "עמודות" (בלבד) ל־hdr-bottom כשהסינונים מתרחבים.
+// "דוח לוועדה" נשאר תמיד בשורת הסינונים כדי שלא ייעלם מהעין כשנטענת תצוגה
+// שמורה עם הרבה טקסט בצ'יפים (לבקשת המשתמש 2026-05-24).
 function arrangeResponsiveHeader() {
   const btnCols = document.getElementById('btn_cols');
   const btnReport = document.getElementById('btn_report');
   const filters = document.querySelector('.filters');
   const hdrBottom = document.querySelector('.hdr-bottom');
   const colPicker = document.getElementById('col_picker');
-  if (!btnCols || !btnReport || !filters || !hdrBottom || !colPicker) return;
+  if (!btnCols || !filters || !hdrBottom || !colPicker) return;
 
-  // במובייל תמיד מעבירים — אין עצם דיון על זה
   const isMobile = window.innerWidth <= 640;
 
-  // קודם מחזירים למקום הטבעי (.filters) כדי למדוד
+  // ודא ש־btn_report תמיד ב־filters (לעולם לא ב־hdr-bottom)
+  if (btnReport && btnReport.parentElement !== filters) {
+    filters.insertBefore(btnReport, colPicker);
+  }
+
+  // btn_cols מתחיל ב־filters לצורך מדידה
   if (btnCols.parentElement !== filters) filters.insertBefore(btnCols, colPicker);
-  if (btnReport.parentElement !== filters) filters.insertBefore(btnReport, colPicker);
 
   // בודק אם יש wrap — איזשהו פריט שיורד לשורה השנייה
   const items = Array.from(filters.children).filter(el => !el.classList.contains('popover'));
@@ -10800,8 +10805,7 @@ function arrangeResponsiveHeader() {
   const wrapped = items.some(el => el.offsetTop > firstTop + 5);
 
   if (isMobile || wrapped) {
-    hdrBottom.appendChild(btnCols);
-    hdrBottom.appendChild(btnReport);
+    hdrBottom.appendChild(btnCols);   // רק btn_cols עובר; btn_report נשאר
   }
 }
 
