@@ -10607,27 +10607,15 @@ async function _rep_buildPDF(sections) {
   }
 
   // === שורת כותרת בסגנון inline (לסמינרים ברצף) ===
-  // קופסה קטנה במרכז עם מסגרת מעוגלת — לא חוצה את כל רוחב הטבלה
+  // עיצוב זהה לכותרת הסקציה ב"סמינרים בנפרד": טקסט בולט במרכז, בלי קופסה.
   function drawInlineSectionHeader(title, count, yTop) {
-    const H = 8;
+    const H = 7;
     pdf.setFont('David', 'bold');
-    pdf.setFontSize(11);
-    // סה"כ למוסד = כל הבנות שמשובצות לסמינר הזה ב־ROWS (כולל מה שלא בדוח)
+    pdf.setFontSize(12);
+    pdf.setTextColor(30, 58, 138);     // כחול כהה
     const totalAtInst = (ROWS || []).filter(r => r.placement_seminar === title).length;
     const text = `${title} — ${count} בנות לשיבוץ (סה"כ למוסד ${totalAtInst} בנות)`;
-    const tw = pdf.getTextWidth(text);
-    const PAD = 5;
-    const boxW = tw + PAD * 2;
-    const boxX = PAGE_W / 2 - boxW / 2;
-
-    // קופסה: רקע בהיר + מסגרת כחולה דקה, פינות מעוגלות
-    pdf.setFillColor(248, 250, 252);   // #f8fafc — אפור בהיר מאוד
-    pdf.setDrawColor(30, 58, 138);     // מסגרת כחול כהה
-    pdf.setLineWidth(0.4);
-    pdf.roundedRect(boxX, yTop, boxW, H, 2, 2, 'FD');
-
-    pdf.setTextColor(30, 58, 138);
-    pdf.text(bidi(text), PAGE_W / 2, yTop + 5.5, { align: 'center' });
+    pdf.text(bidi(text), PAGE_W / 2, yTop + 5, { align: 'center' });
     pdf.setTextColor(0, 0, 0);
     return H;
   }
@@ -10648,9 +10636,9 @@ async function _rep_buildPDF(sections) {
       const section = sections[si];
       if (!section.rows.length) continue;
 
-      // כותרת inline לכל סקציה — כולל הראשונה (כדי שיהיה לעין על מה היא מסתכלת)
-      const GAP_BEFORE = (si > 0) ? 4 : 2;   // רווח קל לפני הכותרת
-      const INLINE_H = 8;
+      // כותרת inline לכל סקציה — כולל הראשונה. עיצוב כמו בכותרת "סמינרים בנפרד".
+      const GAP_BEFORE = (si > 0) ? 5 : 1;   // אחרי סקציה קודמת — קצת רווח לעין
+      const INLINE_H = 7;
       const firstRowH = rowHeight(section.rows[0]);
       // smart break — אם אין מקום לרווח + כותרת + לפחות שורה אחת → עמוד חדש
       if (y + GAP_BEFORE + INLINE_H + firstRowH > TABLE_BOTTOM) {
