@@ -10509,14 +10509,16 @@ async function _rep_buildPDF(sections) {
   }
 
   // === ציור עוגה לפי שיוך ===
-  // sectionInfo: { groupingField, groupingValue, fallbackRows }
-  //   - groupingField/groupingValue set → השתמש בכל הבנות בקבוצה הזו (מ־ROWS, בלי
-  //     סינוני הדוח). מטרה: הצגת תמונה מלאה של הסמינר, לא רק הסינון.
-  //   - אחרת → השתמש ב־fallbackRows (אלה שבדוח עצמו).
+  // sectionInfo:
+  //   { groupingField, groupingValue } → כל הבנות בקבוצה (לדוג' כל הסמינר)
+  //   { useAllRows: true }             → כל האוכלוסייה במערכת
+  //   { fallbackRows }                 → סט מסויים שכבר חושב (לא בשימוש כעת)
   function drawSectorPie(sectionInfo, centerX, centerY, radius) {
     let rows;
     if (sectionInfo.groupingField && sectionInfo.groupingValue) {
       rows = (ROWS || []).filter(r => r[sectionInfo.groupingField] === sectionInfo.groupingValue);
+    } else if (sectionInfo.useAllRows) {
+      rows = ROWS || [];
     } else {
       rows = sectionInfo.fallbackRows || [];
     }
@@ -10624,17 +10626,17 @@ async function _rep_buildPDF(sections) {
       const chartCenterY = y + 8 + 25;
 
       // בהפרדה לפי סמינר — העוגה מציגה את כל אוכלוסיית הסמינר (לא רק הסינון).
-      // בלי הפרדה — העוגה מציגה את הדוח עצמו.
+      // בלי הפרדה — תמונת מצב מלאה: כל האוכלוסייה במערכת.
       const sectionInfo = (REPORT_STATE.separateBy === 'seminar')
         ? { groupingField: 'placement_seminar', groupingValue: section.title }
-        : { fallbackRows: section.rows };
+        : { useAllRows: true };
 
       // תווית מעל העוגה
       pdf.setFont('David', 'bold');
       pdf.setFontSize(10);
       const pieLabel = (REPORT_STATE.separateBy === 'seminar')
         ? `התפלגות מלאה — ${section.title} (כל הבנות במוסד)`
-        : 'התפלגות לפי שיוך';
+        : `התפלגות לפי שיוך — כלל האוכלוסייה (${(ROWS || []).length} בנות)`;
       pdf.text(bidi(pieLabel), PAGE_W / 2, y + 6, { align: 'center' });
 
       drawSectorPie(sectionInfo, chartCenterX, chartCenterY, 22);
