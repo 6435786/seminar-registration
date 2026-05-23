@@ -10653,6 +10653,10 @@ async function _rep_buildPDF(sections) {
       }
       drawInlineSectionHeader(section.title, section.rows.length, y);
       y += INLINE_H;
+      // קו אופקי שמתחיל את הטבלה החדשה — כי לכותרת inline אין תחתית משלה
+      pdf.setDrawColor(150);
+      pdf.setLineWidth(0.25);
+      pdf.line(tableLeftX, y, tableLeftX + finalTableW, y);
       _zebraReset();   // אחרי כותרת סמינר — להתחיל לבן
 
       for (let ri = 0; ri < section.rows.length; ri++) {
