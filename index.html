@@ -9021,12 +9021,8 @@ async function deleteUser(email) {
   openManageUsers();
 }
 
-// כפתור "דוח לוועדה" — בשלב פיתוח: רק super_admin רואה.
+// כפתור "דוח לוועדה" — זמין לכל ההרשאות פרט ל־viewer.
 document.getElementById('btn_report').addEventListener('click', () => {
-  if (!isSuperAdmin()) {
-    alert('הדוח בשלב פיתוח — זמין כרגע רק למנהל הראשי.');
-    return;
-  }
   openCommitteeReport();
 });
 
@@ -9642,10 +9638,9 @@ function applyRoleVisibility() {
     hide('btn_hdr_email');
   }
 
-  // "דוח לוועדה" — בשלב פיתוח (2026-05-24). זמין רק ל־super_admin.
-  // אחרי ייצוב — להחליף ל־isAdmin() כדי לפתוח לכל המנהלים.
-  // הכפתור גלוי בברירת מחדל; אם לא super_admin → מסתיר.
-  if (!isSuperAdmin()) {
+  // "דוח לוועדה" — זמין לכל ההרשאות פרט ל־viewer.
+  // הכפתור גלוי בברירת מחדל; אם המשתמש viewer → מסתיר.
+  if (r === 'viewer') {
     hide('btn_report');
   }
 
