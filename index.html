@@ -9483,6 +9483,8 @@ function getCurrentFilterState() {
     filters: {},
     colFilters: {},
     sortKey, sortDir,
+    // עמודות גלויות + סדר — נשמרות לתצוגות שמורות (תוקן 2026-05-24)
+    columns: COLS.map(c => ({ key: c.key, visible: !!c.visible })),
   };
   Object.entries(FILTER_STATE).forEach(([k, v]) => { out.filters[k] = [...v]; });
   Object.entries(COL_FILTERS).forEach(([k, v]) => { out.colFilters[k] = [...(v || [])]; });
@@ -9502,9 +9504,31 @@ function applyFilterState(state) {
   });
   if (state.sortKey) sortKey = state.sortKey;
   if (state.sortDir) sortDir = state.sortDir;
+  // החזרת מצב עמודות (תאימות לאחור: תצוגות ישנות בלי שדה columns — לא משנות עמודות)
+  if (Array.isArray(state.columns) && state.columns.length) {
+    const byKey = {};
+    COLS.forEach(c => { byKey[c.key] = c; });
+    const seen = new Set();
+    const reordered = [];
+    // קודם — עמודות לפי הסדר השמור
+    state.columns.forEach(s => {
+      const c = byKey[s.key];
+      if (c) {
+        c.visible = !!s.visible;
+        reordered.push(c);
+        seen.add(c.key);
+      }
+    });
+    // עמודות חדשות שלא היו בתצוגה השמורה — מוסיף בסוף עם ברירת המחדל שלהן
+    COLS.forEach(c => { if (!seen.has(c.key)) reordered.push(c); });
+    COLS = reordered;
+    saveColPrefs(COLS);
+    // רענון תפריט בחירת עמודות אם הוא קיים
+    if (typeof renderColPicker === 'function') renderColPicker();
+  }
   document.querySelectorAll('.ms-wrap').forEach(w => w._updateBtn && w._updateBtn());
   renderHeader();
-  applyFilters();
+  applyFilters();  // קורא ל־render() בסוף
 }
 
 async function openViewsPicker(btn, pop) {
