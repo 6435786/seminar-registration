@@ -10444,10 +10444,7 @@ async function _rep_buildPDF(sections) {
       pdf.text(bidi(`${sectionTitle} — ${sectionRowCount} ${sectionRowCount === 1 ? 'בת' : 'בנות'}`), PAGE_W / 2, MARGIN + 11, { align: 'center' });
       pdf.setTextColor(0, 0, 0);
     }
-    // קו תחתון
-    pdf.setDrawColor(180);
-    pdf.setLineWidth(0.3);
-    pdf.line(MARGIN, MARGIN + HEADER_H - 1, PAGE_W - MARGIN, MARGIN + HEADER_H - 1);
+    // אין קו אופקי נפרד — הטבלה עצמה ממוסגרת
   }
 
   function drawPageFooter(pageNum, totalPages) {
@@ -10492,29 +10489,26 @@ async function _rep_buildPDF(sections) {
     return Math.max(6, 2.5 + maxLines * 4);   // 4mm per line + 2.5 padding
   }
 
+  // מונה שורות שצויירו — לזברה לפי שורות
+  let _zebraIdx = 0;
+  function _zebraReset() { _zebraIdx = 0; }
+
   function drawRow(r, yTop) {
     const rh = rowHeight(r);
     pdf.setFont('David', 'normal');
     pdf.setFontSize(9);
 
-    // === Zebra striping: גוון בהיר על עמודות זוגיות ===
-    // ציור הרקעים תחילה — אחרת מכסים את הקווים והטקסט
-    let x = tableLeftX;
-    for (let i = cols.length - 1; i >= 0; i--) {
-      const w = colW[i];
-      // הסדר הוויזואלי מימין: i=last → ימין; כל עמודה שנייה → גוון
-      const visualIdx = cols.length - 1 - i;
-      if (visualIdx % 2 === 1) {
-        pdf.setFillColor(241, 245, 249);   // #f1f5f9 — אפור בהיר עדין
-        pdf.rect(x, yTop, w, rh, 'F');
-      }
-      x += w;
+    // === Zebra striping לפי שורות זוגיות ===
+    if (_zebraIdx % 2 === 1) {
+      pdf.setFillColor(241, 245, 249);   // #f1f5f9 — אפור בהיר עדין
+      pdf.rect(tableLeftX, yTop, finalTableW, rh, 'F');
     }
+    _zebraIdx++;
 
-    // === מסגרת חיצונית + קווים אנכיים בין עמודות + תוכן ===
+    // === קווים אנכיים בין עמודות + תוכן ===
     pdf.setDrawColor(150);
     pdf.setLineWidth(0.25);
-    x = tableLeftX;
+    let x = tableLeftX;
     for (let i = cols.length - 1; i >= 0; i--) {
       const w = colW[i];
       if (i > 0) pdf.line(x + w, yTop, x + w, yTop + rh);
@@ -10528,7 +10522,7 @@ async function _rep_buildPDF(sections) {
       });
       x += w;
     }
-    // קו תחתון של השורה + קווים אנכיים בקצוות (מסגרת חיצונית)
+    // קו תחתון של השורה + מסגרת חיצונית בקצוות
     pdf.line(tableLeftX, yTop + rh, tableLeftX + finalTableW, yTop + rh);
     pdf.line(tableLeftX, yTop, tableLeftX, yTop + rh);                              // קצה ימין
     pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + rh);  // קצה שמאל
@@ -10631,6 +10625,7 @@ async function _rep_buildPDF(sections) {
     let pageNum = 1;
     drawPageHeader('', 0);   // בלי כותרת סקציה — כי זה רצף
     let y = drawTableHeader(TABLE_TOP);
+    _zebraReset();
     pageMap.push({ sectionIdx: 0, page: pageNum });
 
     for (let si = 0; si < sections.length; si++) {
@@ -10647,10 +10642,12 @@ async function _rep_buildPDF(sections) {
           pageNum++;
           drawPageHeader('', 0);
           y = drawTableHeader(TABLE_TOP);
+          _zebraReset();
           pageMap.push({ sectionIdx: si, page: pageNum });
         }
         drawInlineSectionHeader(section.title, section.rows.length, y);
         y += INLINE_H;
+        _zebraReset();   // אחרי כותרת סמינר — להתחיל לבן
       }
 
       for (let ri = 0; ri < section.rows.length; ri++) {
@@ -10661,6 +10658,7 @@ async function _rep_buildPDF(sections) {
           pageNum++;
           drawPageHeader('', 0);
           y = drawTableHeader(TABLE_TOP);
+          _zebraReset();
           pageMap.push({ sectionIdx: si, page: pageNum });
         }
         drawRow(r, y);
@@ -10697,6 +10695,7 @@ async function _rep_buildPDF(sections) {
       isFirstPage = false;
       drawPageHeader(section.title, section.rows.length);
       let y = drawTableHeader(TABLE_TOP);
+      _zebraReset();
 
       let pageStartIdx = pageMap.length;
       pageMap.push({ sectionIdx: si, page: pageOfSection });
@@ -10709,6 +10708,7 @@ async function _rep_buildPDF(sections) {
           pageOfSection++;
           drawPageHeader(section.title, section.rows.length);
           y = drawTableHeader(TABLE_TOP);
+          _zebraReset();
           pageMap.push({ sectionIdx: si, page: pageOfSection });
         }
         drawRow(r, y);
