@@ -10599,20 +10599,24 @@ async function _rep_buildPDF(sections) {
   }
 
   // === שורת כותרת בסגנון inline (לסמינרים ברצף) ===
+  // גוון רך + טקסט "X בנות לשיבוץ (סה"כ למוסד Y בנות)"
   function drawInlineSectionHeader(title, count, yTop) {
     const H = 8;
-    pdf.setFillColor(30, 58, 138);   // כחול כהה
+    // רקע — תכלת עדין במקום הכחול הבוהק
+    pdf.setFillColor(219, 234, 254);   // #dbeafe
     pdf.rect(tableLeftX, yTop, finalTableW, H, 'F');
     pdf.setFont('David', 'bold');
     pdf.setFontSize(11);
-    pdf.setTextColor(255, 255, 255);
-    pdf.text(bidi(`${title} — ${count} ${count === 1 ? 'בת' : 'בנות'}`), PAGE_W / 2, yTop + 5.5, { align: 'center' });
+    pdf.setTextColor(30, 58, 138);     // טקסט בכחול כהה על רקע תכלת
+    // סה"כ למוסד = כל הבנות שמשובצות לסמינר הזה ב־ROWS (כולל מה שלא בדוח)
+    const totalAtInst = (ROWS || []).filter(r => r.placement_seminar === title).length;
+    const text = `${title} — ${count} בנות לשיבוץ (סה"כ למוסד ${totalAtInst} בנות)`;
+    pdf.text(bidi(text), PAGE_W / 2, yTop + 5.5, { align: 'center' });
     pdf.setTextColor(0, 0, 0);
-    // קווי מסגרת חיצוניים — כדי שיתחבר חלק לקצוות
+    // מסגרת
     pdf.setDrawColor(150);
     pdf.setLineWidth(0.25);
-    pdf.line(tableLeftX, yTop, tableLeftX, yTop + H);
-    pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + H);
+    pdf.rect(tableLeftX, yTop, finalTableW, H);
     return H;
   }
 
@@ -10632,18 +10636,22 @@ async function _rep_buildPDF(sections) {
       const section = sections[si];
       if (!section.rows.length) continue;
 
-      // בין סקציות — שורת כותרת inline (לא בראש הראשון)
+      // בין סקציות — קצת רווח + שורת כותרת inline (לא בראש הראשון)
       if (si > 0) {
+        const GAP_BEFORE = 4;       // רווח לפני הכותרת — נשימה לעין
         const INLINE_H = 8;
         const firstRowH = rowHeight(section.rows[0]);
-        // smart break — אם אין מקום לכותרת + לפחות שורה אחת → עמוד חדש
-        if (y + INLINE_H + firstRowH > TABLE_BOTTOM) {
+        // smart break — אם אין מקום לרווח + כותרת + לפחות שורה אחת → עמוד חדש
+        if (y + GAP_BEFORE + INLINE_H + firstRowH > TABLE_BOTTOM) {
           pdf.addPage();
           pageNum++;
           drawPageHeader('', 0);
           y = drawTableHeader(TABLE_TOP);
           _zebraReset();
           pageMap.push({ sectionIdx: si, page: pageNum });
+          // בעמוד חדש — בלי GAP מיותר; הכותרת מיד
+        } else {
+          y += GAP_BEFORE;
         }
         drawInlineSectionHeader(section.title, section.rows.length, y);
         y += INLINE_H;
