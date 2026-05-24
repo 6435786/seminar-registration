@@ -9884,6 +9884,7 @@ const REPORT_STATE = {
   separateBy: 'none',   // 'none' | 'seminar' | 'seminar_inline' | 'sector'
   showChart: false,
   noteField: false,     // שורת "הערה:" ריקה מתחת לכל בת — לכתיבה ידנית בוועדה
+  _selectedPrefId: null,// id של ההעדפה הנבחרת — לטובת כפתור המחיקה
 };
 
 let _reportPrefsCache = null;
@@ -9903,6 +9904,7 @@ async function openCommitteeReport() {
     separateBy: 'none',
     showChart: false,
     noteField: false,
+    _selectedPrefId: null,
   });
   // טען העדפות שמורות אם עוד לא נטענו
   if (_reportPrefsCache === null) await _loadReportPrefs();
@@ -9952,9 +9954,10 @@ function _rep_renderBody() {
         <span style="font-weight:600;color:var(--deep);font-size:13px;min-width:60px;">העדפה:</span>
         <select id="rep_pref_picker" onchange="_rep_loadPreference(this.value)" style="flex:1;min-width:160px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:13px;">
           <option value="">— ללא —</option>
-          ${prefs.map(p => `<option value="${p.id}">${_esc(p.name)}${p.user_id !== CURRENT_USER.id ? ' (משותפת)' : ''}</option>`).join('')}
+          ${prefs.map(p => `<option value="${p.id}" ${REPORT_STATE._selectedPrefId === p.id ? 'selected' : ''}>${_esc(p.name)}${p.user_id !== CURRENT_USER.id ? ' (משותפת)' : ''}</option>`).join('')}
         </select>
-        <button class="mini-btn" onclick="_rep_savePreference()" title="שומר את כל ההגדרות הנוכחיות כהעדפה חוזרת">💾 שמור</button>
+        ${REPORT_STATE._selectedPrefId ? `<button class="mini-btn" onclick="_rep_deleteSelectedPreference()" title="מחק את ההעדפה הנבחרת" style="color:#dc2626;">🗑</button>` : ''}
+        <button class="mini-btn" onclick="_rep_savePreference()" title="שומר את ההגדרות הנוכחיות. אם קיימת כבר העדפה באותו שם — תוצע לך דריסה.">💾 שמור</button>
       </div>
     </div>
 
@@ -10152,27 +10155,52 @@ function _rep_clearOrder(idx) {
 async function _rep_savePreference() {
   const name = prompt('שם להעדפה הזו:');
   if (!name || !name.trim()) return;
-  const shared = confirm('לשתף עם כל המנהלים?\n\nאישור = משותפת. ביטול = רק לך.');
-  const { error } = await sb.from('report_preferences').insert({
-    user_id: CURRENT_USER.id,
-    name: name.trim(),
-    config: {
-      baseViewId: REPORT_STATE.baseViewId,
-      sorts: REPORT_STATE.sorts,
-      separateBy: REPORT_STATE.separateBy,
-      showChart: REPORT_STATE.showChart,
-      noteField: REPORT_STATE.noteField,
-    },
-    is_shared: shared,
-  });
-  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
-  await _loadReportPrefs();
-  _rep_renderBody();
-  toast('נשמר ✓');
+  const trimmed = name.trim();
+  const config = {
+    baseViewId: REPORT_STATE.baseViewId,
+    sorts: REPORT_STATE.sorts,
+    separateBy: REPORT_STATE.separateBy,
+    showChart: REPORT_STATE.showChart,
+    noteField: REPORT_STATE.noteField,
+  };
+
+  // בדיקה אם כבר קיימת העדפה בשם הזה — אם כן, מציעים לדרוס
+  const existing = (_reportPrefsCache || []).find(p =>
+    p.name === trimmed && p.user_id === CURRENT_USER.id
+  );
+
+  if (existing) {
+    if (!confirm(`כבר קיימת העדפה בשם "${trimmed}". לדרוס אותה עם ההגדרות הנוכחיות?`)) return;
+    const { error } = await sb.from('report_preferences')
+      .update({ config, updated_at: new Date().toISOString() })
+      .eq('id', existing.id);
+    if (error) { toast('שגיאה בדריסה: ' + error.message, 'warn'); return; }
+    await _loadReportPrefs();
+    REPORT_STATE._selectedPrefId = existing.id;
+    _rep_renderBody();
+    toast('עודכן ✓');
+  } else {
+    const shared = confirm('לשתף עם כל המנהלים?\n\nאישור = משותפת. ביטול = רק לך.');
+    const { data, error } = await sb.from('report_preferences').insert({
+      user_id: CURRENT_USER.id,
+      name: trimmed,
+      config,
+      is_shared: shared,
+    }).select().single();
+    if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+    await _loadReportPrefs();
+    if (data && data.id) REPORT_STATE._selectedPrefId = data.id;
+    _rep_renderBody();
+    toast('נשמר ✓');
+  }
 }
 
 function _rep_loadPreference(id) {
-  if (!id) return;
+  if (!id) {
+    REPORT_STATE._selectedPrefId = null;
+    _rep_renderBody();
+    return;
+  }
   const prefs = _reportPrefsCache || [];
   const p = prefs.find(x => x.id === parseInt(id, 10));
   if (!p) return;
@@ -10185,8 +10213,26 @@ function _rep_loadPreference(id) {
   REPORT_STATE.separateBy  = c.separateBy || 'none';
   REPORT_STATE.showChart   = !!c.showChart;
   REPORT_STATE.noteField   = !!c.noteField;
+  REPORT_STATE._selectedPrefId = p.id;
   _rep_renderBody();
   toast(`נטענה העדפה: ${p.name}`);
+}
+
+async function _rep_deleteSelectedPreference() {
+  const id = REPORT_STATE._selectedPrefId;
+  if (!id) return;
+  const p = (_reportPrefsCache || []).find(x => x.id === id);
+  if (!p) return;
+  // הרשאות מחיקה: בעלים תמיד; אדמין יכול את כולן (לפי RLS).
+  // אם זו העדפה של מישהו אחר ואני לא אדמין — RLS ידחה. הכפתור עדיין מופיע אבל
+  // הניסיון יכשל בצורה ברורה.
+  if (!confirm(`למחוק את ההעדפה "${p.name}"?\n\nהפעולה לא ניתנת לביטול.`)) return;
+  const { error } = await sb.from('report_preferences').delete().eq('id', id);
+  if (error) { toast('שגיאה במחיקה: ' + error.message, 'warn'); return; }
+  REPORT_STATE._selectedPrefId = null;
+  await _loadReportPrefs();
+  _rep_renderBody();
+  toast('נמחקה');
 }
 
 // ============================================================
