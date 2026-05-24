@@ -6308,15 +6308,21 @@ async function openEmailComposer() {
     return;
   }
   // אתחל state
+  // טען ברירות מחדל של עותקים מהשליחה האחרונה (אם נשמרו)
+  let lastCopiesDefaults = {};
+  try { lastCopiesDefaults = JSON.parse(localStorage.getItem('ec_last_copies') || '{}'); }
+  catch (e) { lastCopiesDefaults = {}; }
+
   Object.assign(EC_STATE, {
     step: 1, template: null, recipients: [],
     statusFilters: ['ועדת רבנים'],
     _parentSemSet: null,       // Set של סמינרים מסומנים, null = יאותחל ל"הכל"
     _parentSel: null,          // בחירת בנות (Set של ids), null = יאותחל אוטומטית
     subject: '', bodyText: '',
-    cc: '', ccContacts: [],
-    bcc: localStorage.getItem('ec_bcc_default') || '',
-    bccContacts: [],
+    cc:          lastCopiesDefaults.cc          || '',
+    ccContacts:  Array.isArray(lastCopiesDefaults.ccContacts)  ? lastCopiesDefaults.ccContacts  : [],
+    bcc:         lastCopiesDefaults.bcc         || localStorage.getItem('ec_bcc_default') || '',
+    bccContacts: Array.isArray(lastCopiesDefaults.bccContacts) ? lastCopiesDefaults.bccContacts : [],
     letterDate: null,
     shortNote: '',             // איפוס בכל פתיחה — זה חד־פעמי, לא נשמר
     extraLetter: '',
@@ -7440,6 +7446,9 @@ async function _ec_send() {
     if (error) console.warn('email_send_log insert failed:', error.message);
   }
 
+  // שמירת ברירות מחדל לעותקים — לפתיחה הבאה
+  _ec_saveCopiesDefaults();
+
   toast(`✓ נוצרו ${ok} מיילים${fail ? ` (${fail} נכשלו)` : ''}`);
   document.getElementById('ec_scrim')?.remove();
 }
@@ -7606,6 +7615,9 @@ async function _ec_sendViaGmail() {
     }
   }
 
+  // שמירת ברירות מחדל לעותקים — לפתיחה הבאה של המודאל
+  _ec_saveCopiesDefaults();
+
   btn.disabled = false;
   btn.textContent = EC_STATE.testMode ? '🧪 שלח מייל נסיון' : '✉ שלח מיילים';
 
@@ -7614,6 +7626,22 @@ async function _ec_sendViaGmail() {
     document.getElementById('ec_scrim')?.remove();
   } else {
     alert(`⚠️ נשלחו ${ok}, נכשלו ${fail}.\n\nכישלונות:\n${failures.join('\n')}`);
+  }
+}
+
+// === שמירת ברירות מחדל של עותקים — לפתיחה הבאה ===
+// נקרא אחרי שליחה (Gmail או ZIP). שומר ב־localStorage את ה־CC/BCC הנוכחיים.
+function _ec_saveCopiesDefaults() {
+  try {
+    const data = {
+      cc:          EC_STATE.cc || '',
+      ccContacts:  EC_STATE.ccContacts || [],
+      bcc:         EC_STATE.bcc || '',
+      bccContacts: EC_STATE.bccContacts || [],
+    };
+    localStorage.setItem('ec_last_copies', JSON.stringify(data));
+  } catch (e) {
+    console.warn('save copies defaults failed:', e);
   }
 }
 
