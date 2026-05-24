@@ -10503,14 +10503,19 @@ async function _rep_buildPDF(sections) {
 
   const NOTE_ROW_H = 10;   // גובה השורה הריקה להערה (בכתב יד)
 
-  // גובה כולל של "בלוק בת" — שורת הנתונים + שורת ההערה אם מופעלת
+  // האם להציג שורת הערה לבת זו — דילוג על בנות עם שיבוץ בהסכמה (אין צורך)
+  function _shouldShowNote(r) {
+    return REPORT_STATE.noteField && r.placement_status !== 'שיבוץ בהסכמה';
+  }
+
+  // גובה כולל של "בלוק בת" — שורת הנתונים + שורת ההערה אם רלוונטית
   function totalRowHeight(r) {
-    return rowHeight(r) + (REPORT_STATE.noteField ? NOTE_ROW_H : 0);
+    return rowHeight(r) + (_shouldShowNote(r) ? NOTE_ROW_H : 0);
   }
 
   function drawRow(r, yTop) {
     const dataH = rowHeight(r);
-    const wantNote = REPORT_STATE.noteField;
+    const wantNote = _shouldShowNote(r);
     const noteH = wantNote ? NOTE_ROW_H : 0;
     const totalH = dataH + noteH;
 
@@ -10543,9 +10548,12 @@ async function _rep_buildPDF(sections) {
       }
       const text = getCellText(r, cols[i]);
       const lines = wrapWordSafe(text, w - PADDING_X * 2);
+      // מרכוז אנכי: padding שווה למעלה ולמטה בתוך גובה שורת הנתונים
+      const textBlockH = lines.length * 4;
+      const padTop = Math.max(0, (dataH - textBlockH) / 2);
       lines.forEach((line, li) => {
         const looksHe = /[֐-׿]/.test(line);
-        const yy = yTop + 3.5 + li * 4;
+        const yy = yTop + padTop + 3.5 + li * 4;
         if (looksHe) pdf.text(bidi(line), x + w / 2, yy, { align: 'center' });
         else         pdf.text(line,       x + w / 2, yy, { align: 'center' });
       });
