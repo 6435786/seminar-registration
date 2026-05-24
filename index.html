@@ -6289,7 +6289,8 @@ const EC_STATE = {
   bodyText: '',
   cc: '',                       // CC ידני (פסיקים)
   ccContacts: [],               // אנשי קשר שנבחרו מהרשימה
-  bcc: '',
+  bcc: '',                      // BCC ידני (פסיקים) — תומך בכמה כתובות
+  bccContacts: [],              // אנשי קשר שנבחרו ל־BCC
   letterDate: null,             // ISO string; null = today
   shortNote: '',                // הערה חד־פעמית — תופיע בסוף המכתב (אחרי הטבלה / החתימה)
   extraLetter: '',              // מכתב נוסף — מודפס בעמוד חדש עם ניירת
@@ -6311,6 +6312,7 @@ async function openEmailComposer() {
     subject: '', bodyText: '',
     cc: '', ccContacts: [],
     bcc: localStorage.getItem('ec_bcc_default') || '',
+    bccContacts: [],
     letterDate: null,
     shortNote: '',             // איפוס בכל פתיחה — זה חד־פעמי, לא נשמר
     extraLetter: '',
@@ -7025,8 +7027,14 @@ async function _ec_renderStep3(pop) {
       </div>
 
       <div style="margin-bottom:12px;">
-        <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">BCC (עותק נסתר — לארכיון עירוני, אופציונלי)</label>
-        <input type="email" id="ec_bcc" value="${_esc(EC_STATE.bcc)}" placeholder="archive@beitar.muni.il" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+        <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">
+          BCC (עותק נסתר) <span style="font-weight:400; color:var(--muted); font-size:11px;">(לארכיון עירוני / אנשי קשר נוספים — מופרד בפסיק)</span>
+        </label>
+        <div style="display:flex; gap:6px;">
+          <input type="text" id="ec_bcc" value="${_esc(EC_STATE.bcc)}" placeholder="archive@beitar.muni.il, email2@example.com" style="flex:1; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+          <button class="mini-btn" onclick="_ec_openBccPicker()" title="בחר מתוך רשימת אנשי קשר">📇 מאנשי קשר</button>
+        </div>
+        <div id="ec_bcc_chips" style="margin-top:4px; min-height:18px;"></div>
       </div>
 
       <!-- תוספות חד־פעמיות למכתב — לא נשמרות, מתאפסות בכל פתיחה -->
@@ -7098,6 +7106,7 @@ async function _ec_renderStep3(pop) {
     };
   });
   _ec_renderCcChips();
+  _ec_renderBccChips();
   document.getElementById('ec_letter_date').oninput = (e) => {
     EC_STATE.letterDate = e.target.value ? new Date(e.target.value).toISOString() : null;
     // עדכן מועד גם בנתוני מכתבי הסמינר (שמשתמשים בתאריך)
@@ -7213,6 +7222,88 @@ function _ec_renderCcChips() {
   }).join('');
 }
 
+// === BCC picker — מקביל ל־CC picker, אבל מוסיף ל־EC_STATE.bccContacts ===
+async function _ec_openBccPicker() {
+  document.getElementById('ec_bcc_picker_scrim')?.remove();
+  const { data, error } = await sb.from('contacts').select('*').eq('is_active', true).order('name');
+  if (error) { toast('שגיאה: ' + error.message, 'warn'); return; }
+  const contacts = data || [];
+
+  const scrim = document.createElement('div');
+  scrim.id = 'ec_bcc_picker_scrim';
+  scrim.style.cssText = 'position:fixed; inset:0; background:rgba(0,0,0,0.55); z-index:2600; display:flex; align-items:center; justify-content:center; padding:20px;';
+  scrim.onclick = (e) => { if (e.target === scrim) scrim.remove(); };
+
+  const pop = document.createElement('div');
+  pop.style.cssText = 'background:white; border-radius:12px; box-shadow:0 12px 36px rgba(0,0,0,0.3); max-width:600px; width:100%; max-height:80vh; display:flex; flex-direction:column;';
+
+  const picked = new Set(EC_STATE.bccContacts.map(c => c.id));
+
+  function render(filter = '') {
+    const f = filter.trim().toLowerCase();
+    const visible = contacts.filter(c => {
+      if (!f) return true;
+      return [c.title, c.name, c.role, c.email, c.notes].some(v => (v || '').toLowerCase().includes(f));
+    });
+    pop.innerHTML = `
+      <div style="padding:14px 18px; border-bottom:1px solid var(--border);">
+        <div style="font-weight:700; color:var(--deep); font-size:15px; margin-bottom:8px;">📇 בחירת אנשי קשר ל־BCC <span style="font-weight:400; color:var(--muted); font-size:11px;">(עותק נסתר)</span></div>
+        <input id="ec_bcc_search" placeholder="חיפוש בשם, תפקיד, מייל..." value="${_esc(filter)}"
+          style="width:100%; padding:7px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+      </div>
+      <div style="padding:8px 6px; overflow-y:auto; flex:1;">
+        ${visible.length === 0 ? `<div style="color:var(--muted); text-align:center; padding:20px;">אין אנשי קשר${contacts.length ? ' תואמים' : ''}.${contacts.length ? '' : ' הוסף ב"רשימות → אנשי קשר".'}</div>` :
+          visible.map(c => {
+            const isPicked = picked.has(c.id);
+            const display = `${c.title ? c.title + ' ' : ''}${c.name}${c.role ? ' — ' + c.role : ''}`;
+            return `<label style="display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer; border-radius:6px; ${isPicked ? 'background:#e2e8f0;' : ''}"
+              onmouseover="if(!this.querySelector('input').checked) this.style.background='#f1f5f9';"
+              onmouseout="if(!this.querySelector('input').checked) this.style.background='';">
+              <input type="checkbox" ${isPicked ? 'checked' : ''} data-cid="${c.id}" ${!c.email ? 'disabled' : ''}>
+              <div style="flex:1;">
+                <div style="font-weight:600; color:var(--deep);">${_esc(display)}</div>
+                <div style="font-size:11px; color:${c.email ? 'var(--accent)' : 'var(--bad)'};">${c.email ? _esc(c.email) : '⛔ ללא מייל'}</div>
+              </div>
+            </label>`;
+          }).join('')}
+      </div>
+      <div style="padding:10px 18px; border-top:1px solid var(--border); background:#f8fafc; display:flex; gap:8px;">
+        <button class="apply-big" id="ec_bcc_apply" style="flex:1;">החל</button>
+        <button class="cancel-btn" onclick="document.getElementById('ec_bcc_picker_scrim').remove();">ביטול</button>
+      </div>
+    `;
+    document.getElementById('ec_bcc_search').oninput = (e) => render(e.target.value);
+    pop.querySelectorAll('input[data-cid]').forEach(cb => {
+      cb.onchange = () => {
+        const cid = parseInt(cb.dataset.cid, 10);
+        if (cb.checked) picked.add(cid);
+        else picked.delete(cid);
+      };
+    });
+    document.getElementById('ec_bcc_apply').onclick = () => {
+      EC_STATE.bccContacts = contacts.filter(c => picked.has(c.id) && c.email);
+      scrim.remove();
+      _ec_renderBccChips();
+    };
+  }
+  scrim.appendChild(pop);
+  document.body.appendChild(scrim);
+  render();
+}
+
+function _ec_renderBccChips() {
+  const el = document.getElementById('ec_bcc_chips');
+  if (!el) return;
+  if (!EC_STATE.bccContacts.length) { el.innerHTML = ''; return; }
+  el.innerHTML = EC_STATE.bccContacts.map(c => {
+    const lbl = `${c.title ? c.title + ' ' : ''}${c.name}`;
+    return `<span style="display:inline-block; background:#e2e8f0; border:1px solid #94a3b8; border-radius:999px; padding:2px 8px 2px 4px; margin:2px; font-size:11px;">
+      <button onclick="EC_STATE.bccContacts = EC_STATE.bccContacts.filter(x => x.id !== ${c.id}); _ec_renderBccChips();" style="border:0; background:transparent; cursor:pointer; color:var(--bad); padding:0 4px;">×</button>
+      ${_esc(lbl)} <span style="color:var(--muted);">‹${_esc(c.email)}›</span>
+    </span>`;
+  }).join('');
+}
+
 function _ec_collectAllCcEmails(recipientCcEmails) {
   // CC לאיש קשר ראשי = (CCs של הסמינר שעדיין enabled) + (CC ידני) + (אנשי קשר שנבחרו)
   const recipCcEnabled = (recipientCcEmails || [])
@@ -7285,11 +7376,14 @@ async function _ec_send() {
       folder.file(_ec_recipientFilename(r, 'eml'), emlContent);
       const realCcList = _ec_collectAllCcEmails(r.cc_emails);
       const realToEmail = r.email;
-      const realBcc = EC_STATE.bcc || null;
+      // BCC רב־כתובות: שדה טקסט + bccContacts
+      const _bccText = (EC_STATE.bcc || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+      const _bccCont = (EC_STATE.bccContacts || []).map(c => c.email).filter(Boolean);
+      const realBccList = [...new Set([..._bccText, ..._bccCont])];
       // במצב בדיקה — מחליפים את הכל לכתובת הבדיקה
       const effectiveTo  = EC_STATE.testMode ? EC_STATE.testEmail : realToEmail;
       const effectiveCc  = EC_STATE.testMode ? [] : realCcList;
-      const effectiveBcc = EC_STATE.testMode ? null : realBcc;
+      const effectiveBcc = EC_STATE.testMode ? [] : realBccList;
       logRows.push({
         batch_id: batchId,
         template_id: EC_STATE.template.id,
@@ -7378,10 +7472,12 @@ async function _ec_sendViaGmail() {
     if (!confirm(`שליחת נסיון\n\nכל המיילים ישלחו לכתובת:\n${te}\n(${EC_STATE.recipients.length} מיילים — TO/CC/BCC יופנו לכתובת הבדיקה)\n\nלהמשיך?`)) return;
   } else {
     // הצג את כל הכתובות (TO + BCC) לפני שליחה
+    const _bccText = (EC_STATE.bcc || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+    const _bccCont = (EC_STATE.bccContacts || []).map(c => c.email).filter(Boolean);
+    const bccExtra = [...new Set([..._bccText, ..._bccCont])];
     const lines = EC_STATE.recipients.map(r => {
       const realCc = _ec_collectAllCcEmails(r.cc_emails);
-      const allBccs = [...realCc];
-      if (EC_STATE.bcc) allBccs.push(EC_STATE.bcc);
+      const allBccs = [...new Set([...realCc, ...bccExtra])];
       let s = `${r.display_name}\n   TO: ${r.email}`;
       if (allBccs.length) s += `\n   BCC: ${allBccs.join(', ')}`;
       return s;
@@ -7408,15 +7504,16 @@ async function _ec_sendViaGmail() {
     btn.textContent = `שולח ${i+1}/${EC_STATE.recipients.length}...`;
     try {
       const pdfBlob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
-      const realCc = _ec_collectAllCcEmails(r.cc_emails);
-      const realBcc = EC_STATE.bcc || null;
+      const realCc = _ec_collectAllCcEmails(r.cc_emails);   // עוזרי הסמינר + CC ידני + contacts ל־CC
+      // BCC: שדה טקסט (מופרד פסיק) + bccContacts שנבחרו מהפיקר
+      const bccFromText = (EC_STATE.bcc || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
+      const bccFromContacts = (EC_STATE.bccContacts || []).map(c => c.email).filter(Boolean);
+      const realBccExtra = [...new Set([...bccFromText, ...bccFromContacts])];
       const realTo = r.email;
 
-      // 🔒 פרטיות: כל כתובות העזר (משרד/נוסף/contacts/CC ידני) הופכות ל־BCC
-      //          + הארכיון. כל נמען רואה רק את עצמו ב־TO. אף אחד לא רואה אחרים.
-      // CC נשאר ריק לחלוטין.
-      const realBccCombined = [...realCc];
-      if (realBcc) realBccCombined.push(realBcc);
+      // 🔒 פרטיות: כל כתובות העזר ("CC" של הסמינר, CC ידני, אנשי קשר ל־CC)
+      //          הופכות ל־BCC + ה־BCC הישיר. כל נמען רואה רק את עצמו ב־TO.
+      const realBccCombined = [...new Set([...realCc, ...realBccExtra])];
 
       // מצב בדיקה: TO → testEmail, BCC מתבטל
       const toEmail   = EC_STATE.testMode ? EC_STATE.testEmail : realTo;
