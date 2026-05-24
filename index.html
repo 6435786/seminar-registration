@@ -10504,7 +10504,7 @@ async function _rep_buildPDF(sections) {
   let _zebraIdx = 0;
   function _zebraReset() { _zebraIdx = 0; }
 
-  const NOTE_ROW_H = 10;   // גובה השורה הריקה להערה (בכתב יד)
+  const NOTE_ROW_H = 7;    // גובה השורה הריקה להערה (בכתב יד) — מצומצם
 
   // האם להציג שורת הערה לבת זו — דילוג על בנות עם שיבוץ בהסכמה (אין צורך)
   function _shouldShowNote(r) {
@@ -10551,9 +10551,11 @@ async function _rep_buildPDF(sections) {
       }
       const text = getCellText(r, cols[i]);
       const lines = wrapWordSafe(text, w - PADDING_X * 2);
-      // מרכוז אנכי: padding שווה למעלה ולמטה בתוך גובה שורת הנתונים
+      // מרכוז אנכי: עמודת השם (i==0) משתמשת בגובה הכולל כי היא ממוזגת
+      // עם שורת ההערה. שאר העמודות — רק בגובה שורת הנתונים.
+      const effectiveH = (i === 0 && wantNote) ? totalH : dataH;
       const textBlockH = lines.length * 4;
-      const padTop = Math.max(0, (dataH - textBlockH) / 2);
+      const padTop = Math.max(0, (effectiveH - textBlockH) / 2);
       lines.forEach((line, li) => {
         const looksHe = /[֐-׿]/.test(line);
         const yy = yTop + padTop + 3.5 + li * 4;
@@ -10578,7 +10580,15 @@ async function _rep_buildPDF(sections) {
     }
 
     // === תחתית + מסגרת חיצונית של ה"בלוק" כולו ===
+    // כשמופעלת שורת הערה — הקו התחתון מודגש יותר כדי להפריד בין בנות שכנות.
+    if (wantNote) {
+      pdf.setDrawColor(80);
+      pdf.setLineWidth(0.5);
+    }
     pdf.line(tableLeftX, yTop + totalH, tableLeftX + finalTableW, yTop + totalH);
+    // החזר ברירת מחדל לקווים הצדדיים (דקים)
+    pdf.setDrawColor(150);
+    pdf.setLineWidth(0.25);
     pdf.line(tableLeftX, yTop, tableLeftX, yTop + totalH);                              // קצה שמאל
     pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + totalH);  // קצה ימין
     return totalH;
