@@ -10569,13 +10569,16 @@ async function _rep_buildPDF(sections) {
     if (wantNote) {
       const noteY = yTop + dataH;
       const nameColX = tableLeftX + (finalTableW - colW[0]);  // קצה שמאל של עמודת השם
-      // קו אופקי בין שורת הנתונים לשורת ההערה — רק באזור ההערה, לא תחת עמודת השם
-      pdf.line(tableLeftX, noteY, nameColX, noteY);
+      // קו אופקי אחיד לכל רוחב הטבלה — בין שורת הנתונים לשורת ההערה.
+      // (לא עוצרים בנמ קו השם, כדי שלא יראה לעין שלפעמים יש קו ולפעמים אין.
+      //  המיזוג של עמודת השם נשמר ע"י רקע רציף, מרכוז טקסט בגובה הכולל,
+      //  והקו האנכי משמאל לעמודת השם שגולש דרך שורת ההערה.)
+      pdf.line(tableLeftX, noteY, tableLeftX + finalTableW, noteY);
       // תווית "החלטת הרבנים:" בקצה הימני של שורת ההערה, ממורכזת אנכית
       pdf.setFont('David', 'normal');
       pdf.setFontSize(9);
       pdf.setTextColor(100);
-      const labelBaselineY = noteY + (NOTE_ROW_H / 2) + 1.4;   // מרכוז אנכי בגובה השורה
+      const labelBaselineY = noteY + (NOTE_ROW_H / 2) + 1.4;
       pdf.text(bidi('החלטת הרבנים:'), nameColX - 2, labelBaselineY, { align: 'right' });
       pdf.setTextColor(0, 0, 0);
     }
