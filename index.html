@@ -9879,8 +9879,9 @@ const REPORT_STATE = {
     { cat: '', order: {} },
     { cat: '', order: {} },
   ],
-  separateBy: 'none',   // 'none' | 'seminar' | 'sector'
+  separateBy: 'none',   // 'none' | 'seminar' | 'seminar_inline' | 'sector'
   showChart: false,
+  noteField: false,     // שורת "הערה:" ריקה מתחת לכל בת — לכתיבה ידנית בוועדה
 };
 
 let _reportPrefsCache = null;
@@ -9987,6 +9988,10 @@ function _rep_renderBody() {
         <input type="checkbox" ${REPORT_STATE.showChart ? 'checked' : ''} ${REPORT_STATE.separateBy === 'sector' ? 'disabled' : ''} onchange="REPORT_STATE.showChart = this.checked;">
         הצג תרשים <span style="color:var(--muted);font-size:11px;">(עוגה — חלוקה לפי שיוך)</span>
         ${REPORT_STATE.separateBy === 'sector' ? '<span style="color:var(--muted);font-size:11px;">— לא רלוונטי כשמגזרים בנפרד</span>' : ''}
+      </label>
+      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
+        <input type="checkbox" ${REPORT_STATE.noteField ? 'checked' : ''} onchange="REPORT_STATE.noteField = this.checked;">
+        שדה הערה <span style="color:var(--muted);font-size:11px;">(שורה ריקה מתחת לכל בת — לכתיבה ידנית בוועדה)</span>
       </label>
     </div>
 
@@ -10496,29 +10501,46 @@ async function _rep_buildPDF(sections) {
   let _zebraIdx = 0;
   function _zebraReset() { _zebraIdx = 0; }
 
+  const NOTE_ROW_H = 10;   // גובה השורה הריקה להערה (בכתב יד)
+
+  // גובה כולל של "בלוק בת" — שורת הנתונים + שורת ההערה אם מופעלת
+  function totalRowHeight(r) {
+    return rowHeight(r) + (REPORT_STATE.noteField ? NOTE_ROW_H : 0);
+  }
+
   function drawRow(r, yTop) {
-    const rh = rowHeight(r);
+    const dataH = rowHeight(r);
+    const wantNote = REPORT_STATE.noteField;
+    const noteH = wantNote ? NOTE_ROW_H : 0;
+    const totalH = dataH + noteH;
+
     pdf.setFont('David', 'normal');
     pdf.setFontSize(9);
 
-    // === רקע השורה: שיבוץ בהסכמה → ירוק עדין; אחרת → zebra רגיל ===
+    // === רקע ה"בלוק" (data + note): שיבוץ בהסכמה → ירוק; אחרת → zebra ===
     const placedConsent = r.placement_status === 'שיבוץ בהסכמה';
     if (placedConsent) {
       pdf.setFillColor(240, 253, 244);   // #f0fdf4 — ירוק בהיר־מאד
-      pdf.rect(tableLeftX, yTop, finalTableW, rh, 'F');
+      pdf.rect(tableLeftX, yTop, finalTableW, totalH, 'F');
     } else if (_zebraIdx % 2 === 1) {
       pdf.setFillColor(241, 245, 249);   // #f1f5f9 — אפור בהיר עדין
-      pdf.rect(tableLeftX, yTop, finalTableW, rh, 'F');
+      pdf.rect(tableLeftX, yTop, finalTableW, totalH, 'F');
     }
     _zebraIdx++;
 
-    // === קווים אנכיים בין עמודות + תוכן ===
+    // === שורת הנתונים — קווים אנכיים + תוכן ===
     pdf.setDrawColor(150);
     pdf.setLineWidth(0.25);
     let x = tableLeftX;
     for (let i = cols.length - 1; i >= 0; i--) {
       const w = colW[i];
-      if (i > 0) pdf.line(x + w, yTop, x + w, yTop + rh);
+      if (i > 0) {
+        // הקו בין cols[0] (שם — הימני ביותר) ל־cols[1] גולש מטה גם דרך שורת ההערה,
+        // כי "תא השם" משותף לשתי השורות. שאר הקווים נעצרים בסוף שורת הנתונים.
+        const extendThruNote = (i === 1) && wantNote;
+        const lineEndY = yTop + (extendThruNote ? totalH : dataH);
+        pdf.line(x + w, yTop, x + w, lineEndY);
+      }
       const text = getCellText(r, cols[i]);
       const lines = wrapWordSafe(text, w - PADDING_X * 2);
       lines.forEach((line, li) => {
@@ -10529,11 +10551,26 @@ async function _rep_buildPDF(sections) {
       });
       x += w;
     }
-    // קו תחתון של השורה + מסגרת חיצונית בקצוות
-    pdf.line(tableLeftX, yTop + rh, tableLeftX + finalTableW, yTop + rh);
-    pdf.line(tableLeftX, yTop, tableLeftX, yTop + rh);                              // קצה ימין
-    pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + rh);  // קצה שמאל
-    return rh;
+
+    // === שורת הערה (אם הופעלה) ===
+    if (wantNote) {
+      const noteY = yTop + dataH;
+      const nameColX = tableLeftX + (finalTableW - colW[0]);  // קצה שמאל של עמודת השם
+      // קו אופקי בין שורת הנתונים לשורת ההערה — רק באזור ההערה, לא תחת עמודת השם
+      pdf.line(tableLeftX, noteY, nameColX, noteY);
+      // תווית "הערה:" בקצה הימני של שורת ההערה
+      pdf.setFont('David', 'normal');
+      pdf.setFontSize(9);
+      pdf.setTextColor(100);
+      pdf.text(bidi('הערה:'), nameColX - 2, noteY + 5.8, { align: 'right' });
+      pdf.setTextColor(0, 0, 0);
+    }
+
+    // === תחתית + מסגרת חיצונית של ה"בלוק" כולו ===
+    pdf.line(tableLeftX, yTop + totalH, tableLeftX + finalTableW, yTop + totalH);
+    pdf.line(tableLeftX, yTop, tableLeftX, yTop + totalH);                              // קצה שמאל
+    pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + totalH);  // קצה ימין
+    return totalH;
   }
 
   // === ציור עוגה לפי שיוך ===
@@ -10638,7 +10675,7 @@ async function _rep_buildPDF(sections) {
       // כותרת inline לכל סקציה — כולל הראשונה. עיצוב כמו בכותרת "סמינרים בנפרד".
       const GAP_BEFORE = (si > 0) ? 5 : 1;   // אחרי סקציה קודמת — קצת רווח לעין
       const INLINE_H = 7;
-      const firstRowH = rowHeight(section.rows[0]);
+      const firstRowH = totalRowHeight(section.rows[0]);   // כולל שורת הערה אם הופעלה
       // smart break — אם אין מקום לרווח + כותרת + לפחות שורה אחת → עמוד חדש
       if (y + GAP_BEFORE + INLINE_H + firstRowH > TABLE_BOTTOM) {
         pdf.addPage();
@@ -10660,7 +10697,7 @@ async function _rep_buildPDF(sections) {
 
       for (let ri = 0; ri < section.rows.length; ri++) {
         const r = section.rows[ri];
-        const rh = rowHeight(r);
+        const rh = totalRowHeight(r);   // כולל שורת הערה אם הופעלה
         if (y + rh > TABLE_BOTTOM) {
           pdf.addPage();
           pageNum++;
@@ -10710,7 +10747,7 @@ async function _rep_buildPDF(sections) {
 
       for (let ri = 0; ri < section.rows.length; ri++) {
         const r = section.rows[ri];
-        const rh = rowHeight(r);
+        const rh = totalRowHeight(r);   // כולל שורת הערה אם הופעלה
         if (y + rh > TABLE_BOTTOM) {
           pdf.addPage();
           pageOfSection++;
