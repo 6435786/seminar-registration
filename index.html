@@ -7314,6 +7314,9 @@ async function _ec_send() {
           real_recipient_email: EC_STATE.testMode ? realToEmail : undefined,
           real_cc: EC_STATE.testMode ? realCcList : undefined,
           real_bcc: EC_STATE.testMode ? realBcc : undefined,
+          // תוספות חד־פעמיות — נשמרות לתיעוד
+          short_note: EC_STATE.shortNote || undefined,
+          extra_letter: EC_STATE.extraLetter || undefined,
         },
       });
       ok++;
@@ -7456,6 +7459,9 @@ async function _ec_sendViaGmail() {
           bcc_list: bccList,
           real_recipient_email: EC_STATE.testMode ? realTo : undefined,
           real_bcc_list: EC_STATE.testMode ? realBccCombined : undefined,
+          // תוספות חד־פעמיות — נשמרות לתיעוד
+          short_note: EC_STATE.shortNote || undefined,
+          extra_letter: EC_STATE.extraLetter || undefined,
         },
       });
       ok++;
@@ -8220,78 +8226,123 @@ async function generateLetterPDF(template, data) {
   return pdf.output('blob');
 }
 
+// === Helper: ציור פסקה עם wrap + תמיכה במעבר עמוד אוטומטי עם ניירת ===
+// מחזיר y סופי אחרי כל הטקסט (אולי בעמוד אחר).
+function drawWrappedRTL_paginated(pdf, text, rightX, leftX, startY, opts, addLetterheadPage, pageBottom = 268, pageTopAfterBreak = 65) {
+  pdf.setFont('David', opts.bold ? 'bold' : 'normal');
+  pdf.setFontSize(opts.size || 11);
+  const lineH = opts.lineHeight || ((opts.size || 11) * 0.45);
+  const maxW = rightX - leftX;
+  const lines = pdf.splitTextToSize(text || '', maxW);
+  let y = startY;
+  for (const line of lines) {
+    if (y + lineH > pageBottom && addLetterheadPage) {
+      addLetterheadPage(false);
+      y = pageTopAfterBreak;
+      pdf.setFont('David', opts.bold ? 'bold' : 'normal');
+      pdf.setFontSize(opts.size || 11);
+    }
+    pdf.text('‏' + bidi(line), rightX, y, { align: 'right' });
+    y += lineH;
+  }
+  return y;
+}
+
 // === הערה קצרה חד־פעמית — מצוירת אחרי תוכן המכתב/הטבלה ===
+// סגנון אסתטיקה־של־מכתב: פס מפריד דק + תווית מודגשת + טקסט רגיל.
+// לא קופסה צבעונית — אנחנו במכתב רשמי, לא ב־UI.
 function appendShortNote(pdf, noteText, lastY, addLetterheadPage) {
   const RIGHT_X = 190, LEFT_X = 20;
   const PAGE_BOTTOM = 262;          // מעל הפוטר הקבוע במכתב להורים (y=268)
   const GAP_ABOVE = 10;             // רווח לפני ההערה
+  const LINE_H = 5.5;
 
-  // חשב כמה שורות יוצאות אחרי wrap
+  // חישוב גובה (כדי להחליט אם דרוש עמוד חדש)
   pdf.setFont('David', 'normal');
   pdf.setFontSize(11);
   const lines = pdf.splitTextToSize(noteText, RIGHT_X - LEFT_X);
-  const neededH = 8 /* label */ + lines.length * 5.5 + 4 /* padding */;
+  const neededH = 4 /* פס + רווח */ + 6 /* תווית */ + lines.length * LINE_H;
 
   let y = lastY + GAP_ABOVE;
   if (y + neededH > PAGE_BOTTOM) {
-    // אין מקום — עמוד חדש עם ניירת
     addLetterheadPage(false);
     y = 65;
   }
 
-  // קופסה עדינה מסביב לטקסט
-  pdf.setDrawColor(180, 100, 30);   // ענבר כהה
-  pdf.setLineWidth(0.4);
-  pdf.setFillColor(255, 251, 235);  // #fffbeb — צהוב בהיר מאד
-  pdf.rect(LEFT_X, y - 2, RIGHT_X - LEFT_X, neededH, 'FD');
+  // פס מפריד עדין (לא רחב כל הדף — קצר וממורכז במרכז למטה לשמאל)
+  pdf.setDrawColor(180);
+  pdf.setLineWidth(0.3);
+  pdf.line(LEFT_X + 35, y, RIGHT_X - 35, y);
+  y += 5;
 
-  // כותרת
+  // תווית "הערה:" מודגשת — באותו פונט וגודל של גוף המכתב
   pdf.setFont('David', 'bold');
   pdf.setFontSize(11);
-  pdf.setTextColor(146, 64, 14);    // ענבר כהה
-  pdf.text(bidi('הערה:'), RIGHT_X - 2, y + 4, { align: 'right' });
-
-  // גוף ההערה
-  pdf.setFont('David', 'normal');
   pdf.setTextColor(0, 0, 0);
-  let ty = y + 10;
+  pdf.text(bidi('הערה:'), RIGHT_X, y, { align: 'right' });
+  y += 6;
+
+  // גוף ההערה — כמו טקסט רגיל במכתב
+  pdf.setFont('David', 'normal');
   lines.forEach(line => {
-    pdf.text('‏' + bidi(line), RIGHT_X - 2, ty, { align: 'right' });
-    ty += 5.5;
+    pdf.text('‏' + bidi(line), RIGHT_X, y, { align: 'right' });
+    y += LINE_H;
   });
 }
 
-// === מכתב נוסף — עמוד שלם חדש עם ניירת ===
+// === מכתב נוסף — עמוד שלם חדש עם ניירת, בסגנון מכתב רשמי ===
+// תומך בריבוי עמודים (אם הטקסט ארוך) + חתימה שתואמת את תבנית האב.
 function appendExtraLetterPage(pdf, extraText, template, data, addLetterheadPage) {
   const RIGHT_X = 190, LEFT_X = 20;
   addLetterheadPage(false);
-  let y = 65;
+  let y = 60;
 
-  // כותרת מרכזית
-  drawCenteredRTL(pdf, 'מכתב נוסף', 105, y, { size: 13, bold: true });
-  y += 12;
+  // תאריך עברי + לועזי בראש (כמו במכתבי הסמינר)
+  const dt = _twoDates(data.letter_date ? new Date(data.letter_date) : new Date());
+  drawRTL(pdf, dt.hebrew, RIGHT_X, y, { size: 10 });  y += 5;
+  drawRTL(pdf, dt.latin,  RIGHT_X, y, { size: 10 });  y += 10;
 
-  // לכבוד — לפי תבנית (משתמש בנתונים שיש)
-  if (template === 'parents' && data.girl_full_name) {
-    drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
-    drawRTL(pdf, `הורי התלמידה ${data.girl_full_name}`, RIGHT_X, y, { size: 12, bold: true });  y += 9;
-  } else if ((template === 'seminar_initial' || template === 'seminar_final') && (data.contact_full || data.seminar_name)) {
-    drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
-    if (data.contact_full) { drawRTL(pdf, data.contact_full, RIGHT_X, y, { size: 12, bold: true }); y += 5; }
-    if (data.seminar_name) { drawRTL(pdf, `סמינר ${data.seminar_name}`, RIGHT_X, y, { size: 12 }); y += 9; }
+  // לכבוד — תלוי תבנית
+  drawRTL(pdf, 'לכבוד', RIGHT_X, y, { size: 12 });  y += 6;
+  if (template === 'parents') {
+    drawRTL(pdf, `הורי התלמידה ${data.girl_full_name || ''}`, RIGHT_X, y, { size: 12, bold: true });
+    y += 9;
   } else {
+    // seminar_initial / seminar_final
+    if (data.contact_full) { drawRTL(pdf, data.contact_full, RIGHT_X, y, { size: 12, bold: true }); y += 5; }
+    if (data.seminar_name) { drawRTL(pdf, `סמינר "${data.seminar_name}"`, RIGHT_X, y, { size: 12 }); y += 5; }
     y += 4;
   }
-
   drawRTL(pdf, 'שלום וברכה,', RIGHT_X, y, { size: 12 });  y += 10;
 
-  // גוף המכתב הנוסף
-  y = drawWrappedRTL(pdf, extraText, RIGHT_X, LEFT_X, y, { size: 12, lineHeight: 6 });
+  // הנדון — מודגש ממורכז
+  drawCenteredRTL(pdf, 'הנדון: הודעה נוספת', 105, y, { size: 13, bold: true });
+  y += 11;
+
+  // גוף — wrap עם תמיכה בריבוי עמודים. אזור בטוח 268.
+  // אחרי מעבר עמוד, האזור הבטוח נשאר 268 (אין footer בעמודי המכתב הנוסף).
+  y = drawWrappedRTL_paginated(pdf, extraText, RIGHT_X, LEFT_X, y,
+    { size: 12, lineHeight: 6 }, addLetterheadPage, 268, 65);
   y += 12;
 
-  // חתימה אחידה
-  drawRTL(pdf, 'בברכה,', RIGHT_X, y, { size: 12 });  y += 6;
-  drawRTL(pdf, 'אגף החינוך — עיריית ביתר עילית', RIGHT_X, y, { size: 12, bold: true });
+  // חתימה — תואמת לתבנית
+  // אם אין מספיק מקום לחתימה (≥30mm) → עמוד נוסף לחתימה בלבד
+  if (y + 30 > 268) {
+    addLetterheadPage(false);
+    y = 65;
+  }
+
+  if (template === 'parents') {
+    // חתימה כמו במכתב להורים
+    const T = (id, fb) => tpl('parents', id, data, fb);
+    drawRTL(pdf, T('signature_open', 'בברכה,'),     RIGHT_X, y, { size: 12 });           y += 6;
+    drawRTL(pdf, T('signer_name', 'יהודה קורנבליט'), RIGHT_X, y, { size: 12, bold: true }); y += 5;
+    drawRTL(pdf, T('signer_role', 'מנהל אגף החינוך'), RIGHT_X, y, { size: 12 });           y += 5;
+    drawRTL(pdf, T('signer_dept', 'עיריית ביתר עילית'), RIGHT_X, y, { size: 12 });
+  } else {
+    // חתימת סמינר — כוללת רשימת העתקים (זהה למכתב הראשי)
+    drawSeminarSignature(pdf, y, template, data);
+  }
 }
 
 // הורד PDF — בעיקר לפיתוח/בדיקה
