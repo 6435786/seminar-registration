@@ -7486,18 +7486,18 @@ async function _ec_sendViaGmail() {
     }
     if (!confirm(`שליחת נסיון\n\nכל המיילים ישלחו לכתובת:\n${te}\n(${EC_STATE.recipients.length} מיילים — TO/CC/BCC יופנו לכתובת הבדיקה)\n\nלהמשיך?`)) return;
   } else {
-    // הצג את כל הכתובות (TO + BCC) לפני שליחה
+    // הצג את כל הכתובות (TO + CC + BCC) לפני שליחה
     const _bccText = (EC_STATE.bcc || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
     const _bccCont = (EC_STATE.bccContacts || []).map(c => c.email).filter(Boolean);
     const bccExtra = [...new Set([..._bccText, ..._bccCont])];
     const lines = EC_STATE.recipients.map(r => {
       const realCc = _ec_collectAllCcEmails(r.cc_emails);
-      const allBccs = [...new Set([...realCc, ...bccExtra])];
       let s = `${r.display_name}\n   TO: ${r.email}`;
-      if (allBccs.length) s += `\n   BCC: ${allBccs.join(', ')}`;
+      if (realCc.length)   s += `\n   CC (גלוי): ${realCc.join(', ')}`;
+      if (bccExtra.length) s += `\n   BCC (נסתר): ${bccExtra.join(', ')}`;
       return s;
     }).join('\n\n');
-    if (!confirm(`אתה עומד לשלוח ${EC_STATE.recipients.length} מיילים:\n\n${lines}\n\n(כל הנמענים מוסתרים זה מזה — כל אחד יראה רק את עצמו)\n\nלהמשיך?`)) return;
+    if (!confirm(`אתה עומד לשלוח ${EC_STATE.recipients.length} מיילים:\n\n${lines}\n\n(CC = גלוי לכל הנמענים. BCC = מוסתר מכולם.)\n\nלהמשיך?`)) return;
     if (!confirm(`אישור אחרון — ${EC_STATE.recipients.length} מכתבים יישלחו עכשיו.\nבטוח?`)) return;
   }
 
@@ -7519,21 +7519,18 @@ async function _ec_sendViaGmail() {
     btn.textContent = `שולח ${i+1}/${EC_STATE.recipients.length}...`;
     try {
       const pdfBlob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
-      const realCc = _ec_collectAllCcEmails(r.cc_emails);   // עוזרי הסמינר + CC ידני + contacts ל־CC
-      // BCC: שדה טקסט (מופרד פסיק) + bccContacts שנבחרו מהפיקר
+      // CC = גלוי לכולם: עוזרי הסמינר (משרד/נוסף) + CC ידני + ccContacts
+      const realCc = _ec_collectAllCcEmails(r.cc_emails);
+      // BCC = נסתר מכולם: שדה bcc הידני + bccContacts
       const bccFromText = (EC_STATE.bcc || '').split(/[,;\s]+/).map(s => s.trim()).filter(Boolean);
       const bccFromContacts = (EC_STATE.bccContacts || []).map(c => c.email).filter(Boolean);
-      const realBccExtra = [...new Set([...bccFromText, ...bccFromContacts])];
+      const realBcc = [...new Set([...bccFromText, ...bccFromContacts])];
       const realTo = r.email;
 
-      // 🔒 פרטיות: כל כתובות העזר ("CC" של הסמינר, CC ידני, אנשי קשר ל־CC)
-      //          הופכות ל־BCC + ה־BCC הישיר. כל נמען רואה רק את עצמו ב־TO.
-      const realBccCombined = [...new Set([...realCc, ...realBccExtra])];
-
-      // מצב בדיקה: TO → testEmail, BCC מתבטל
+      // מצב בדיקה: TO → testEmail; CC ו־BCC מתבטלים (לא נרצה לדגום לאמת)
       const toEmail   = EC_STATE.testMode ? EC_STATE.testEmail : realTo;
-      const ccList    = [];  // תמיד ריק — לפרטיות
-      const bccList   = EC_STATE.testMode ? [] : realBccCombined;
+      const ccList    = EC_STATE.testMode ? [] : realCc;
+      const bccList   = EC_STATE.testMode ? [] : realBcc;
       const subject   = EC_STATE.subject;
       const bodyText  = EC_STATE.bodyText || '';
 
@@ -7568,9 +7565,11 @@ async function _ec_sendViaGmail() {
           mock: false,
           via: 'gmail',
           test_mode: EC_STATE.testMode,
+          cc_list: ccList,
           bcc_list: bccList,
           real_recipient_email: EC_STATE.testMode ? realTo : undefined,
-          real_bcc_list: EC_STATE.testMode ? realBccCombined : undefined,
+          real_cc_list:  EC_STATE.testMode ? realCc  : undefined,
+          real_bcc_list: EC_STATE.testMode ? realBcc : undefined,
           // תוספות חד־פעמיות — נשמרות לתיעוד
           short_note: EC_STATE.shortNote || undefined,
           extra_letter: EC_STATE.extraLetter || undefined,
