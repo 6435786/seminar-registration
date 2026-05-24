@@ -193,9 +193,12 @@
   .filters > button.ghost:hover { background: #dee5ef; }
   .filters > button.ghost.active-filter { background: var(--deep); color: white; }
   .filters > button.ghost.active-filter:hover { background: #0a3d5f; }
-  /* "דוח לוועדה" — גוון כחול עדין כדי שיובדל משאר ה־ghost */
-  .filters > button.ghost#btn_report { background: #dbeafe; color: #1e3a8a; border: 1px solid #93c5fd; }
-  .filters > button.ghost#btn_report:hover { background: #bfdbfe; }
+  /* "דוח לוועדה" — נמצא בשורת hdr-bottom, גוון כחול עדין כדי שיובדל */
+  .hdr-bottom #btn_report {
+    background: #dbeafe; color: #1e3a8a;
+    border: 1px solid #93c5fd; border-radius: 6px;
+  }
+  .hdr-bottom #btn_report:hover { background: #bfdbfe; }
 
   /* Popovers (column picker + multi-select filters) */
   .popover {
@@ -204,10 +207,18 @@
     padding: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     max-height: min(400px, calc(100vh - 100px));
     max-width: calc(100vw - 20px);
-    overflow-y: auto; min-width: 200px;
+    min-width: 200px;
     display: none;
+    overflow: hidden;   /* פנים — flex column, רק .opts גולל */
   }
-  .popover.open { display: block; }
+  .popover.open { display: flex; flex-direction: column; }
+  /* כל הילדים הישירים — לא נגללים. רק .opts (שמכיל את הרשימה) גולל. */
+  .popover > * { flex-shrink: 0; }
+  .popover > .opts {
+    overflow-y: auto;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
   .popover label { display: block; padding: 4px 6px; cursor: pointer; font-size: 13px; border-radius: 4px; }
   .popover label:hover { background: #f0f0f5; }
   .popover label input { margin-left: 6px; }
@@ -1169,14 +1180,13 @@
     .filters .ms-btn { padding: 5px 8px; font-size: 12px; }
     .filters .ms-label { font-size: 10px; }
     .filters input[type=search] { max-width: 180px; font-size: 12px; }
-    /* כשכפתורי btn_cols/btn_report עוברים ל־hdr-bottom — טקסט קצר */
-    .hdr-bottom #btn_cols, .hdr-bottom #btn_report {
+    /* כש־btn_cols עובר ל־hdr-bottom (wrap בנייד/צר) — טקסט קצר */
+    .hdr-bottom #btn_cols {
       padding: 4px 10px; background: white; color: var(--deep);
       border: 1px solid #bae6fd; border-radius: 6px; font-size: 0;
     }
     .hdr-bottom #btn_cols::before { content: 'עמודות'; font-size: 12px; font-weight: 500; }
-    .hdr-bottom #btn_report::before { content: 'דוח'; font-size: 12px; font-weight: 500; }
-    .hdr-bottom #btn_cols:hover, .hdr-bottom #btn_report:hover { background: #f0f9ff; }
+    .hdr-bottom #btn_cols:hover { background: #f0f9ff; }
     /* "מצב עריכה" גם מתקצר */
     .edit-toggle { padding: 4px 10px; font-size: 11px; }
     .edit-toggle #edit_label { font-size: 11px; }
@@ -1483,9 +1493,8 @@
       border-radius: 8px; background: #f1f5f9; border: 0; color: #0f172a;
       min-height: 44px;
     }
-    /* הסתרת כפתורי "עמודות" ו"דוח" בתוך פאנל הסינונים במובייל */
-    body.mobile-filters-open .filters #btn_cols,
-    body.mobile-filters-open .filters #btn_report { display: none !important; }
+    /* הסתרת כפתור "עמודות" בתוך פאנל הסינונים במובייל */
+    body.mobile-filters-open .filters #btn_cols { display: none !important; }
 
     /* טבלה ראשית — רק 3 עמודות (full_name, placement_seminar, placement_status) */
     .table-wrap th:not([data-key="full_name"]):not([data-key="placement_seminar"]):not([data-key="placement_status"]),
@@ -1618,6 +1627,7 @@
     <button class="hdr-btn" id="btn_history">היסטוריה</button>
     <span class="hdr-sep" style="margin-right:auto;"></span>
     <button class="hdr-btn" id="btn_hdr_views">🔖 תצוגות שמורות</button>
+    <button class="hdr-btn" id="btn_report">📄 דוח לוועדה</button>
     <button class="hdr-btn" id="btn_hdr_print">הדפסה</button>
     <button class="hdr-btn" id="btn_hdr_email" title="שליחת מיילים לפי תבנית">✉ דוא"ל</button>
     <button class="hdr-btn" id="btn_export_table">📊 יצוא</button>
@@ -1704,12 +1714,6 @@
       <input type="search" id="q" placeholder="חיפוש: שם/ת.ז/משפחה/טלפון..." autofocus>
     </div>
 
-    <div class="ms-wrap" data-filter="sector">
-      <label class="ms-label">קבוצה</label>
-      <button class="ms-btn" type="button"><span class="text">הכל</span><span class="caret">▾</span></button>
-      <div class="popover"></div>
-    </div>
-
     <div class="ms-wrap" data-filter="any_seminar">
       <label class="ms-label">סמינר</label>
       <button class="ms-btn" type="button"><span class="text">הכל</span><span class="caret">▾</span></button>
@@ -1742,7 +1746,6 @@
 
     <button class="ghost" id="btn_reset">איפוס</button>
     <button class="ghost" id="btn_cols">עמודות ▾</button>
-    <button class="ghost" id="btn_report">📄 דוח לוועדה</button>
     <div class="popover" id="col_picker"></div>
   </div>
 
@@ -2615,7 +2618,7 @@ function openSiblingsPopup(nid) {
 function renderColPicker() {
   const picker = document.getElementById('col_picker');
   const groups = [...new Set(COLS.map(c => c.group))];
-  picker.innerHTML = groups.map(g => `
+  const inner = groups.map(g => `
     <div class="group">${g}</div>
     ${COLS.filter(c => c.group === g).map((c, i) => {
       const idx = COLS.indexOf(c);
@@ -2625,6 +2628,8 @@ function renderColPicker() {
       </label>`;
     }).join('')}
   `).join('');
+  // עוטפים ב־.opts כדי שרק הרשימה תהיה גלילה (ה־X של הסגירה נשאר sticky)
+  picker.innerHTML = `<div class="opts">${inner}</div>`;
   picker.querySelectorAll('input').forEach(inp => {
     inp.addEventListener('change', () => {
       COLS[parseInt(inp.dataset.idx)].visible = inp.checked;
@@ -10949,12 +10954,10 @@ async function _rep_buildPDF(sections) {
 
 // ============================================================
 
-// מעביר את כפתור "עמודות" (בלבד) ל־hdr-bottom כשהסינונים מתרחבים.
-// "דוח לוועדה" נשאר תמיד בשורת הסינונים כדי שלא ייעלם מהעין כשנטענת תצוגה
-// שמורה עם הרבה טקסט בצ'יפים (לבקשת המשתמש 2026-05-24).
+// מעביר את כפתור "עמודות" ל־hdr-bottom כשהסינונים מתרחבים.
+// (btn_report עבר באופן קבוע ל־.hdr-bottom — הוא לא חלק מהלוגיקה כאן יותר.)
 function arrangeResponsiveHeader() {
   const btnCols = document.getElementById('btn_cols');
-  const btnReport = document.getElementById('btn_report');
   const filters = document.querySelector('.filters');
   const hdrBottom = document.querySelector('.hdr-bottom');
   const colPicker = document.getElementById('col_picker');
@@ -10962,22 +10965,17 @@ function arrangeResponsiveHeader() {
 
   const isMobile = window.innerWidth <= 640;
 
-  // ודא ש־btn_report תמיד ב־filters (לעולם לא ב־hdr-bottom)
-  if (btnReport && btnReport.parentElement !== filters) {
-    filters.insertBefore(btnReport, colPicker);
-  }
-
   // btn_cols מתחיל ב־filters לצורך מדידה
   if (btnCols.parentElement !== filters) filters.insertBefore(btnCols, colPicker);
 
   // בודק אם יש wrap — איזשהו פריט שיורד לשורה השנייה
   const items = Array.from(filters.children).filter(el => !el.classList.contains('popover'));
-  if (items.length < 2) return;
-  const firstTop = items[0].offsetTop;
-  const wrapped = items.some(el => el.offsetTop > firstTop + 5);
-
-  if (isMobile || wrapped) {
-    hdrBottom.appendChild(btnCols);   // רק btn_cols עובר; btn_report נשאר
+  if (items.length >= 2) {
+    const firstTop = items[0].offsetTop;
+    const wrapped = items.some(el => el.offsetTop > firstTop + 5);
+    if (isMobile || wrapped) {
+      hdrBottom.appendChild(btnCols);
+    }
   }
 }
 
