@@ -10571,24 +10571,19 @@ async function _rep_buildPDF(sections) {
       const nameColX = tableLeftX + (finalTableW - colW[0]);  // קצה שמאל של עמודת השם
       // קו אופקי בין שורת הנתונים לשורת ההערה — רק באזור ההערה, לא תחת עמודת השם
       pdf.line(tableLeftX, noteY, nameColX, noteY);
-      // תווית "הערה:" בקצה הימני של שורת ההערה
+      // תווית "החלטת הרבנים:" בקצה הימני של שורת ההערה, ממורכזת אנכית
       pdf.setFont('David', 'normal');
       pdf.setFontSize(9);
       pdf.setTextColor(100);
-      pdf.text(bidi('הערה:'), nameColX - 2, noteY + 5.8, { align: 'right' });
+      const labelBaselineY = noteY + (NOTE_ROW_H / 2) + 1.4;   // מרכוז אנכי בגובה השורה
+      pdf.text(bidi('החלטת הרבנים:'), nameColX - 2, labelBaselineY, { align: 'right' });
       pdf.setTextColor(0, 0, 0);
     }
 
-    // === תחתית + מסגרת חיצונית של ה"בלוק" כולו ===
-    // כשמופעלת שורת הערה — הקו התחתון מודגש יותר כדי להפריד בין בנות שכנות.
-    if (wantNote) {
-      pdf.setDrawColor(80);
-      pdf.setLineWidth(0.5);
-    }
-    pdf.line(tableLeftX, yTop + totalH, tableLeftX + finalTableW, yTop + totalH);
-    // החזר ברירת מחדל לקווים הצדדיים (דקים)
+    // === תחתית + מסגרת חיצונית של ה"בלוק" כולו — קווים דקים אחידים ===
     pdf.setDrawColor(150);
     pdf.setLineWidth(0.25);
+    pdf.line(tableLeftX, yTop + totalH, tableLeftX + finalTableW, yTop + totalH);
     pdf.line(tableLeftX, yTop, tableLeftX, yTop + totalH);                              // קצה שמאל
     pdf.line(tableLeftX + finalTableW, yTop, tableLeftX + finalTableW, yTop + totalH);  // קצה ימין
     return totalH;
