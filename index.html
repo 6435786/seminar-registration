@@ -10679,12 +10679,62 @@ async function _rep_buildPDF(sections) {
     return H;
   }
 
+  // ============================================================
+  // דף דשבורד — סיכום קצר בראש הדוח (תמיד, בכל מצב)
+  // ============================================================
+  function drawDashboardPage(allReportRows) {
+    drawPageHeader('', 0);
+    let y = TABLE_TOP + 14;
+
+    // === ספירות גדולות ===
+    pdf.setFont('David', 'bold');
+    pdf.setTextColor(30, 58, 138);
+    pdf.setFontSize(20);
+    pdf.text(bidi(`סה"כ בנות במחזור: ${(ROWS || []).length}`), PAGE_W / 2, y, { align: 'center' });
+    y += 12;
+    pdf.setFontSize(18);
+    pdf.text(bidi(`סה"כ שיבוץ עירייה: ${allReportRows.length}`), PAGE_W / 2, y, { align: 'center' });
+    y += 16;
+
+    // === פירוט סטטוסים — 4 שורות ===
+    pdf.setTextColor(0, 0, 0);
+    pdf.setFont('David', 'normal');
+    pdf.setFontSize(13);
+    const statuses = [
+      'שיבוץ בהסכמה',
+      'הסכמת סמינר בלבד',
+      'הסכמת הורים בלבד',
+      'שיבוץ ללא הסכמה',
+    ];
+    statuses.forEach(s => {
+      const count = allReportRows.filter(r => r.placement_status === s).length;
+      pdf.text(bidi(`${s} — ${count} בנות`), PAGE_W / 2, y, { align: 'center' });
+      y += 7;
+    });
+    y += 10;
+
+    // === עוגה לפי שיוך — לבנות הדוח עצמן ===
+    pdf.setFont('David', 'bold');
+    pdf.setFontSize(12);
+    pdf.setTextColor(30, 58, 138);
+    pdf.text(bidi('התפלגות לפי שיוך — בנות הדוח'), PAGE_W / 2, y, { align: 'center' });
+    pdf.setTextColor(0, 0, 0);
+    y += 6;
+    drawSectorPie({ fallbackRows: allReportRows }, PAGE_W / 2, y + 28, 28);
+  }
+
   // ===== ציור כל סקציה =====
-  const pageMap = [];   // [{sectionIdx, page, totalInSection}]
+  const pageMap = [];   // [{sectionIdx, page, totalInSection, isDashboard?}]
   const isInline = REPORT_STATE.separateBy === 'seminar_inline';
+
+  // === דשבורד תמיד ראשון ===
+  const allReportRows = sections.flatMap(s => s.rows);
+  drawDashboardPage(allReportRows);
+  pageMap.push({ isDashboard: true });
 
   if (isInline) {
     // === מצב inline: רצף אחד; כותרות סמינר בתוך הזרימה; פגינציה רציפה ===
+    pdf.addPage();   // אחרי דף הדשבורד
     let pageNum = 1;
     drawPageHeader('', 0);   // בלי כותרת סקציה — כי זה רצף
     let y = drawTableHeader(TABLE_TOP);
@@ -10755,12 +10805,11 @@ async function _rep_buildPDF(sections) {
 
   } else {
     // === מצב רגיל (none / seminar בנפרד / sector בנפרד) — כל סקציה בעמוד נפרד ===
-    let isFirstPage = true;
+    // (אין יותר isFirstPage — דף הדשבורד כבר נוצר, אז תמיד addPage לפני סקציה)
     for (let si = 0; si < sections.length; si++) {
       const section = sections[si];
       let pageOfSection = 1;
-      if (!isFirstPage) pdf.addPage();
-      isFirstPage = false;
+      pdf.addPage();
       drawPageHeader(section.title, section.rows.length);
       let y = drawTableHeader(TABLE_TOP);
       _zebraReset();
@@ -10816,10 +10865,11 @@ async function _rep_buildPDF(sections) {
     }
   }
 
-  // הוסף פוטר לכל עמוד
+  // הוסף פוטר לכל עמוד (מדלגים על דף הדשבורד — הוא ללא פוטר ממוספר)
   for (let p = 0; p < pageMap.length; p++) {
-    pdf.setPage(p + 1);
     const info = pageMap[p];
+    if (info.isDashboard) continue;
+    pdf.setPage(p + 1);
     drawPageFooter(info.page, info.totalInSection);
   }
 
