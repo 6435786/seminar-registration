@@ -10536,6 +10536,12 @@ async function _rep_buildPDF(sections) {
     }
     _zebraIdx++;
 
+    // === קו עליון של הבלוק — אחרי הרקע, מבטיח שקו ההפרדה מהבת הקודמת
+    //     לעולם לא ייעלם (גם אם הרקע של הבת הזו מכסה את הקו התחתון שלה) ===
+    pdf.setDrawColor(150);
+    pdf.setLineWidth(0.25);
+    pdf.line(tableLeftX, yTop, tableLeftX + finalTableW, yTop);
+
     // === שורת הנתונים — קווים אנכיים + תוכן ===
     pdf.setDrawColor(150);
     pdf.setLineWidth(0.25);
@@ -10569,11 +10575,9 @@ async function _rep_buildPDF(sections) {
     if (wantNote) {
       const noteY = yTop + dataH;
       const nameColX = tableLeftX + (finalTableW - colW[0]);  // קצה שמאל של עמודת השם
-      // קו אופקי אחיד לכל רוחב הטבלה — בין שורת הנתונים לשורת ההערה.
-      // (לא עוצרים בנמ קו השם, כדי שלא יראה לעין שלפעמים יש קו ולפעמים אין.
-      //  המיזוג של עמודת השם נשמר ע"י רקע רציף, מרכוז טקסט בגובה הכולל,
-      //  והקו האנכי משמאל לעמודת השם שגולש דרך שורת ההערה.)
-      pdf.line(tableLeftX, noteY, tableLeftX + finalTableW, noteY);
+      // קו אופקי בין שורת הנתונים לשורת ההערה — רק באזור ההערה,
+      // לא תחת עמודת השם (כדי שהשם ייראה כתא אחד ממוזג לשתי השורות).
+      pdf.line(tableLeftX, noteY, nameColX, noteY);
       // תווית "החלטת הרבנים:" בקצה הימני של שורת ההערה, ממורכזת אנכית
       pdf.setFont('David', 'normal');
       pdf.setFontSize(9);
