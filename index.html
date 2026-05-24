@@ -5944,7 +5944,8 @@ const TEMPLATE_SECTION_LABELS = {
     copies_line1:     { label: 'העתקים — שורה 1' },
     copies_line2:     { label: 'העתקים — שורה 2' },
     copies_line3:     { label: 'העתקים — שורה 3' },
-    copies_line4:     { label: 'העתקים — שורה 4',         short: true },
+    copies_line4:     { label: 'העתקים — שורה 4' },
+    copies_line5:     { label: 'העתקים — שורה 5',         short: true },
     table_title:      { label: 'כותרת רשימת התלמידות' },
   },
   seminar_final: {
@@ -5965,7 +5966,8 @@ const TEMPLATE_SECTION_LABELS = {
     copies_line1:     { label: 'העתקים — שורה 1' },
     copies_line2:     { label: 'העתקים — שורה 2' },
     copies_line3:     { label: 'העתקים — שורה 3' },
-    copies_line4:     { label: 'העתקים — שורה 4',         short: true },
+    copies_line4:     { label: 'העתקים — שורה 4' },
+    copies_line5:     { label: 'העתקים — שורה 5',         short: true },
     table_title:      { label: 'כותרת רשימת התלמידות' },
   },
 };
@@ -6027,10 +6029,11 @@ const TEMPLATE_DEFAULT_CONTENT = {
     signer_name:      'יהודה קורנבליט',
     signer_role:      'מנהל אגף החינוך',
     copies_label:     'העתקים:',
-    copies_line1:     'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך',
-    copies_line2:     'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך',
-    copies_line3:     'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך',
-    copies_line4:     'וועדת ערר - מחוז חרדי',
+    copies_line1:     '',
+    copies_line2:     'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך',
+    copies_line3:     'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך',
+    copies_line4:     'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך',
+    copies_line5:     'וועדת ערר - מחוז חרדי',
     table_title:      'רשימת תלמידות לשיבוץ — {{seminar_name}}',
   } },
   seminar_final: { sections: {
@@ -6048,10 +6051,11 @@ const TEMPLATE_DEFAULT_CONTENT = {
     signer_name:      'יהודה קורנבליט',
     signer_role:      'מנהל אגף החינוך',
     copies_label:     'העתקים: וועדת הרבנים העירונית',
-    copies_line1:     'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך',
-    copies_line2:     'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך',
-    copies_line3:     'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך',
-    copies_line4:     'וועדת ערר - מחוז חרדי',
+    copies_line1:     '',
+    copies_line2:     'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך',
+    copies_line3:     'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך',
+    copies_line4:     'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך',
+    copies_line5:     'וועדת ערר - מחוז חרדי',
     table_title:      'רשימת תלמידות לשיבוץ — {{seminar_name}}',
   } },
 };
@@ -7992,10 +7996,14 @@ function drawSeminarSignature(pdf, y, slug, data) {
   drawRTL(pdf, T('signer_name', 'יהודה קורנבליט'), 190, y, { size: 12, bold: true });  y += 5;
   drawRTL(pdf, T('signer_role', 'מנהל אגף החינוך'), 190, y, { size: 12 });  y += 10;
   drawRTL(pdf, T('copies_label', 'העתקים:'), 190, y, { size: 10, bold: true });  y += 5;
-  drawRTL(pdf, T('copies_line1', 'הרב דוד זלץ סגן ומ"מ ראש העיר ומחזיק תיק חינוך'), 190, y, { size: 10 });  y += 4.5;
-  drawRTL(pdf, T('copies_line2', 'גב\' איריס הורביץ, מפקחת כוללת על יסודי בנות, משרד החינוך'), 190, y, { size: 10 });  y += 4.5;
-  drawRTL(pdf, T('copies_line3', 'גב\' רחל סולימן, מפקחת מתאמת וכוללת, משרד החינוך'), 190, y, { size: 10 });  y += 4.5;
-  drawRTL(pdf, T('copies_line4', 'וועדת ערר - מחוז חרדי'), 190, y, { size: 10 });
+  // 5 שורות העתקים. שורות ריקות לא מצוירות (כדי שלא יישאר רווח עקיב).
+  for (let i = 1; i <= 5; i++) {
+    const text = T(`copies_line${i}`, '');
+    if (text && text.trim()) {
+      drawRTL(pdf, text, 190, y, { size: 10 });
+      y += 4.5;
+    }
+  }
 }
 
 function drawSeminarInitialLetter(pdf, data) {
