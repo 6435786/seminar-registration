@@ -10501,8 +10501,12 @@ async function _rep_buildPDF(sections) {
     pdf.setFont('David', 'normal');
     pdf.setFontSize(9);
 
-    // === Zebra striping לפי שורות זוגיות ===
-    if (_zebraIdx % 2 === 1) {
+    // === רקע השורה: שיבוץ בהסכמה → ירוק עדין; אחרת → zebra רגיל ===
+    const placedConsent = r.placement_status === 'שיבוץ בהסכמה';
+    if (placedConsent) {
+      pdf.setFillColor(240, 253, 244);   // #f0fdf4 — ירוק בהיר־מאד
+      pdf.rect(tableLeftX, yTop, finalTableW, rh, 'F');
+    } else if (_zebraIdx % 2 === 1) {
       pdf.setFillColor(241, 245, 249);   // #f1f5f9 — אפור בהיר עדין
       pdf.rect(tableLeftX, yTop, finalTableW, rh, 'F');
     }
