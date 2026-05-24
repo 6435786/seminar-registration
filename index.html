@@ -6308,8 +6308,9 @@ async function openEmailComposer() {
     return;
   }
   // אתחל state
-  // טען ברירות מחדל של עותקים מהשליחה האחרונה (רק שדות טקסט — לא אנשי קשר,
-  // כי הם עלולים להיות שייכים לסמינר הקודם)
+  // טען ברירות מחדל של עותקים מהשליחה האחרונה.
+  // נשמרים: שדות הטקסט הידניים + אנשי הקשר הכלליים שנבחרו מהרשימה.
+  // לא נשמרים: אנשי הקשר של הסמינר עצמו (משרד/נוסף) — מתחלפים לכל סמינר.
   let lastCopiesDefaults = {};
   try { lastCopiesDefaults = JSON.parse(localStorage.getItem('ec_last_copies') || '{}'); }
   catch (e) { lastCopiesDefaults = {}; }
@@ -6321,9 +6322,9 @@ async function openEmailComposer() {
     _parentSel: null,          // בחירת בנות (Set של ids), null = יאותחל אוטומטית
     subject: '', bodyText: '',
     cc:          lastCopiesDefaults.cc  || '',
-    ccContacts:  [],   // לא נשמר — שייך לסשן הספציפי
+    ccContacts:  Array.isArray(lastCopiesDefaults.ccContacts)  ? lastCopiesDefaults.ccContacts  : [],
     bcc:         lastCopiesDefaults.bcc || localStorage.getItem('ec_bcc_default') || '',
-    bccContacts: [],   // לא נשמר — שייך לסשן הספציפי
+    bccContacts: Array.isArray(lastCopiesDefaults.bccContacts) ? lastCopiesDefaults.bccContacts : [],
     letterDate: null,
     shortNote: '',             // איפוס בכל פתיחה — זה חד־פעמי, לא נשמר
     extraLetter: '',
@@ -7631,14 +7632,15 @@ async function _ec_sendViaGmail() {
 }
 
 // === שמירת ברירות מחדל של עותקים — לפתיחה הבאה ===
-// נקרא אחרי שליחה. שומר רק את שדות הטקסט (CC ידני, BCC ידני).
-// אנשי הקשר (ccContacts, bccContacts) לא נשמרים כי הם עלולים להיות
-// שייכים לסמינר/נמען ספציפי שלא רלוונטי לשליחה הבאה.
+// נשמרים: שדות הטקסט + אנשי קשר כלליים שנבחרו מהרשימה (מפקחות, רבנים).
+// לא נשמרים: אנשי קשר של הסמינר עצמו (משרד/נוסף) — אלה משתנים לכל סמינר ונשלפים אוטומטית.
 function _ec_saveCopiesDefaults() {
   try {
     const data = {
-      cc:  EC_STATE.cc  || '',
-      bcc: EC_STATE.bcc || '',
+      cc:          EC_STATE.cc          || '',
+      ccContacts:  EC_STATE.ccContacts  || [],
+      bcc:         EC_STATE.bcc         || '',
+      bccContacts: EC_STATE.bccContacts || [],
     };
     localStorage.setItem('ec_last_copies', JSON.stringify(data));
   } catch (e) {
