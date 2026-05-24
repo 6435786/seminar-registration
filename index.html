@@ -3057,6 +3057,8 @@ async function startEdit(td, nid) {
   control.addEventListener('keydown', (e) => {
     if (e.key === 'Enter')  { e.preventDefault(); _finishCurrent(true); }
     if (e.key === 'Escape') { e.preventDefault(); _finishCurrent(false); }
+    // Tab — שומר את העריכה ומאפשר ל־Tab לעבור הלאה (במקום לבטל בשקט)
+    if (e.key === 'Tab')    { _finishCurrent(true); }
   });
   if (control.tagName === 'SELECT') {
     control.addEventListener('change', () => _finishCurrent(true));
@@ -8538,7 +8540,17 @@ async function showHistory(tab) {
 document.getElementById('modal').addEventListener('click', e => {
   if (e.target.id === 'modal') closeModal();
 });
-document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+// Escape — סוגר לפי סדר עדיפות: popover פתוח קודם, אחר כך מודאל ראשי.
+// כך משתמשי מקלדת לא נתקעים בלי דרך לסגור.
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  const openPop = document.querySelector('.popover.open');
+  if (openPop) {
+    openPop.classList.remove('open');
+    return;
+  }
+  closeModal();
+});
 
 async function main() {
   const tbody = document.getElementById('tbody');
