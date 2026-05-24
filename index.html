@@ -9877,8 +9877,7 @@ const REPORT_SORT_CATEGORIES = [
 
 const REPORT_STATE = {
   baseViewId: null,     // null = current view; else saved view id
-  sorts: [              // 3 levels: {cat, order: {value: rank}}
-    { cat: '', order: {} },
+  sorts: [              // 2 levels: {cat, order: {value: rank}}
     { cat: '', order: {} },
     { cat: '', order: {} },
   ],
@@ -9900,9 +9899,10 @@ async function openCommitteeReport() {
   // אתחל state — לכל פתיחה מתחיל נקי, בסיס = תצוגה נוכחית
   Object.assign(REPORT_STATE, {
     baseViewId: null,
-    sorts: [{cat:'',order:{}},{cat:'',order:{}},{cat:'',order:{}}],
+    sorts: [{cat:'',order:{}},{cat:'',order:{}}],
     separateBy: 'none',
     showChart: false,
+    noteField: false,
   });
   // טען העדפות שמורות אם עוד לא נטענו
   if (_reportPrefsCache === null) await _loadReportPrefs();
@@ -9920,18 +9920,17 @@ function _rep_renderModal() {
   pop.id = 'rep_pop';
   pop.style.cssText = 'background:white;border-radius:14px;box-shadow:0 16px 50px rgba(0,0,0,0.3);max-width:680px;width:100%;max-height:92vh;display:flex;flex-direction:column;';
   pop.innerHTML = `
-    <div style="padding:14px 22px;border-bottom:1px solid var(--border);background:linear-gradient(to bottom,#f8fafc,white);display:flex;align-items:center;gap:10px;">
+    <div style="padding:12px 18px;border-bottom:1px solid var(--border);background:linear-gradient(to bottom,#f8fafc,white);display:flex;align-items:center;gap:10px;">
       <div style="font-size:22px;">📄</div>
-      <div style="flex:1;">
-        <div style="font-weight:700;color:var(--deep);font-size:17px;">דוח לוועדה</div>
-        <div style="color:var(--muted);font-size:12px;">קונפיגורציה לפני הפקה</div>
-      </div>
-      <button class="close" onclick="document.getElementById('rep_scrim').remove();">×</button>
+      <div style="flex:1;font-weight:700;color:var(--deep);font-size:18px;">דוח לוועדה</div>
+      <button onclick="document.getElementById('rep_scrim').remove();" title="סגור"
+        style="width:36px;height:36px;border:1.5px solid #cbd5e1;border-radius:8px;background:white;color:#475569;font-size:22px;font-weight:700;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;"
+        onmouseover="this.style.background='#fee2e2';this.style.borderColor='#fca5a5';this.style.color='#dc2626';"
+        onmouseout="this.style.background='white';this.style.borderColor='#cbd5e1';this.style.color='#475569';">×</button>
     </div>
-    <div id="rep_body" style="padding:14px 22px;overflow-y:auto;flex:1;"></div>
-    <div style="padding:12px 22px;border-top:1px solid var(--border);display:flex;gap:8px;background:#f8fafc;flex-wrap:wrap;">
-      <button class="cancel-btn" onclick="document.getElementById('rep_scrim').remove();">סגור</button>
-      <button class="cancel-btn" onclick="_rep_generate('print')">🖨 הצג לפני הדפסה</button>
+    <div id="rep_body" style="padding:14px 18px;overflow-y:auto;flex:1;"></div>
+    <div style="padding:12px 18px;border-top:1px solid var(--border);display:flex;gap:8px;background:#f8fafc;">
+      <button class="cancel-btn" onclick="_rep_generate('print')" style="flex:1;">🖨 הצג לפני הדפסה</button>
       <button class="apply-big" onclick="_rep_generate('download')" style="flex:1;">📄 הורד PDF</button>
     </div>
   `;
@@ -9947,69 +9946,90 @@ function _rep_renderBody() {
   const prefs = _reportPrefsCache || [];
 
   body.innerHTML = `
+    <!-- העדפות שמורות — בראש (זה השלב הראשון לרוב המשתמשים) -->
+    <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:6px;padding:8px 10px;margin-bottom:14px;">
+      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+        <span style="font-weight:600;color:var(--deep);font-size:13px;min-width:60px;">העדפה:</span>
+        <select id="rep_pref_picker" onchange="_rep_loadPreference(this.value)" style="flex:1;min-width:160px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:13px;">
+          <option value="">— ללא —</option>
+          ${prefs.map(p => `<option value="${p.id}">${_esc(p.name)}${p.user_id !== CURRENT_USER.id ? ' (משותפת)' : ''}</option>`).join('')}
+        </select>
+        <button class="mini-btn" onclick="_rep_savePreference()" title="שומר את כל ההגדרות הנוכחיות כהעדפה חוזרת">💾 שמור</button>
+      </div>
+    </div>
+
     <!-- בסיס -->
-    <div style="margin-bottom:18px;">
-      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">בסיס (פילטרים + עמודות + מיון):</div>
-      <select id="rep_base" onchange="_rep_setBase(this.value)" style="width:100%;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:13px;">
-        <option value="">— תצוגה נוכחית (מה שמופיע במסך עכשיו) —</option>
-        ${views.map(v => `<option value="${v.id}" ${REPORT_STATE.baseViewId === v.id ? 'selected' : ''}>${_esc(v.name)}${v.is_shared ? ' 🔗' : ''}</option>`).join('')}
-      </select>
+    <div style="margin-bottom:14px;">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-weight:600;color:var(--deep);font-size:13px;min-width:60px;">בסיס:</span>
+        <select id="rep_base" onchange="_rep_setBase(this.value)" style="flex:1;padding:6px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:13px;"
+          title="הבסיס קובע אילו פילטרים, עמודות ומיון מהטבלה הראשית נכנסים לדוח. ניתן להמשיך לשנות מיון/הצגה למטה.">
+          <option value="">תצוגה נוכחית</option>
+          ${views.map(v => `<option value="${v.id}" ${REPORT_STATE.baseViewId === v.id ? 'selected' : ''}>${_esc(v.name)}${v.is_shared ? ' 🔗' : ''}</option>`).join('')}
+        </select>
+      </div>
     </div>
 
     <!-- מיון -->
-    <div style="margin-bottom:18px;">
-      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">מיון (סדר עדיפויות):</div>
-      ${[0,1,2].map(i => `
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+    <div style="margin-bottom:14px;">
+      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">מיון:</div>
+      ${[0,1].map(i => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:5px;">
           <span style="color:var(--muted);font-size:12px;min-width:50px;">מיון ${i+1}:</span>
           <select onchange="_rep_setSortCat(${i}, this.value)" style="flex:1;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;">
             <option value="">— ללא —</option>
             ${REPORT_SORT_CATEGORIES.map(c => `<option value="${c.value}" ${c.value === REPORT_STATE.sorts[i].cat ? 'selected' : ''}>${c.label}</option>`).join('')}
           </select>
-          <button class="mini-btn" onclick="_rep_openOrderPopover(${i})" ${REPORT_STATE.sorts[i].cat ? '' : 'disabled'} style="${REPORT_STATE.sorts[i].cat ? '' : 'opacity:0.5;cursor:not-allowed;'}">סדר ערכים…</button>
+          <button class="mini-btn" onclick="_rep_openOrderPopover(${i})" ${REPORT_STATE.sorts[i].cat ? '' : 'disabled'}
+            title="קביעת סדר ידני של הערכים לקטגוריה הזו (לדוגמה: ספרדי קודם, ליטאי שני)"
+            style="${REPORT_STATE.sorts[i].cat ? '' : 'opacity:0.5;cursor:not-allowed;'}">סדר ערכים…</button>
         </div>
       `).join('')}
-      <div style="color:var(--muted);font-size:11px;margin-top:4px;">בתוך הכל — אלף-בית לפי שם מלא (קבוע)</div>
+      <div style="color:var(--muted);font-size:11px;margin-top:2px;" title="כאשר שני נתונים זהים בכל המיונים — הסידור נקבע לפי שם מלא בסדר אלף-בית.">בסוף — אלף-בית לפי שם מלא ⓘ</div>
     </div>
 
-    <!-- תצוגה -->
-    <div style="margin-bottom:18px;">
-      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">תצוגה בפלט:</div>
-      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
-        <input type="checkbox" ${REPORT_STATE.separateBy === 'seminar' ? 'checked' : ''} onchange="_rep_setSeparate('seminar', this.checked)">
-        הצג סמינרים בנפרד <span style="color:var(--muted);font-size:11px;">(כל סמינר בעמוד נפרד, עם כותרת + עמוד X/Y)</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
-        <input type="checkbox" ${REPORT_STATE.separateBy === 'seminar_inline' ? 'checked' : ''} onchange="_rep_setSeparate('seminar_inline', this.checked)">
-        הצג סמינרים ברצף <span style="color:var(--muted);font-size:11px;">(שורת כותרת בין סמינר לסמינר, בלי עמוד חדש)</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
-        <input type="checkbox" ${REPORT_STATE.separateBy === 'sector' ? 'checked' : ''} onchange="_rep_setSeparate('sector', this.checked)">
-        הצג מגזרים בנפרד <span style="color:var(--muted);font-size:11px;">(סותר את האפשרויות הקודמות)</span>
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:${REPORT_STATE.separateBy === 'sector' ? 'not-allowed' : 'pointer'};${REPORT_STATE.separateBy === 'sector' ? 'opacity:0.45;' : ''}">
-        <input type="checkbox" ${REPORT_STATE.showChart ? 'checked' : ''} ${REPORT_STATE.separateBy === 'sector' ? 'disabled' : ''} onchange="REPORT_STATE.showChart = this.checked;">
-        הצג תרשים <span style="color:var(--muted);font-size:11px;">(עוגה — חלוקה לפי שיוך)</span>
-        ${REPORT_STATE.separateBy === 'sector' ? '<span style="color:var(--muted);font-size:11px;">— לא רלוונטי כשמגזרים בנפרד</span>' : ''}
-      </label>
-      <label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px;cursor:pointer;">
-        <input type="checkbox" ${REPORT_STATE.noteField ? 'checked' : ''} onchange="REPORT_STATE.noteField = this.checked;">
-        שדה הערה <span style="color:var(--muted);font-size:11px;">(שורה ריקה מתחת לכל בת — לכתיבה ידנית בוועדה)</span>
-      </label>
+    <!-- אופן הצגה — רדיו (מותר רק אחד) -->
+    <div style="margin-bottom:12px;">
+      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">אופן הצגה:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:14px;">
+        ${[
+          { val: 'none',           label: 'בלי פיצול',     tip: 'דוח אחד רציף, בלי חלוקה לסקציות' },
+          { val: 'seminar',        label: 'סמינרים נפרד',  tip: 'כל סמינר בעמוד נפרד, עם כותרת ועמוד X/Y' },
+          { val: 'seminar_inline', label: 'סמינרים ברצף',  tip: 'שורת כותרת בין סמינר לסמינר, בלי עמוד חדש' },
+          { val: 'sector',         label: 'מגזרים נפרד',   tip: 'כל מגזר (ספרדי/ליטאי/חסידי) בעמוד נפרד' },
+        ].map(o => `
+          <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;" title="${o.tip}">
+            <input type="radio" name="rep_separate" value="${o.val}" ${REPORT_STATE.separateBy === o.val ? 'checked' : ''} onchange="_rep_setSeparateRadio('${o.val}')">
+            ${o.label}
+          </label>
+        `).join('')}
+      </div>
     </div>
 
-    <!-- העדפות שמורות -->
-    <div style="background:#f8fafc;border:1px solid var(--border);border-radius:6px;padding:10px 12px;">
-      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">העדפות שמורות:</div>
-      <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
-        <select id="rep_pref_picker" onchange="_rep_loadPreference(this.value)" style="flex:1;min-width:160px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-family:inherit;font-size:13px;">
-          <option value="">— בחר העדפה שמורה —</option>
-          ${prefs.map(p => `<option value="${p.id}">${_esc(p.name)}${p.user_id !== CURRENT_USER.id ? ' (משותפת)' : ''}</option>`).join('')}
-        </select>
-        <button class="mini-btn" onclick="_rep_savePreference()">💾 שמור הגדרות נוכחיות</button>
+    <!-- תוספות — צ'קבוקסים בלתי־תלויים -->
+    <div style="margin-bottom:4px;">
+      <div style="font-weight:600;color:var(--deep);font-size:13px;margin-bottom:6px;">תוספות:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:14px;">
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:${REPORT_STATE.separateBy === 'sector' ? 'not-allowed' : 'pointer'};${REPORT_STATE.separateBy === 'sector' ? 'opacity:0.45;' : ''}"
+          title="${REPORT_STATE.separateBy === 'sector' ? 'לא רלוונטי כשמגזרים בנפרד — כל עמוד הוא מגזר אחד' : 'מציג עוגה של חלוקה לפי שיוך (ספרדי/ליטאי/חסידי)'}">
+          <input type="checkbox" ${REPORT_STATE.showChart ? 'checked' : ''} ${REPORT_STATE.separateBy === 'sector' ? 'disabled' : ''} onchange="REPORT_STATE.showChart = this.checked;">
+          עוגה לפי שיוך
+        </label>
+        <label style="display:flex;align-items:center;gap:5px;font-size:13px;cursor:pointer;"
+          title="מוסיף שורה ריקה מתחת לכל בת, לכתיבת החלטת הוועדה ידנית על הדפס. לא מופיע על בנות עם שיבוץ בהסכמה.">
+          <input type="checkbox" ${REPORT_STATE.noteField ? 'checked' : ''} onchange="REPORT_STATE.noteField = this.checked;">
+          הוסף שדה הערה
+        </label>
       </div>
     </div>
   `;
+}
+
+// === רדיו של אופן הצגה — מחליף את הצ'קבוקסים ===
+function _rep_setSeparateRadio(value) {
+  REPORT_STATE.separateBy = value;
+  if (value === 'sector') REPORT_STATE.showChart = false;
+  _rep_renderBody();
 }
 
 function _rep_setBase(id) {
@@ -10141,6 +10161,7 @@ async function _rep_savePreference() {
       sorts: REPORT_STATE.sorts,
       separateBy: REPORT_STATE.separateBy,
       showChart: REPORT_STATE.showChart,
+      noteField: REPORT_STATE.noteField,
     },
     is_shared: shared,
   });
@@ -10157,9 +10178,13 @@ function _rep_loadPreference(id) {
   if (!p) return;
   const c = p.config || {};
   REPORT_STATE.baseViewId  = c.baseViewId ?? null;
-  REPORT_STATE.sorts       = (c.sorts && c.sorts.length === 3) ? c.sorts : [{cat:'',order:{}},{cat:'',order:{}},{cat:'',order:{}}];
+  // תאימות אחורה: העדפות ישנות נשמרו עם 3 רמות מיון; נחתוך ל־2 הראשונות.
+  const incomingSorts = Array.isArray(c.sorts) ? c.sorts.slice(0, 2) : [];
+  while (incomingSorts.length < 2) incomingSorts.push({ cat: '', order: {} });
+  REPORT_STATE.sorts       = incomingSorts;
   REPORT_STATE.separateBy  = c.separateBy || 'none';
   REPORT_STATE.showChart   = !!c.showChart;
+  REPORT_STATE.noteField   = !!c.noteField;
   _rep_renderBody();
   toast(`נטענה העדפה: ${p.name}`);
 }
