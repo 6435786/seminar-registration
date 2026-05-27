@@ -5393,7 +5393,7 @@ function renderGirlsImport() {
             <div style="font-weight:600; color:var(--deep); margin-bottom:2px;">העלה את הקובץ המלא</div>
             <div style="color:var(--muted); font-size:13px;">לאחר העלאה — תקבל ולידציה ותצוגה מקדימה של השינויים. הפעולה תתבצע רק אחרי אישור סופי.</div>
           </div>
-          <button class="save-btn" onclick="triggerGirlsImport()" style="white-space:nowrap; opacity:0.55; cursor:not-allowed;" disabled title="בקרוב — שלב הולידציה עוד לא מוכן">📤 העלה קובץ</button>
+          <button class="save-btn" onclick="triggerGirlsImport()" style="white-space:nowrap;">📤 העלה קובץ</button>
         </div>
       </div>
 
@@ -5474,9 +5474,251 @@ async function downloadGirlsImportTemplate() {
   toast(`הורד ✓ — ${girls.length} בנות בקובץ`);
 }
 
-// placeholder לשלב 2 — בנייה בשלב הבא
-function triggerGirlsImport() {
-  toast('שלב הולידציה עוד לא מוכן — בשלב הבא של הפיתוח', 'warn');
+// state של תהליך ייבוא בנות — נשמר בזיכרון בלבד (לא DB)
+let GIRLS_IMPORT_STATE = null;
+
+// בדיקת ספרת ביקורת של ת.ז. ישראלית (אלגוריתם רשמי)
+function _validateIsraeliId(id) {
+  if (id == null) return false;
+  let s = String(id).trim();
+  if (!/^\d+$/.test(s)) return false;
+  if (s.length < 5 || s.length > 9) return false;
+  // ריפוד באפסים מובילים ל־9 ספרות
+  s = s.padStart(9, '0');
+  let sum = 0;
+  for (let i = 0; i < 9; i++) {
+    let d = parseInt(s[i], 10);
+    if (i % 2 === 1) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+  }
+  return sum % 10 === 0;
+}
+
+function _validateEmailFormat(em) {
+  if (!em) return true;  // ריק = מותר
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(em).trim());
+}
+
+function _validatePhoneFormat(ph) {
+  if (!ph) return true;
+  const digits = String(ph).replace(/\D/g, '');
+  return digits.length >= 7 && digits.length <= 11;
+}
+
+// טריגר: בחירת קובץ → קריאה → ולידציה → תצוגה
+async function triggerGirlsImport() {
+  const inp = document.createElement('input');
+  inp.type = 'file';
+  inp.accept = '.xlsx,.xls';
+  inp.onchange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    try {
+      toast('קורא קובץ...');
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: 'array' });
+      const ws = wb.Sheets[wb.SheetNames[0]];
+      const raw = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' });
+      // raw[0] = headers, raw[1..] = data
+      await _processImportFile(raw, file.name);
+    } catch (err) {
+      console.error(err);
+      toast('שגיאה בקריאת הקובץ: ' + err.message, 'warn');
+    }
+  };
+  inp.click();
+}
+
+async function _processImportFile(rawRows, filename) {
+  if (!rawRows || rawRows.length < 2) {
+    toast('הקובץ ריק או לא תקין', 'warn');
+    return;
+  }
+
+  // התאמת עמודות לפי כותרות (case+space tolerant)
+  const norm = (s) => String(s || '').trim();
+  const fileHeaders = (rawRows[0] || []).map(norm);
+  const headerToColIdx = {};
+  fileHeaders.forEach((h, i) => { if (h) headerToColIdx[h] = i; });
+
+  // בדיקת עמודות נדרשות
+  const missingHeaders = [];
+  for (const col of GIRLS_IMPORT_COLS) {
+    if (!(col.header in headerToColIdx)) missingHeaders.push(col.header);
+  }
+  if (missingHeaders.length) {
+    toast(`חסרות עמודות: ${missingHeaders.join(', ')}`, 'warn');
+    return;
+  }
+
+  // שליפת lookups לולידציה
+  toast('טוען נתוני ולידציה...');
+  const [affRes, schoolsRes] = await Promise.all([
+    sb.from('list_affiliations').select('value').eq('is_active', true),
+    sb.from('source_schools').select('id, name')
+  ]);
+  if (affRes.error || schoolsRes.error) {
+    toast('שגיאה בטעינת נתוני ולידציה', 'warn');
+    return;
+  }
+  const validAffiliations = new Set((affRes.data || []).map(r => norm(r.value)));
+  const schoolByName = {};
+  (schoolsRes.data || []).forEach(s => { schoolByName[norm(s.name)] = s.id; });
+
+  // parse + validate שורה־אחר־שורה
+  const parsedRows = [];
+  const errors = [];   // {row, msg}  — חוסמים
+  const warnings = []; // {row, msg}  — לא חוסמים
+  const seenIds = new Set();
+
+  for (let ri = 1; ri < rawRows.length; ri++) {
+    const r = rawRows[ri];
+    if (!r || !r.some(c => norm(c))) continue;  // שורה ריקה לחלוטין
+
+    const xlsxRowNum = ri + 1;  // אקסל מתחיל מ־1, ועם הכותרת
+    const row = { _xlsxRow: xlsxRowNum };
+    for (const col of GIRLS_IMPORT_COLS) {
+      const v = norm(r[headerToColIdx[col.header]]);
+      row[col.dbField] = v;
+    }
+
+    // 1. שדות חובה
+    if (!row.national_id) { errors.push({ row: xlsxRowNum, msg: 'ת.ז. חסרה' }); continue; }
+    if (!row.first_name)  { errors.push({ row: xlsxRowNum, msg: 'שם פרטי חסר' }); }
+    if (!row.family_name) { errors.push({ row: xlsxRowNum, msg: 'שם משפחה חסר' }); }
+
+    // 2. ת.ז. — נירמול + ספרת ביקורת
+    const nidRaw = row.national_id;
+    // ספרת ביקורת
+    if (!_validateIsraeliId(nidRaw)) {
+      errors.push({ row: xlsxRowNum, msg: `ת.ז. לא תקינה (ספרת ביקורת שגויה): ${nidRaw}` });
+    } else {
+      // נירמול: ריפוד באפסים מובילים אם 8 ספרות
+      const padded = nidRaw.padStart(9, '0');
+      if (padded !== nidRaw) {
+        warnings.push({ row: xlsxRowNum, msg: `ת.ז. רופדה ב־0 בהתחלה: ${nidRaw} → ${padded}` });
+      }
+      row.national_id = padded;
+    }
+
+    // 3. כפילות ת.ז. בתוך הקובץ
+    if (row.national_id && seenIds.has(row.national_id)) {
+      errors.push({ row: xlsxRowNum, msg: `ת.ז. כפולה בקובץ: ${row.national_id}` });
+    } else if (row.national_id) {
+      seenIds.add(row.national_id);
+    }
+
+    // 4. שיוך
+    if (row.sector && !validAffiliations.has(row.sector)) {
+      errors.push({ row: xlsxRowNum, msg: `שיוך לא חוקי: "${row.sector}" (חייב להיות אחד מ: ${[...validAffiliations].join(', ')})` });
+    }
+
+    // 5. בית ספר
+    if (row.source_school_id) {
+      // הערך כרגע הוא שם — נמיר ל־ID
+      const schoolName = row.source_school_id;
+      const id = schoolByName[norm(schoolName)];
+      if (!id) {
+        errors.push({ row: xlsxRowNum, msg: `בית ספר לא נמצא: "${schoolName}". יש ליצור אותו ידנית קודם.` });
+        row.source_school_id = null;
+      } else {
+        row.source_school_id = id;
+      }
+    } else {
+      row.source_school_id = null;
+    }
+
+    // 6. ת.ז. הורים — אם מילא, צריך להיות תקין
+    if (row.mother_national_id && !_validateIsraeliId(row.mother_national_id)) {
+      warnings.push({ row: xlsxRowNum, msg: `ת.ז. אם לא תקינה: ${row.mother_national_id}` });
+    }
+    if (row.father_national_id && !_validateIsraeliId(row.father_national_id)) {
+      warnings.push({ row: xlsxRowNum, msg: `ת.ז. אב לא תקינה: ${row.father_national_id}` });
+    }
+
+    // 7. מייל + טלפונים
+    if (row.email && !_validateEmailFormat(row.email)) {
+      warnings.push({ row: xlsxRowNum, msg: `פורמט מייל חשוד: ${row.email}` });
+    }
+    // gnail.com → gmail.com אזהרה אוטומטית
+    if (row.email && /@gnail\.com$/i.test(row.email)) {
+      warnings.push({ row: xlsxRowNum, msg: `מייל "${row.email}" — נראה כטעות הקלדה (gnail.com), יתוקן ל־gmail.com` });
+      row.email = row.email.replace(/@gnail\.com$/i, '@gmail.com');
+    }
+    if (row.mother_phone && !_validatePhoneFormat(row.mother_phone)) {
+      warnings.push({ row: xlsxRowNum, msg: `טלפון אם חשוד: ${row.mother_phone}` });
+    }
+    if (row.father_phone && !_validatePhoneFormat(row.father_phone)) {
+      warnings.push({ row: xlsxRowNum, msg: `טלפון אב חשוד: ${row.father_phone}` });
+    }
+
+    parsedRows.push(row);
+  }
+
+  GIRLS_IMPORT_STATE = { filename, parsedRows, errors, warnings };
+  _renderImportValidation();
+}
+
+function _renderImportValidation() {
+  const s = GIRLS_IMPORT_STATE;
+  const box = document.getElementById('girls_import_results');
+  if (!box) return;
+
+  const hasErrors = s.errors.length > 0;
+  const hasWarnings = s.warnings.length > 0;
+
+  const errorsHtml = s.errors.length ? `
+    <div style="background:#fef2f2; border:1px solid #fca5a5; border-radius:8px; padding:10px 14px; margin-top:10px;">
+      <div style="font-weight:700; color:#b91c1c; margin-bottom:6px;">🛑 שגיאות (${s.errors.length}) — חייבות תיקון לפני המשך:</div>
+      <div style="max-height:220px; overflow-y:auto; font-size:13px; line-height:1.7;">
+        ${s.errors.map(e => `<div><b>שורה ${e.row}:</b> ${e.msg}</div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const warningsHtml = s.warnings.length ? `
+    <div style="background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; padding:10px 14px; margin-top:10px;">
+      <div style="font-weight:700; color:#92400e; margin-bottom:6px;">⚠ אזהרות (${s.warnings.length}) — תוכל להמשיך, אך מומלץ לבדוק:</div>
+      <div style="max-height:180px; overflow-y:auto; font-size:13px; line-height:1.7;">
+        ${s.warnings.map(w => `<div><b>שורה ${w.row}:</b> ${w.msg}</div>`).join('')}
+      </div>
+    </div>` : '';
+
+  const okHtml = (!hasErrors && !hasWarnings) ? `
+    <div style="background:#f0fdf4; border:1px solid #86efac; border-radius:8px; padding:10px 14px; margin-top:10px; color:#166534; font-weight:600;">
+      ✓ הקובץ עבר ולידציה — כל ${s.parsedRows.length} השורות תקינות
+    </div>` : '';
+
+  const continueBtn = !hasErrors ? `
+    <button class="save-btn" onclick="_proceedToDiff()" style="margin-top:14px;">המשך → ניתוח שינויים (שלב 3)</button>
+  ` : `
+    <div style="margin-top:14px; color:var(--muted); font-size:13px;">
+      תקן את השגיאות בקובץ ה־Excel והעלה אותו שוב. אזהרות אינן חוסמות — רק שגיאות.
+    </div>
+  `;
+
+  box.innerHTML = `
+    <div style="border-top:2px solid #e2e8f0; padding-top:16px;">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;">
+        <h4 style="margin:0; color:var(--deep);">📋 תוצאות ולידציה</h4>
+        <span style="color:var(--muted); font-size:13px;">קובץ: ${s.filename}</span>
+        <span style="background:#e0f2fe; color:#075985; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600;">${s.parsedRows.length} שורות נקראו</span>
+        ${s.errors.length ? `<span style="background:#fee2e2; color:#b91c1c; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600;">${s.errors.length} שגיאות</span>` : ''}
+        ${s.warnings.length ? `<span style="background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600;">${s.warnings.length} אזהרות</span>` : ''}
+      </div>
+      ${okHtml}
+      ${errorsHtml}
+      ${warningsHtml}
+      ${continueBtn}
+    </div>
+  `;
+}
+
+// placeholder לשלב 3
+function _proceedToDiff() {
+  toast('שלב 3 (diff + תצוגה מקדימה) — בבנייה בשלב הבא', 'warn');
 }
 
 function setListTab(i) { _activeListTab = i; renderManageLists(); }
