@@ -5502,12 +5502,6 @@ function _validateEmailFormat(em) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(em).trim());
 }
 
-function _validatePhoneFormat(ph) {
-  if (!ph) return true;
-  const digits = String(ph).replace(/\D/g, '');
-  return digits.length >= 7 && digits.length <= 11;
-}
-
 // טריגר: בחירת קובץ → קריאה → ולידציה → תצוגה
 async function triggerGirlsImport() {
   const inp = document.createElement('input');
@@ -5591,17 +5585,21 @@ async function _processImportFile(rawRows, filename) {
     if (!row.family_name) { errors.push({ row: xlsxRowNum, msg: 'שם משפחה חסר' }); }
 
     // 2. ת.ז. — נירמול + ספרת ביקורת
+    // ת.ז. שמתחילה ב־15 = מספר תושב/דרכון, לא לבדוק כלל
+    // ת.ז. רגילה: ספרת ביקורת = אזהרה (לא חוסם) כדי לאפשר בעלי דרכון אחרים
     const nidRaw = row.national_id;
-    // ספרת ביקורת
-    if (!_validateIsraeliId(nidRaw)) {
-      errors.push({ row: xlsxRowNum, msg: `ת.ז. לא תקינה (ספרת ביקורת שגויה): ${nidRaw}` });
-    } else {
-      // נירמול: ריפוד באפסים מובילים אם 8 ספרות
-      const padded = nidRaw.padStart(9, '0');
-      if (padded !== nidRaw) {
-        warnings.push({ row: xlsxRowNum, msg: `ת.ז. רופדה ב־0 בהתחלה: ${nidRaw} → ${padded}` });
+    const isResidentNumber = /^15/.test(nidRaw);
+    if (!isResidentNumber) {
+      if (!_validateIsraeliId(nidRaw)) {
+        warnings.push({ row: xlsxRowNum, msg: `ת.ז. לא תקינה (ייתכן מספר דרכון): ${nidRaw}` });
+      } else {
+        // נירמול: ריפוד באפסים מובילים אם 8 ספרות
+        const padded = nidRaw.padStart(9, '0');
+        if (padded !== nidRaw) {
+          warnings.push({ row: xlsxRowNum, msg: `ת.ז. רופדה ב־0 בהתחלה: ${nidRaw} → ${padded}` });
+        }
+        row.national_id = padded;
       }
-      row.national_id = padded;
     }
 
     // 3. כפילות ת.ז. בתוך הקובץ
@@ -5631,15 +5629,7 @@ async function _processImportFile(rawRows, filename) {
       row.source_school_id = null;
     }
 
-    // 6. ת.ז. הורים — אם מילא, צריך להיות תקין
-    if (row.mother_national_id && !_validateIsraeliId(row.mother_national_id)) {
-      warnings.push({ row: xlsxRowNum, msg: `ת.ז. אם לא תקינה: ${row.mother_national_id}` });
-    }
-    if (row.father_national_id && !_validateIsraeliId(row.father_national_id)) {
-      warnings.push({ row: xlsxRowNum, msg: `ת.ז. אב לא תקינה: ${row.father_national_id}` });
-    }
-
-    // 7. מייל + טלפונים
+    // 6. מייל
     if (row.email && !_validateEmailFormat(row.email)) {
       warnings.push({ row: xlsxRowNum, msg: `פורמט מייל חשוד: ${row.email}` });
     }
@@ -5647,12 +5637,6 @@ async function _processImportFile(rawRows, filename) {
     if (row.email && /@gnail\.com$/i.test(row.email)) {
       warnings.push({ row: xlsxRowNum, msg: `מייל "${row.email}" — נראה כטעות הקלדה (gnail.com), יתוקן ל־gmail.com` });
       row.email = row.email.replace(/@gnail\.com$/i, '@gmail.com');
-    }
-    if (row.mother_phone && !_validatePhoneFormat(row.mother_phone)) {
-      warnings.push({ row: xlsxRowNum, msg: `טלפון אם חשוד: ${row.mother_phone}` });
-    }
-    if (row.father_phone && !_validatePhoneFormat(row.father_phone)) {
-      warnings.push({ row: xlsxRowNum, msg: `טלפון אב חשוד: ${row.father_phone}` });
     }
 
     parsedRows.push(row);
