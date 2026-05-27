@@ -5404,20 +5404,24 @@ function renderGirlsImport() {
 
 async function downloadGirlsImportTemplate() {
   toast('טוען רשימת בנות...');
-  // שליפת כל הבנות הפעילות + בתי הספר
-  const [girlsRes, schoolsRes] = await Promise.all([
-    sb.from('girls')
-      .select('national_id, first_name, family_name, sector, community, source_school_id, address_street, address_number, mother_name, mother_national_id, mother_phone, father_name, father_national_id, father_phone, email, notes')
-      .eq('is_archived', false)
-      .order('family_name', { ascending: true })
-      .order('first_name', { ascending: true }),
-    sb.from('source_schools').select('id, name')
-  ]);
-  if (girlsRes.error) { toast('שגיאה בטעינת בנות: ' + girlsRes.error.message, 'warn'); return; }
+  // שליפת כל הבנות הפעילות + בתי הספר (עם pagination לעקיפת מגבלת 1000 ב־Supabase)
+  let girls, schoolsRes;
+  try {
+    [girls, schoolsRes] = await Promise.all([
+      _fetchAllPaged(() => sb.from('girls')
+        .select('national_id, first_name, family_name, sector, community, source_school_id, address_street, address_number, mother_name, mother_national_id, mother_phone, father_name, father_national_id, father_phone, email, notes')
+        .eq('is_archived', false)
+        .order('family_name', { ascending: true })
+        .order('first_name', { ascending: true })),
+      sb.from('source_schools').select('id, name')
+    ]);
+  } catch (err) {
+    toast('שגיאה בטעינה: ' + (err.message || err), 'warn');
+    return;
+  }
   if (schoolsRes.error) { toast('שגיאה בטעינת מוסדות: ' + schoolsRes.error.message, 'warn'); return; }
 
   const schoolById = Object.fromEntries((schoolsRes.data || []).map(s => [s.id, s.name]));
-  const girls = girlsRes.data || [];
 
   const headers = GIRLS_IMPORT_COLS.map(c => c.header);
   const rows = girls.map(g => ({
@@ -5476,6 +5480,24 @@ async function downloadGirlsImportTemplate() {
 
 // state של תהליך ייבוא בנות — נשמר בזיכרון בלבד (לא DB)
 let GIRLS_IMPORT_STATE = null;
+
+// עוקף את מגבלת 1000 השורות של Supabase ע"י pagination ב־range
+// queryBuilder = פונקציה שמקבלת את הצופה־ר־PostgrestBuilder ומחזירה אותו עם פילטרים/סדר
+async function _fetchAllPaged(queryBuilder) {
+  const PAGE = 1000;
+  let all = [];
+  let offset = 0;
+  while (true) {
+    const q = queryBuilder().range(offset, offset + PAGE - 1);
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || !data.length) break;
+    all = all.concat(data);
+    if (data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
+}
 
 // בדיקת ספרת ביקורת של ת.ז. ישראלית (אלגוריתם רשמי)
 function _validateIsraeliId(id) {
@@ -5735,12 +5757,16 @@ async function _proceedToDiff() {
   if (!s || s.errors.length) { toast('יש שגיאות לתיקון לפני המשך', 'warn'); return; }
 
   toast('טוען נתוני DB להשוואה...');
-  const [girlsRes, schoolsRes] = await Promise.all([
-    sb.from('girls').select('*').eq('is_archived', false),
-    sb.from('source_schools').select('id, name')
-  ]);
-  if (girlsRes.error) { toast('שגיאה בטעינת בנות: ' + girlsRes.error.message, 'warn'); return; }
-  const dbGirls = girlsRes.data || [];
+  let dbGirls, schoolsRes;
+  try {
+    [dbGirls, schoolsRes] = await Promise.all([
+      _fetchAllPaged(() => sb.from('girls').select('*').eq('is_archived', false).order('id')),
+      sb.from('source_schools').select('id, name')
+    ]);
+  } catch (err) {
+    toast('שגיאה בטעינה: ' + (err.message || err), 'warn');
+    return;
+  }
   const dbByNid = Object.fromEntries(dbGirls.map(g => [g.national_id, g]));
   const schoolNameById = Object.fromEntries((schoolsRes.data || []).map(s => [s.id, s.name]));
 
