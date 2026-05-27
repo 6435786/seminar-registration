@@ -4814,6 +4814,28 @@ const LIST_TABS = [
       { key: '_edit_content',  label: 'טקסט המכתב',  type: 'edit_sections' },
       { key: 'show_in_picker', label: 'הצג',         type: 'bool' },
     ] },
+  // טאב מיוחד — לא רשימה רגילה אלא ממשק ייבוא בנות מ־xlsx (super_admin בלבד)
+  { table: '__girls_import__', label: '📥 ייבוא בנות', isCustom: true, requireSuperAdmin: true },
+];
+
+// סכמת ה־xlsx של ייבוא בנות — מפת עמודות → שדות DB
+const GIRLS_IMPORT_COLS = [
+  { header: 'ת.ז.',         dbField: 'national_id',       required: true,  validate: 'israeli_id' },
+  { header: 'שם פרטי',      dbField: 'first_name',        required: true },
+  { header: 'שם משפחה',     dbField: 'family_name',       required: true },
+  { header: 'שיוך',         dbField: 'sector',            validate: 'enum_affiliation' },
+  { header: 'קהילה',        dbField: 'community' },
+  { header: 'בית ספר מקור', dbField: 'source_school_id',  validate: 'school_lookup' },
+  { header: 'רחוב',         dbField: 'address_street' },
+  { header: 'מספר בית',     dbField: 'address_number' },
+  { header: 'שם אם',        dbField: 'mother_name' },
+  { header: 'ת.ז. אם',      dbField: 'mother_national_id', validate: 'israeli_id_optional' },
+  { header: 'טלפון אם',     dbField: 'mother_phone',      validate: 'phone' },
+  { header: 'שם אב',        dbField: 'father_name' },
+  { header: 'ת.ז. אב',      dbField: 'father_national_id', validate: 'israeli_id_optional' },
+  { header: 'טלפון אב',     dbField: 'father_phone',      validate: 'phone' },
+  { header: 'מייל',         dbField: 'email',             validate: 'email' },
+  { header: 'הערות',        dbField: 'notes' },
 ];
 
 const LIST_EDIT_MODE = {}; // per table: boolean
@@ -4844,8 +4866,41 @@ function _getEnumByRef(ref) {
   return [];
 }
 
+// מחזיר את רשימת הטאבים שמוצגת בפועל למשתמש הנוכחי (סינון לפי הרשאה)
+function _getVisibleListTabs() {
+  return LIST_TABS.filter(t => !t.requireSuperAdmin || isSuperAdmin());
+}
+
 async function renderManageLists() {
-  const tab = LIST_TABS[_activeListTab];
+  const visibleTabs = _getVisibleListTabs();
+  // ודא ש־_activeListTab בטווח (אם המשתמש איבד הרשאה)
+  if (_activeListTab >= visibleTabs.length) _activeListTab = 0;
+  const tab = visibleTabs[_activeListTab];
+
+  // טאב מיוחד (לא רשימה רגילה — render אחר לגמרי)
+  if (tab.isCustom) {
+    const tabsHtml = visibleTabs.map((t, i) =>
+      `<button class="list-tab ${i === _activeListTab ? 'active' : ''}" onclick="setListTab(${i})">${t.label}</button>`
+    ).join('');
+    document.getElementById('modal_body').innerHTML = `
+      <div class="modal-header">
+        <div style="flex:1">
+          <h2>📂 רשימות</h2>
+          <div class="subtitle">הוספה, עריכה, סידור ומחיקה של ערכי הרשימות</div>
+        </div>
+        <button class="close" onclick="closeModal()" title="סגור">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="list-tabs">${tabsHtml}</div>
+        <div id="custom_tab_body"></div>
+      </div>
+    `;
+    if (tab.table === '__girls_import__') {
+      renderGirlsImport();
+    }
+    return;
+  }
+
   const editing = !!LIST_EDIT_MODE[tab.table];
 
   // שליפה
@@ -4867,7 +4922,7 @@ async function renderManageLists() {
     });
   }
 
-  const tabsHtml = LIST_TABS.map((t, i) =>
+  const tabsHtml = visibleTabs.map((t, i) =>
     `<button class="list-tab ${i === _activeListTab ? 'active' : ''}" onclick="setListTab(${i})">${t.label}</button>`
   ).join('');
 
@@ -5286,6 +5341,100 @@ async function executeImport(table, records, mode) {
     console.error(e);
     toast('שגיאה בייבוא: ' + (e.message || e), 'warn');
   }
+}
+
+// ============================================================
+// ייבוא בנות — UI ייעודי (Stage 1: בסיס + הורדת תבנית)
+// ============================================================
+function renderGirlsImport() {
+  const body = document.getElementById('custom_tab_body');
+  if (!body) return;
+  body.innerHTML = `
+    <div class="form-section" style="padding: 18px 22px;">
+      <h3 style="margin: 0 0 6px 0; color: var(--deep);">ייבוא בנות מאקסל</h3>
+      <p style="color: var(--muted); margin: 0 0 18px 0; font-size: 14px; line-height: 1.6;">
+        מאפשר עדכון מרוכז של רשימת הבנות מקובץ Excel — הוספת בנות חדשות, עדכון פרטים, וארכוב בנות שכבר לא ברשימה.
+        הפעולה לא הרסנית: כל שלב כולל אישור עם תצוגה מקדימה.
+      </p>
+
+      <!-- שלב 1 — הורדת תבנית -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 18px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="background:#0ea5e9; color:white; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">1</div>
+          <div style="flex:1;">
+            <div style="font-weight:600; color:var(--deep); margin-bottom:2px;">הורד את התבנית</div>
+            <div style="color:var(--muted); font-size:13px;">קובץ Excel ריק עם 16 עמודות מסודרות. שמור שמות עמודות כפי שהם.</div>
+          </div>
+          <button class="save-btn" onclick="downloadGirlsImportTemplate()" style="white-space:nowrap;">📥 תבנית ריקה</button>
+        </div>
+      </div>
+
+      <!-- שלב 2 — מילוי -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 18px; margin-bottom:14px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="background:#0ea5e9; color:white; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">2</div>
+          <div style="flex:1;">
+            <div style="font-weight:600; color:var(--deep); margin-bottom:2px;">מלא את הקובץ</div>
+            <div style="color:var(--muted); font-size:13px;">
+              שורה אחת לכל בת. <b>ת.ז., שם פרטי, שם משפחה</b> חובה. שיוך = חסידי/ליטאי/ספרדי בלבד. שם בית ספר חייב להיות זהה לקיים במערכת.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- שלב 3 — העלאה -->
+      <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 18px;">
+        <div style="display:flex; align-items:center; gap:14px;">
+          <div style="background:#0ea5e9; color:white; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">3</div>
+          <div style="flex:1;">
+            <div style="font-weight:600; color:var(--deep); margin-bottom:2px;">העלה את הקובץ המלא</div>
+            <div style="color:var(--muted); font-size:13px;">לאחר העלאה — תקבל ולידציה ותצוגה מקדימה של השינויים. הפעולה תתבצע רק אחרי אישור סופי.</div>
+          </div>
+          <button class="save-btn" onclick="triggerGirlsImport()" style="white-space:nowrap; opacity:0.55; cursor:not-allowed;" disabled title="בקרוב — שלב הולידציה עוד לא מוכן">📤 העלה קובץ</button>
+        </div>
+      </div>
+
+      <div id="girls_import_results" style="margin-top:18px;"></div>
+    </div>
+  `;
+}
+
+function downloadGirlsImportTemplate() {
+  const headers = GIRLS_IMPORT_COLS.map(c => c.header);
+  // שורת הסבר/דוגמה אחת — תועלה בקובץ כדי שיהיה ברור איך למלא
+  const sampleRow = {
+    'ת.ז.':         '123456782',
+    'שם פרטי':      'דוגמה',
+    'שם משפחה':     'כהן',
+    'שיוך':         'חסידי',
+    'קהילה':        'באיאן',
+    'בית ספר מקור': 'נאות רחל',
+    'רחוב':         'רחוב הרב',
+    'מספר בית':     '5',
+    'שם אם':        'שרה',
+    'ת.ז. אם':      '',
+    'טלפון אם':     '050-1234567',
+    'שם אב':        'יוסף',
+    'ת.ז. אב':      '',
+    'טלפון אב':     '050-9876543',
+    'מייל':         'parents@example.com',
+    'הערות':        'שורת דוגמה — מחק אותי לפני העלאה',
+  };
+  const ws = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
+  ws['!views'] = [{ RTL: true }];
+  // רוחב עמודות
+  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 4, 14) }));
+  const wb = XLSX.utils.book_new();
+  wb.Workbook = { Views: [{ RTL: true }] };
+  XLSX.utils.book_append_sheet(wb, ws, 'בנות');
+  const ts = new Date().toISOString().slice(0, 10);
+  XLSX.writeFile(wb, `תבנית_ייבוא_בנות_${ts}.xlsx`, { bookType: 'xlsx', cellStyles: true });
+  toast('תבנית הורדה ✓ — שמור אצלך, מלא, וחזור להעלות');
+}
+
+// placeholder לשלב 2 — בנייה בשלב הבא
+function triggerGirlsImport() {
+  toast('שלב הולידציה עוד לא מוכן — בשלב הבא של הפיתוח', 'warn');
 }
 
 function setListTab(i) { _activeListTab = i; renderManageLists(); }
