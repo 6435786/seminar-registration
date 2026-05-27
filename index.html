@@ -5357,26 +5357,29 @@ function renderGirlsImport() {
         הפעולה לא הרסנית: כל שלב כולל אישור עם תצוגה מקדימה.
       </p>
 
-      <!-- שלב 1 — הורדת תבנית -->
+      <!-- שלב 1 — הורדת המצב הנוכחי -->
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 18px; margin-bottom:14px;">
         <div style="display:flex; align-items:center; gap:14px;">
           <div style="background:#0ea5e9; color:white; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">1</div>
           <div style="flex:1;">
-            <div style="font-weight:600; color:var(--deep); margin-bottom:2px;">הורד את התבנית</div>
-            <div style="color:var(--muted); font-size:13px;">קובץ Excel ריק עם 16 עמודות מסודרות. שמור שמות עמודות כפי שהם.</div>
+            <div style="font-weight:600; color:var(--deep); margin-bottom:2px;">הורד את הרשימה הנוכחית</div>
+            <div style="color:var(--muted); font-size:13px;">קובץ Excel עם כל הבנות הפעילות והפרטים שלהן. ערוך את הקובץ כפי שהוא — אל תשנה את שמות העמודות.</div>
           </div>
-          <button class="save-btn" onclick="downloadGirlsImportTemplate()" style="white-space:nowrap;">📥 תבנית ריקה</button>
+          <button class="save-btn" onclick="downloadGirlsImportTemplate()" style="white-space:nowrap;">📥 הורד</button>
         </div>
       </div>
 
-      <!-- שלב 2 — מילוי -->
+      <!-- שלב 2 — עריכה -->
       <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:14px 18px; margin-bottom:14px;">
-        <div style="display:flex; align-items:center; gap:14px;">
+        <div style="display:flex; align-items:flex-start; gap:14px;">
           <div style="background:#0ea5e9; color:white; width:32px; height:32px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-weight:700; flex-shrink:0;">2</div>
           <div style="flex:1;">
-            <div style="font-weight:600; color:var(--deep); margin-bottom:2px;">מלא את הקובץ</div>
-            <div style="color:var(--muted); font-size:13px;">
-              שורה אחת לכל בת. <b>ת.ז., שם פרטי, שם משפחה</b> חובה. שיוך = חסידי/ליטאי/ספרדי בלבד. שם בית ספר חייב להיות זהה לקיים במערכת.
+            <div style="font-weight:600; color:var(--deep); margin-bottom:6px;">ערוך את הקובץ באקסל</div>
+            <div style="color:var(--muted); font-size:13px; line-height: 1.7;">
+              • <b>לעדכן פרטים של בת קיימת:</b> פשוט שנה את התא הרלוונטי.<br>
+              • <b>להוסיף בת חדשה:</b> הוסף שורה בסוף. <b>ת.ז., שם פרטי, שם משפחה</b> חובה.<br>
+              • <b>להסיר בת:</b> מחק את כל השורה שלה. הבת לא תימחק מה־DB — היא תועבר לארכיון.<br>
+              • שיוך = חסידי/ליטאי/ספרדי בלבד. שם בית ספר חייב להיות זהה לקיים במערכת.
             </div>
           </div>
         </div>
@@ -5399,37 +5402,76 @@ function renderGirlsImport() {
   `;
 }
 
-function downloadGirlsImportTemplate() {
+async function downloadGirlsImportTemplate() {
+  toast('טוען רשימת בנות...');
+  // שליפת כל הבנות הפעילות + בתי הספר
+  const [girlsRes, schoolsRes] = await Promise.all([
+    sb.from('girls')
+      .select('national_id, first_name, family_name, sector, community, source_school_id, address_street, address_number, mother_name, mother_national_id, mother_phone, father_name, father_national_id, father_phone, email, notes')
+      .eq('is_archived', false)
+      .order('family_name', { ascending: true })
+      .order('first_name', { ascending: true }),
+    sb.from('source_schools').select('id, name')
+  ]);
+  if (girlsRes.error) { toast('שגיאה בטעינת בנות: ' + girlsRes.error.message, 'warn'); return; }
+  if (schoolsRes.error) { toast('שגיאה בטעינת מוסדות: ' + schoolsRes.error.message, 'warn'); return; }
+
+  const schoolById = Object.fromEntries((schoolsRes.data || []).map(s => [s.id, s.name]));
+  const girls = girlsRes.data || [];
+
   const headers = GIRLS_IMPORT_COLS.map(c => c.header);
-  // שורת הסבר/דוגמה אחת — תועלה בקובץ כדי שיהיה ברור איך למלא
-  const sampleRow = {
-    'ת.ז.':         '123456782',
-    'שם פרטי':      'דוגמה',
-    'שם משפחה':     'כהן',
-    'שיוך':         'חסידי',
-    'קהילה':        'באיאן',
-    'בית ספר מקור': 'נאות רחל',
-    'רחוב':         'רחוב הרב',
-    'מספר בית':     '5',
-    'שם אם':        'שרה',
-    'ת.ז. אם':      '',
-    'טלפון אם':     '050-1234567',
-    'שם אב':        'יוסף',
-    'ת.ז. אב':      '',
-    'טלפון אב':     '050-9876543',
-    'מייל':         'parents@example.com',
-    'הערות':        'שורת דוגמה — מחק אותי לפני העלאה',
-  };
-  const ws = XLSX.utils.json_to_sheet([sampleRow], { header: headers });
+  const rows = girls.map(g => ({
+    'ת.ז.':         g.national_id || '',
+    'שם פרטי':      g.first_name || '',
+    'שם משפחה':     g.family_name || '',
+    'שיוך':         g.sector || '',
+    'קהילה':        g.community || '',
+    'בית ספר מקור': schoolById[g.source_school_id] || '',
+    'רחוב':         g.address_street || '',
+    'מספר בית':     g.address_number || '',
+    'שם אם':        g.mother_name || '',
+    'ת.ז. אם':      g.mother_national_id || '',
+    'טלפון אם':     g.mother_phone || '',
+    'שם אב':        g.father_name || '',
+    'ת.ז. אב':      g.father_national_id || '',
+    'טלפון אב':     g.father_phone || '',
+    'מייל':         g.email || '',
+    'הערות':        g.notes || '',
+  }));
+
+  // אם אין בנות בכלל — תן שורת דוגמה כדי שלא יקבל קובץ ריק לגמרי
+  if (rows.length === 0) {
+    rows.push({
+      'ת.ז.': '123456782', 'שם פרטי': 'דוגמה', 'שם משפחה': 'כהן',
+      'שיוך': 'חסידי', 'קהילה': 'באיאן', 'בית ספר מקור': 'נאות רחל',
+      'רחוב': 'רחוב הרב', 'מספר בית': '5',
+      'שם אם': 'שרה', 'ת.ז. אם': '', 'טלפון אם': '050-1234567',
+      'שם אב': 'יוסף', 'ת.ז. אב': '', 'טלפון אב': '050-9876543',
+      'מייל': 'parents@example.com', 'הערות': 'מחק את שורת הדוגמה לפני העלאה'
+    });
+  }
+
+  const ws = XLSX.utils.json_to_sheet(rows, { header: headers });
   ws['!views'] = [{ RTL: true }];
-  // רוחב עמודות
-  ws['!cols'] = headers.map(h => ({ wch: Math.max(h.length + 4, 14) }));
+  // רוחב עמודות מותאם לתוכן
+  ws['!cols'] = headers.map((h, idx) => {
+    let maxLen = h.length;
+    rows.forEach(r => {
+      const v = String(r[h] ?? '');
+      if (v.length > maxLen) maxLen = v.length;
+    });
+    return { wch: Math.min(Math.max(maxLen + 4, 12), 50) };
+  });
+  // קיבוע שורת הכותרת
+  ws['!freeze'] = { xSplit: 0, ySplit: 1 };
+
   const wb = XLSX.utils.book_new();
   wb.Workbook = { Views: [{ RTL: true }] };
   XLSX.utils.book_append_sheet(wb, ws, 'בנות');
   const ts = new Date().toISOString().slice(0, 10);
-  XLSX.writeFile(wb, `תבנית_ייבוא_בנות_${ts}.xlsx`, { bookType: 'xlsx', cellStyles: true });
-  toast('תבנית הורדה ✓ — שמור אצלך, מלא, וחזור להעלות');
+  XLSX.writeFile(wb, `רשימת_בנות_${ts}.xlsx`, { bookType: 'xlsx', cellStyles: true });
+
+  toast(`הורד ✓ — ${girls.length} בנות בקובץ`);
 }
 
 // placeholder לשלב 2 — בנייה בשלב הבא
