@@ -5724,9 +5724,10 @@ const GIRLS_DIFF_FIELDS = [
 ];
 
 function _normEq(a, b) {
-  const na = (a == null ? '' : String(a)).trim();
-  const nb = (b == null ? '' : String(b)).trim();
-  return na === nb;
+  // נירמול אגרסיבי: רצף רווחים/שורות חדשות → רווח יחיד, trim
+  // כדי להתעלם מהבדלי Excel (newlines בתאים נהפכים לרווח בייצוא/ייבוא)
+  const norm = (v) => (v == null ? '' : String(v)).replace(/\s+/g, ' ').trim();
+  return norm(a) === norm(b);
 }
 
 async function _proceedToDiff() {
@@ -5762,12 +5763,25 @@ async function _proceedToDiff() {
     for (const f of GIRLS_DIFF_FIELDS) {
       const oldVal = dbRow[f.db];
       const newVal = fileRow[f.db];
+      // עבור בית ספר — משווים שמות, לא IDs (בגלל כפילויות שמות ב־source_schools)
+      if (f.isSchool) {
+        const oldName = schoolNameById[oldVal] || '';
+        const newName = schoolNameById[newVal] || '';
+        if (_normEq(oldName, newName)) continue;
+        diffs.push({
+          field: f.db, label: f.label, isSchool: true,
+          oldVal, newVal,
+          oldDisplay: oldName || '—',
+          newDisplay: newName || '—',
+        });
+        continue;
+      }
       if (!_normEq(oldVal, newVal)) {
         diffs.push({
-          field: f.db, label: f.label, isSchool: !!f.isSchool,
+          field: f.db, label: f.label,
           oldVal, newVal,
-          oldDisplay: f.isSchool ? (schoolNameById[oldVal] || '—') : (oldVal || '—'),
-          newDisplay: f.isSchool ? (schoolNameById[newVal] || '—') : (newVal || '—'),
+          oldDisplay: oldVal || '—',
+          newDisplay: newVal || '—',
         });
       }
     }
