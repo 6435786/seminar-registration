@@ -5700,9 +5700,235 @@ function _renderImportValidation() {
   `;
 }
 
-// placeholder לשלב 3
-function _proceedToDiff() {
-  toast('שלב 3 (diff + תצוגה מקדימה) — בבנייה בשלב הבא', 'warn');
+// ============================================================
+// שלב 3: ניתוח שינויים + תצוגה מקדימה
+// ============================================================
+
+// שדות שמשווים בין הקובץ ל־DB. national_id הוא מפתח — לא משוואים.
+const GIRLS_DIFF_FIELDS = [
+  { db: 'first_name',         label: 'שם פרטי' },
+  { db: 'family_name',        label: 'שם משפחה' },
+  { db: 'sector',             label: 'שיוך' },
+  { db: 'community',          label: 'קהילה' },
+  { db: 'source_school_id',   label: 'בית ספר מקור', isSchool: true },
+  { db: 'address_street',     label: 'רחוב' },
+  { db: 'address_number',     label: 'מספר בית' },
+  { db: 'mother_name',        label: 'שם אם' },
+  { db: 'mother_national_id', label: 'ת.ז. אם' },
+  { db: 'mother_phone',       label: 'טלפון אם' },
+  { db: 'father_name',        label: 'שם אב' },
+  { db: 'father_national_id', label: 'ת.ז. אב' },
+  { db: 'father_phone',       label: 'טלפון אב' },
+  { db: 'email',              label: 'מייל' },
+  { db: 'notes',              label: 'הערות' },
+];
+
+function _normEq(a, b) {
+  const na = (a == null ? '' : String(a)).trim();
+  const nb = (b == null ? '' : String(b)).trim();
+  return na === nb;
+}
+
+async function _proceedToDiff() {
+  const s = GIRLS_IMPORT_STATE;
+  if (!s || s.errors.length) { toast('יש שגיאות לתיקון לפני המשך', 'warn'); return; }
+
+  toast('טוען נתוני DB להשוואה...');
+  const [girlsRes, schoolsRes] = await Promise.all([
+    sb.from('girls').select('*').eq('is_archived', false),
+    sb.from('source_schools').select('id, name')
+  ]);
+  if (girlsRes.error) { toast('שגיאה בטעינת בנות: ' + girlsRes.error.message, 'warn'); return; }
+  const dbGirls = girlsRes.data || [];
+  const dbByNid = Object.fromEntries(dbGirls.map(g => [g.national_id, g]));
+  const schoolNameById = Object.fromEntries((schoolsRes.data || []).map(s => [s.id, s.name]));
+
+  // 1. חדשות: בקובץ ולא ב־DB
+  // 2. עודכנו: בשניהם + יש הבדל בשדה אחד או יותר
+  // 3. לארכיון: ב־DB ולא בקובץ
+  const newRows = [];
+  const changedRows = [];
+  const xlsxNids = new Set();
+
+  for (const fileRow of s.parsedRows) {
+    xlsxNids.add(fileRow.national_id);
+    const dbRow = dbByNid[fileRow.national_id];
+    if (!dbRow) {
+      newRows.push({ fileRow, _selected: true });
+      continue;
+    }
+    // השוואה
+    const diffs = [];
+    for (const f of GIRLS_DIFF_FIELDS) {
+      const oldVal = dbRow[f.db];
+      const newVal = fileRow[f.db];
+      if (!_normEq(oldVal, newVal)) {
+        diffs.push({
+          field: f.db, label: f.label, isSchool: !!f.isSchool,
+          oldVal, newVal,
+          oldDisplay: f.isSchool ? (schoolNameById[oldVal] || '—') : (oldVal || '—'),
+          newDisplay: f.isSchool ? (schoolNameById[newVal] || '—') : (newVal || '—'),
+        });
+      }
+    }
+    if (diffs.length) {
+      changedRows.push({ dbRow, fileRow, diffs, _selected: true });
+    }
+  }
+
+  const archiveRows = dbGirls
+    .filter(g => !xlsxNids.has(g.national_id))
+    .map(g => ({ dbRow: g, _selected: true }));
+
+  s.diff = { newRows, changedRows, archiveRows, dbTotal: dbGirls.length };
+  _renderImportDiff();
+}
+
+function _renderImportDiff() {
+  const s = GIRLS_IMPORT_STATE;
+  const d = s.diff;
+  const box = document.getElementById('girls_import_results');
+
+  // אזהרות סף
+  const archivePct = d.dbTotal ? (d.archiveRows.length / d.dbTotal * 100) : 0;
+  const changePct  = d.dbTotal ? (d.changedRows.length / d.dbTotal * 100) : 0;
+  const thresholdWarnings = [];
+  if (archivePct > 2) {
+    thresholdWarnings.push(`<b>${d.archiveRows.length}</b> בנות יועברו לארכיון — <b>${archivePct.toFixed(1)}%</b> מהבנות הפעילות. ייתכן שזה קובץ ישן בטעות?`);
+  }
+  if (changePct > 5) {
+    thresholdWarnings.push(`<b>${d.changedRows.length}</b> בנות יעודכנו — <b>${changePct.toFixed(1)}%</b> מהבנות הפעילות. שיעור גבוה במיוחד — בדוק לפני שמאשרים.`);
+  }
+  const thresholdHtml = thresholdWarnings.length ? `
+    <div style="background:#fef2f2; border:2px solid #f87171; border-radius:8px; padding:12px 16px; margin-bottom:14px;">
+      <div style="font-weight:800; color:#b91c1c; margin-bottom:6px;">⚠ אזהרה: שיעור שינויים חריג</div>
+      ${thresholdWarnings.map(w => `<div style="font-size:13px; line-height:1.7;">${w}</div>`).join('')}
+    </div>` : '';
+
+  const newHtml = _sectionHtml('new', '➕ בנות חדשות', d.newRows, _renderNewRow);
+  const changedHtml = _sectionHtml('changed', '✎ עודכנו', d.changedRows, _renderChangedRow);
+  const archiveHtml = _sectionHtml('archive', '📦 לארכיון', d.archiveRows, _renderArchiveRow);
+
+  box.innerHTML = `
+    <div style="border-top:2px solid #e2e8f0; padding-top:16px;">
+      <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-bottom:14px;">
+        <h4 style="margin:0; color:var(--deep);">🔍 שלב 3 — סקירה לאישור</h4>
+        <span style="color:var(--muted); font-size:13px;">קובץ: ${s.filename}</span>
+        <span style="background:#dcfce7; color:#166534; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600;">➕ ${d.newRows.length} חדשות</span>
+        <span style="background:#fef3c7; color:#92400e; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600;">✎ ${d.changedRows.length} עודכנו</span>
+        <span style="background:#fee2e2; color:#b91c1c; padding:2px 10px; border-radius:999px; font-size:12px; font-weight:600;">📦 ${d.archiveRows.length} לארכיון</span>
+      </div>
+      ${thresholdHtml}
+      ${newHtml}
+      ${changedHtml}
+      ${archiveHtml}
+      <div style="display:flex; gap:10px; align-items:center; margin-top:18px; padding-top:14px; border-top:1px solid #e2e8f0;">
+        <button class="save-btn" onclick="_executeImport()" style="background:linear-gradient(135deg,#16a34a,#15803d);">✓ אשר וביצע</button>
+        <button class="mini-btn" onclick="_cancelImport()" style="padding:8px 16px;">ביטול</button>
+        <span id="diff_summary" style="margin-right:auto; color:var(--muted); font-size:13px;"></span>
+      </div>
+    </div>
+  `;
+  _updateDiffSummary();
+}
+
+function _sectionHtml(key, title, rows, renderFn) {
+  if (!rows.length) {
+    return `<div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; margin-bottom:10px; color:var(--muted); font-size:13px;">
+      <b>${title}:</b> אין שורות
+    </div>`;
+  }
+  return `
+    <div style="background:#fff; border:1px solid #e2e8f0; border-radius:8px; padding:10px 14px; margin-bottom:10px;">
+      <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+        <b style="color:var(--deep);">${title}</b>
+        <span style="color:var(--muted); font-size:12px;">${rows.length} שורות</span>
+        <button class="mini-btn" onclick="_toggleAllImport('${key}', true)" style="margin-right:auto;">✓ סמן הכל</button>
+        <button class="mini-btn" onclick="_toggleAllImport('${key}', false)">✗ נקה הכל</button>
+      </div>
+      <div style="max-height:300px; overflow-y:auto; font-size:13px;">
+        ${rows.map((r, i) => renderFn(r, i, key)).join('')}
+      </div>
+    </div>
+  `;
+}
+
+function _renderNewRow(r, i, key) {
+  const f = r.fileRow;
+  return `<label style="display:flex; gap:10px; padding:5px 6px; border-bottom:1px solid #f1f5f9; cursor:pointer; align-items:center;">
+    <input type="checkbox" ${r._selected ? 'checked' : ''} onchange="_toggleImportRow('${key}', ${i}, this.checked)" style="width:16px; height:16px;">
+    <span style="flex:1;"><b>${f.first_name || ''} ${f.family_name || ''}</b>
+      <span style="color:var(--muted); font-size:12px;"> · ת.ז. ${f.national_id} · ${f.sector || '—'} · ${f.community || '—'}</span>
+    </span>
+  </label>`;
+}
+
+function _renderChangedRow(r, i, key) {
+  const g = r.dbRow;
+  const diffsHtml = r.diffs.map(d => `
+    <div style="font-size:12px; padding:2px 4px;">
+      <b>${d.label}:</b>
+      <span style="color:#ef4444; text-decoration:line-through;">${_esc(String(d.oldDisplay))}</span>
+      &nbsp;→&nbsp;
+      <span style="color:#16a34a; font-weight:600;">${_esc(String(d.newDisplay))}</span>
+    </div>`).join('');
+  return `<div style="border-bottom:1px solid #f1f5f9; padding:6px;">
+    <label style="display:flex; gap:10px; cursor:pointer; align-items:center;">
+      <input type="checkbox" ${r._selected ? 'checked' : ''} onchange="_toggleImportRow('${key}', ${i}, this.checked)" style="width:16px; height:16px;">
+      <span style="flex:1;"><b>${g.first_name || ''} ${g.family_name || ''}</b>
+        <span style="color:var(--muted); font-size:12px;"> · ת.ז. ${g.national_id} · ${r.diffs.length} שינוי${r.diffs.length === 1 ? '' : 'ים'}</span>
+      </span>
+    </label>
+    <div style="margin-right:26px; margin-top:4px; padding:4px 8px; background:#f8fafc; border-radius:4px;">${diffsHtml}</div>
+  </div>`;
+}
+
+function _renderArchiveRow(r, i, key) {
+  const g = r.dbRow;
+  return `<label style="display:flex; gap:10px; padding:5px 6px; border-bottom:1px solid #f1f5f9; cursor:pointer; align-items:center;">
+    <input type="checkbox" ${r._selected ? 'checked' : ''} onchange="_toggleImportRow('${key}', ${i}, this.checked)" style="width:16px; height:16px;">
+    <span style="flex:1;"><b>${g.first_name || ''} ${g.family_name || ''}</b>
+      <span style="color:var(--muted); font-size:12px;"> · ת.ז. ${g.national_id} · ${g.community || '—'}</span>
+    </span>
+  </label>`;
+}
+
+function _toggleImportRow(key, idx, checked) {
+  const d = GIRLS_IMPORT_STATE.diff;
+  const list = key === 'new' ? d.newRows : key === 'changed' ? d.changedRows : d.archiveRows;
+  if (list[idx]) list[idx]._selected = checked;
+  _updateDiffSummary();
+}
+
+function _toggleAllImport(key, checked) {
+  const d = GIRLS_IMPORT_STATE.diff;
+  const list = key === 'new' ? d.newRows : key === 'changed' ? d.changedRows : d.archiveRows;
+  list.forEach(r => r._selected = checked);
+  _renderImportDiff();
+}
+
+function _updateDiffSummary() {
+  const d = GIRLS_IMPORT_STATE.diff;
+  const cn = d.newRows.filter(r => r._selected).length;
+  const cc = d.changedRows.filter(r => r._selected).length;
+  const ca = d.archiveRows.filter(r => r._selected).length;
+  const el = document.getElementById('diff_summary');
+  if (el) el.textContent = `נבחרו לביצוע: ${cn} חדשות · ${cc} עודכנו · ${ca} לארכיון`;
+}
+
+function _cancelImport() {
+  GIRLS_IMPORT_STATE = null;
+  document.getElementById('girls_import_results').innerHTML = '';
+  toast('הייבוא בוטל');
+}
+
+// placeholder לשלב 4
+async function _executeImport() {
+  const d = GIRLS_IMPORT_STATE.diff;
+  const cn = d.newRows.filter(r => r._selected).length;
+  const cc = d.changedRows.filter(r => r._selected).length;
+  const ca = d.archiveRows.filter(r => r._selected).length;
+  toast(`שלב 4 (ביצוע אטומי + audit) — עדיין בבנייה. נבחרו: ${cn}+${cc}+${ca}`, 'warn');
 }
 
 function setListTab(i) { _activeListTab = i; renderManageLists(); }
