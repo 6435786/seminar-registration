@@ -5962,13 +5962,87 @@ function _cancelImport() {
   toast('הייבוא בוטל');
 }
 
-// placeholder לשלב 4
+// שלב 4: ביצוע אטומי דרך RPC + audit
 async function _executeImport() {
   const d = GIRLS_IMPORT_STATE.diff;
-  const cn = d.newRows.filter(r => r._selected).length;
-  const cc = d.changedRows.filter(r => r._selected).length;
-  const ca = d.archiveRows.filter(r => r._selected).length;
-  toast(`שלב 4 (ביצוע אטומי + audit) — עדיין בבנייה. נבחרו: ${cn}+${cc}+${ca}`, 'warn');
+  const selNew     = d.newRows.filter(r => r._selected);
+  const selChanged = d.changedRows.filter(r => r._selected);
+  const selArchive = d.archiveRows.filter(r => r._selected);
+
+  if (!selNew.length && !selChanged.length && !selArchive.length) {
+    toast('לא נבחר כלום לביצוע', 'warn');
+    return;
+  }
+
+  const confirmMsg =
+    `אתה עומד לבצע ייבוא:\n\n` +
+    `➕ ${selNew.length} בנות חדשות\n` +
+    `✎ ${selChanged.length} עדכונים\n` +
+    `📦 ${selArchive.length} העברות לארכיון\n\n` +
+    `הפעולה מתבצעת כיחידה אחת — אם משהו נכשל, שום דבר לא ישתנה.\nלהמשיך?`;
+  if (!confirm(confirmMsg)) return;
+
+  // בניית payload
+  const source = 'xlsx_import_' + new Date().toISOString().slice(0, 10);
+  const newPayload = selNew.map(r => {
+    const o = {};
+    for (const col of GIRLS_IMPORT_COLS) {
+      const v = r.fileRow[col.dbField];
+      o[col.dbField] = (v == null ? '' : v);
+    }
+    return o;
+  });
+  const updatePayload = selChanged.map(r => {
+    const fields = {};
+    r.diffs.forEach(diff => {
+      const v = r.fileRow[diff.field];
+      fields[diff.field] = (v == null ? '' : v);
+    });
+    return { national_id: r.dbRow.national_id, fields };
+  });
+  const archivePayload = selArchive.map(r => r.dbRow.national_id);
+
+  const payload = { source, new: newPayload, update: updatePayload, archive: archivePayload };
+
+  // נטרול הכפתור בזמן הביצוע
+  const execBtn = document.querySelector('#girls_import_results button[onclick="_executeImport()"]');
+  if (execBtn) { execBtn.disabled = true; execBtn.style.opacity = '0.5'; execBtn.textContent = 'מבצע...'; }
+  toast('מבצע ייבוא — אנא המתן...');
+
+  const { data, error } = await sb.rpc('import_girls_bulk', { p_changes: payload });
+
+  if (error) {
+    if (execBtn) { execBtn.disabled = false; execBtn.style.opacity = '1'; execBtn.textContent = '✓ אשר וביצע'; }
+    toast('שגיאה בייבוא: ' + error.message, 'warn');
+    return;
+  }
+
+  const res = data || {};
+  GIRLS_IMPORT_STATE = null;
+  _renderImportSuccess(res);
+  // רענון הנתונים בזיכרון
+  try { await reloadData(); } catch (e) { console.warn('reloadData failed', e); }
+}
+
+function _renderImportSuccess(res) {
+  const box = document.getElementById('girls_import_results');
+  if (!box) return;
+  box.innerHTML = `
+    <div style="border-top:2px solid #e2e8f0; padding-top:16px;">
+      <div style="background:#f0fdf4; border:2px solid #86efac; border-radius:10px; padding:20px 24px; text-align:center;">
+        <div style="font-size:36px; margin-bottom:8px;">✅</div>
+        <div style="font-weight:800; color:#166534; font-size:18px; margin-bottom:12px;">הייבוא הושלם בהצלחה</div>
+        <div style="display:flex; gap:24px; justify-content:center; flex-wrap:wrap; font-size:15px;">
+          <div><b style="color:#16a34a; font-size:22px;">${res.added || 0}</b><br><span style="color:var(--muted);">נוספו</span></div>
+          <div><b style="color:#0ea5e9; font-size:22px;">${res.updated || 0}</b><br><span style="color:var(--muted);">עודכנו</span></div>
+          <div><b style="color:#b45309; font-size:22px;">${res.archived || 0}</b><br><span style="color:var(--muted);">לארכיון</span></div>
+        </div>
+        <div style="margin-top:14px; color:var(--muted); font-size:13px;">כל השינויים תועדו בהיסטוריה תחת שמך.</div>
+        <button class="save-btn" onclick="renderGirlsImport()" style="margin-top:16px;">סיום</button>
+      </div>
+    </div>
+  `;
+  toast(`ייבוא הושלם: +${res.added || 0} · ${res.updated || 0} עודכנו · ${res.archived || 0} לארכיון ✓`);
 }
 
 function setListTab(i) { _activeListTab = i; renderManageLists(); }
@@ -9320,6 +9394,24 @@ async function showHistory(tab) {
       girlContext = ` — <span style="color:var(--muted)">בת #${girlId}</span>`;
     }
 
+    // פעולות ייבוא xlsx — תיוג מיוחד
+    const importTag = ' <span style="background:#e0e7ff;color:#3730a3;padding:1px 7px;border-radius:4px;font-size:10px;font-weight:700;">ייבוא</span>';
+    if (log.action === 'import_insert') {
+      return `<b>הוספת תלמידה${girlContext}</b>${importTag}`;
+    }
+    if (log.action === 'import_archive') {
+      return `<b>הועברה לארכיון${girlContext}</b>${importTag}`;
+    }
+    if (log.action === 'import_update') {
+      if (changes.length === 0) return `<i>שינוי טכני${girlContext}</i>${importTag}`;
+      const lns = changes.slice(0, 4).map(k => {
+        const label = FIELD_LABELS[k] || k;
+        return `<span style="color:#64748b">${label}:</span> ${friendlyValue(k, oldV[k])} → <b>${friendlyValue(k, newV[k])}</b>`;
+      });
+      if (changes.length > 4) lns.push(`<span style="color:var(--muted)">…ועוד ${changes.length - 4}</span>`);
+      return `<b>עדכון${girlContext}</b>${importTag}<br><span style="font-size:12px">${lns.join(' · ')}</span>`;
+    }
+
     if (log.action === 'insert') {
       if (tn === 'girls') return `<b>הוספת תלמידה${girlContext}</b>`;
       if (tn === 'registrations') {
@@ -9371,9 +9463,9 @@ async function showHistory(tab) {
       const oldV = log.old_value || {};
       const newV = log.new_value || {};
       if (log.table_name === 'girls') {
-        if (log.action === 'insert') counts.girls_added++;
-        else if (log.action === 'delete') counts.girls_deleted++;
-        else if (log.action === 'update') {
+        if (log.action === 'insert' || log.action === 'import_insert') counts.girls_added++;
+        else if (log.action === 'delete' || log.action === 'import_archive') counts.girls_deleted++;
+        else if (log.action === 'update' || log.action === 'import_update') {
           if ('notes' in newV) counts.notes_updated++;
           else counts.personal_updated++;
         }
