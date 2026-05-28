@@ -4814,8 +4814,8 @@ const LIST_TABS = [
       { key: '_edit_content',  label: 'טקסט המכתב',  type: 'edit_sections' },
       { key: 'show_in_picker', label: 'הצג',         type: 'bool' },
     ] },
-  // טאב מיוחד — לא רשימה רגילה אלא ממשק ייבוא בנות מ־xlsx (super_admin בלבד)
-  { table: '__girls_import__', label: '📥 ייבוא בנות', isCustom: true, requireSuperAdmin: true },
+  // טאב מיוחד — לא רשימה רגילה אלא ממשק ייבוא בנות מ־xlsx (admin + super_admin)
+  { table: '__girls_import__', label: '📥 ייבוא בנות', isCustom: true, requireAdmin: true },
 ];
 
 // סכמת ה־xlsx של ייבוא בנות — מפת עמודות → שדות DB
@@ -4868,7 +4868,10 @@ function _getEnumByRef(ref) {
 
 // מחזיר את רשימת הטאבים שמוצגת בפועל למשתמש הנוכחי (סינון לפי הרשאה)
 function _getVisibleListTabs() {
-  return LIST_TABS.filter(t => !t.requireSuperAdmin || isSuperAdmin());
+  return LIST_TABS.filter(t =>
+    (!t.requireSuperAdmin || isSuperAdmin()) &&
+    (!t.requireAdmin || isAdmin())
+  );
 }
 
 async function renderManageLists() {
