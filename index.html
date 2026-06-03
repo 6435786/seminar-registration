@@ -9019,8 +9019,24 @@ function drawWrappedRTL(pdf, text, rightX, leftX, y, opts = {}) {
   const maxW = rightX - leftX;
   const lineH = opts.lineHeight || ((opts.size || 11) * 0.45);
   const lines = pdf.splitTextToSize(text, maxW);
-  for (const line of lines) {
-    pdf.text('‏' + bidi(line), rightX, y, { align: 'right' });
+  // יישור לשני הצדדים: ברירת מחדל פעיל; שורה אחרונה / שורה עם מילה אחת — מיושרת לימין.
+  const justify = opts.justify !== false;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
+    const isLast = (i === lines.length - 1);
+    const words = line.split(/\s+/).filter(w => w);
+    if (!justify || isLast || words.length < 2) {
+      pdf.text('‏' + bidi(line), rightX, y, { align: 'right' });
+    } else {
+      const widths = words.map(w => pdf.getTextWidth(w));
+      const totalW = widths.reduce((a, b) => a + b, 0);
+      const gap = (maxW - totalW) / (words.length - 1);
+      let x = rightX;
+      for (let j = 0; j < words.length; j++) {
+        pdf.text('‏' + bidi(words[j]), x, y, { align: 'right' });
+        x -= widths[j] + gap;
+      }
+    }
     y += lineH;
   }
   return y;
@@ -9655,15 +9671,30 @@ function drawWrappedRTL_paginated(pdf, text, rightX, leftX, startY, opts, addLet
   const lineH = opts.lineHeight || ((opts.size || 11) * 0.45);
   const maxW = rightX - leftX;
   const lines = pdf.splitTextToSize(text || '', maxW);
+  const justify = opts.justify !== false;
   let y = startY;
-  for (const line of lines) {
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     if (y + lineH > pageBottom && addLetterheadPage) {
       addLetterheadPage(false);
       y = pageTopAfterBreak;
       pdf.setFont('David', opts.bold ? 'bold' : 'normal');
       pdf.setFontSize(opts.size || 11);
     }
-    pdf.text('‏' + bidi(line), rightX, y, { align: 'right' });
+    const isLast = (i === lines.length - 1);
+    const words = line.split(/\s+/).filter(w => w);
+    if (!justify || isLast || words.length < 2) {
+      pdf.text('‏' + bidi(line), rightX, y, { align: 'right' });
+    } else {
+      const widths = words.map(w => pdf.getTextWidth(w));
+      const totalW = widths.reduce((a, b) => a + b, 0);
+      const gap = (maxW - totalW) / (words.length - 1);
+      let x = rightX;
+      for (let j = 0; j < words.length; j++) {
+        pdf.text('‏' + bidi(words[j]), x, y, { align: 'right' });
+        x -= widths[j] + gap;
+      }
+    }
     y += lineH;
   }
   return y;
