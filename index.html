@@ -7466,11 +7466,24 @@ async function _ec_renderParentsRecipients() {
 
   // === שלב 3: סינון לפי סמינר ===
   const matchingGirls = afterStatus.filter(g => g.placement_seminar && semSet.has(g.placement_seminar));
-  // === מיון אלפביתי עברי — משפחה, אז שם פרטי ===
+  // === מיון: ברירת מחדל שם משפחה+שם פרטי. ניתן לשינוי בלחיצה על כותרת עמודה. ===
+  if (!EC_STATE._parentSort) EC_STATE._parentSort = { field: 'family_name', dir: 1 };
+  const _sort = EC_STATE._parentSort;
+  const _sortVals = (g) => {
+    switch (_sort.field) {
+      case 'placement_seminar': return [(g.placement_seminar || ''), (g.family_name || ''), (g.first_name || '')];
+      case 'email':             return [(g.email || ''), (g.family_name || ''), (g.first_name || '')];
+      case 'address':           return [((g.address_street || '') + ' ' + (g.address_number || '')).trim(), (g.family_name || ''), (g.first_name || '')];
+      default:                  return [(g.family_name || ''), (g.first_name || ''), ''];
+    }
+  };
   matchingGirls.sort((a, b) => {
-    const fa = (a.family_name || '').localeCompare(b.family_name || '', 'he');
-    if (fa !== 0) return fa;
-    return (a.first_name || '').localeCompare(b.first_name || '', 'he');
+    const va = _sortVals(a), vb = _sortVals(b);
+    for (let i = 0; i < va.length; i++) {
+      const r = String(va[i]).localeCompare(String(vb[i]), 'he');
+      if (r !== 0) return _sort.dir * r;
+    }
+    return 0;
   });
 
   // === בנה HTML של הפילטרים ===
@@ -7618,9 +7631,15 @@ async function _ec_renderParentsRecipients() {
       <thead>
         <tr style="background:#eff6ff;">
           <th style="padding:6px 8px; width:28px;"><input type="checkbox" id="ec_parent_all"></th>
-          <th style="padding:6px 8px; text-align:right;">שם תלמידה</th>
-          <th style="padding:6px 8px; text-align:right;">סמינר</th>
-          <th style="padding:6px 8px; text-align:right;">${_printMode ? 'כתובת' : 'מייל'}</th>
+          <th style="padding:6px 8px; text-align:right; cursor:pointer; user-select:none;" onclick="_ec_setParentSort('family_name')" title="לחץ למיון לפי שם תלמידה">
+            שם תלמידה${_sort.field === 'family_name' ? (_sort.dir === 1 ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th style="padding:6px 8px; text-align:right; cursor:pointer; user-select:none;" onclick="_ec_setParentSort('placement_seminar')" title="לחץ למיון לפי סמינר">
+            סמינר${_sort.field === 'placement_seminar' ? (_sort.dir === 1 ? ' ▲' : ' ▼') : ''}
+          </th>
+          <th style="padding:6px 8px; text-align:right; cursor:pointer; user-select:none;" onclick="_ec_setParentSort('${_printMode ? 'address' : 'email'}')" title="לחץ למיון">
+            ${_printMode ? 'כתובת' : 'מייל'}${(_sort.field === (_printMode ? 'address' : 'email')) ? (_sort.dir === 1 ? ' ▲' : ' ▼') : ''}
+          </th>
         </tr>
       </thead>
       <tbody id="ec_parent_rows">${buildRows()}</tbody>
@@ -7748,6 +7767,16 @@ function _ec_setAllGirls(on) {
     if (_q) visible.forEach(g => EC_STATE._parentSel.delete(g.id));
     else    EC_STATE._parentSel = new Set();
   }
+  _ec_renderParentsRecipients();
+}
+
+// === מיון לפי לחיצה על כותרת עמודה (parents picker) ===
+// קליק חוזר על אותה כותרת — היפוך כיוון.
+function _ec_setParentSort(field) {
+  const s = EC_STATE._parentSort || { field: 'family_name', dir: 1 };
+  if (s.field === field) s.dir = -s.dir;
+  else { s.field = field; s.dir = 1; }
+  EC_STATE._parentSort = s;
   _ec_renderParentsRecipients();
 }
 
@@ -8804,7 +8833,7 @@ async function _ec_actionLabels() {
     const LABEL_W = 70, LABEL_H = 35;
     const TOP_MARGIN = 8.5;             // (297 − 8×35) / 2 = 8.5 לכל צד אנכי
     const COLS = 3, ROWS = 8, PER_PAGE = COLS * ROWS;
-    const PAD_RIGHT = 5, PAD_TOP = 6;   // ריווח פנימי במ"מ
+    const PAD_RIGHT = 15, PAD_TOP = 6;  // ריווח פנימי במ"מ. PAD_RIGHT הוגדל ל-15 (היה 5) להזזה 1 ס"מ שמאלה.
     const LINE_H = 6;                   // גובה שורה במ"מ
 
     for (let i = 0; i < all.length; i++) {
