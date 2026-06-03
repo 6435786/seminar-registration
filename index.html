@@ -6716,6 +6716,12 @@ const TEMPLATE_SECTION_LABELS = {
     signer_name:      { label: 'שם החותם',                short: true },
     signer_role:      { label: 'תפקיד החותם',             short: true },
     signer_dept:      { label: 'שיוך החותם',              short: true },
+    copies_label:     { label: 'כותרת העתקים',            short: true },
+    copies_line1:     { label: 'העתקים — שורה 1' },
+    copies_line2:     { label: 'העתקים — שורה 2' },
+    copies_line3:     { label: 'העתקים — שורה 3' },
+    copies_line4:     { label: 'העתקים — שורה 4' },
+    copies_line5:     { label: 'העתקים — שורה 5',         short: true },
     footer_appeal:    { label: 'הערה תחתונה (ערעור)' },
   },
   seminar_initial: {
@@ -6808,6 +6814,12 @@ const TEMPLATE_DEFAULT_CONTENT = {
     signer_name:       'יהודה קורנבליט',
     signer_role:       'מנהל אגף החינוך',
     signer_dept:       'עיריית ביתר עילית',
+    copies_label:      'העתקים:',
+    copies_line1:      '',
+    copies_line2:      '',
+    copies_line3:      '',
+    copies_line4:      '',
+    copies_line5:      '',
     footer_appeal:     'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך',
   } },
   seminar_initial: { sections: {
@@ -9231,10 +9243,15 @@ function invalidateFormTemplateCache(slug) {
 function drawParentsLetter(pdf, data, slug = 'parents') {
   const RIGHT_X = 190;   // קצה ימין של הטקסט
   const LEFT_X = 20;     // קצה שמאל (עבור wrap)
-  let y = 65;  // 3 שורות מתחת ל"אגף החינוך" בניירת
   // slug יכול להיות 'parents' (פנו) או 'parents_no_inquiry' (לא פנו) — אותו ציור, תוכן אחר מה-DB.
   const T = (id, fb) => tpl(slug, id, data, fb);
 
+  // תאריך אוטומטי (עברי + לועזי) בראש המכתב — כמו במכתבי הסמינר.
+  const dt = _twoDates(data.letter_date ? new Date(data.letter_date) : new Date());
+  drawRTL(pdf, dt.hebrew, RIGHT_X, 50, { size: 10 });
+  drawRTL(pdf, dt.latin,  RIGHT_X, 55, { size: 10 });
+
+  let y = 65;  // 3 שורות מתחת ל"אגף החינוך" בניירת
   drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, T('addressee', 'הורי התלמידה {{girl_full_name}}'), RIGHT_X, y, { size: 12, bold: true });  y += 6;
   // במוד הדפסה (PDF להורדה/הדפסה) — מדלגים על שורת המייל לגמרי, כל היתר זז למעלה ב-9px.
@@ -9265,7 +9282,17 @@ function drawParentsLetter(pdf, data, slug = 'parents') {
   drawRTL(pdf, T('signature_open', 'בברכה,'), RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, T('signer_name', 'יהודה קורנבליט'), RIGHT_X, y, { size: 12, bold: true });  y += 5;
   drawRTL(pdf, T('signer_role', 'מנהל אגף החינוך'), RIGHT_X, y, { size: 12 });  y += 5;
-  drawRTL(pdf, T('signer_dept', 'עיריית ביתר עילית'), RIGHT_X, y, { size: 12 });  y += 5;
+  drawRTL(pdf, T('signer_dept', 'עיריית ביתר עילית'), RIGHT_X, y, { size: 12 });  y += 10;
+
+  // בלוק העתקים — שורות ריקות נדלגות (כמו במכתבי הסמינר).
+  drawRTL(pdf, T('copies_label', 'העתקים:'), RIGHT_X, y, { size: 10, bold: true });  y += 5;
+  for (let i = 1; i <= 5; i++) {
+    const cp = T(`copies_line${i}`, '');
+    if (cp && cp.trim()) {
+      drawRTL(pdf, cp, RIGHT_X, y, { size: 10 });
+      y += 4.5;
+    }
+  }
 
   // הערה משפטית בתחתית — תמיד מצוירת. ההערה החד־פעמית (appendShortNote)
   // מציבה את עצמה מעל ה־footer כדי לא לחפוף.
