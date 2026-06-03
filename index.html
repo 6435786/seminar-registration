@@ -9109,7 +9109,8 @@ function drawParentsLetter(pdf, data, slug = 'parents') {
 
   // הערה משפטית בתחתית — תמיד מצוירת. ההערה החד־פעמית (appendShortNote)
   // מציבה את עצמה מעל ה־footer כדי לא לחפוף.
-  drawCenteredRTL(pdf, T('footer_appeal', 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך'), 105, 268, { size: 10 });
+  // הוזזה ל-233 (במקום 268) — 3.5 ס"מ למעלה, כדי לא להתנגש עם תחתית הניירת.
+  drawCenteredRTL(pdf, T('footer_appeal', 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך'), 105, 233, { size: 10 });
   return y;
 }
 
