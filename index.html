@@ -7381,8 +7381,8 @@ async function _ec_pickTemplate(templateId) {
 async function _ec_renderStep2(pop) {
   const t = EC_STATE.template;
   const kind = t.recipient_kind;
-  // מוד "הדפסת מכתבים" נתמך להורים ולסמינר. גלוי רק ל-super_admin בשלב הבנייה.
-  const showModeToggle = (isSuperAdmin() && (kind === 'parents' || kind === 'seminar'));
+  // מוד "הדפסת מכתבים" נתמך להורים ולסמינר. נפתח ל-admin אחרי בדיקה חיה של super_admin (2026-06-03).
+  const showModeToggle = (isAdmin() && (kind === 'parents' || kind === 'seminar'));
   const isPrint = (EC_STATE.mode === 'print');
   pop.innerHTML = `${_ec_stepHeader()}
     <div id="ec_body" style="padding:14px 20px 0; overflow-y:auto; flex:1; display:flex; flex-direction:column;">
