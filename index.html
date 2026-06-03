@@ -8997,23 +8997,10 @@ function bidi(s) {
   if (!s) return '';
   // הפוך את הסוגריים (mirror bidi chars): '(' ↔ ')', '[' ↔ ']', '{' ↔ '}', '<' ↔ '>'
   const mirror = { '(':')',')':'(','[':']',']':'[','{':'}','}':'{','<':'>','>':'<' };
-  // אטומי-LTR (URLים, אימיילים, מספרים, רצפי אנגלית) — שומרים את הסדר הפנימי שלהם.
-  // בלי הטיפול הזה, היפוך תו-תו היה משבש URL כמו https://example.com/477/.
-  const ltrAtomRegex = /[a-zA-Z][a-zA-Z0-9._\-+:/?#&=%@]*|[0-9]+(?:\.[0-9]+)*/g;
-  const parts = [];
-  let last = 0;
-  let m;
-  while ((m = ltrAtomRegex.exec(s)) !== null) {
-    if (m.index > last) {
-      for (const c of s.slice(last, m.index)) parts.push({ a: false, v: c });
-    }
-    parts.push({ a: true, v: m[0] });
-    last = m.index + m[0].length;
-  }
-  if (last < s.length) {
-    for (const c of s.slice(last)) parts.push({ a: false, v: c });
-  }
-  return parts.reverse().map(p => p.a ? p.v : (mirror[p.v] || p.v)).join('');
+  // היפוך תו-תו של כל המחרוזת. ה-bidi של קורא ה-PDF מפעיל את עצמו מעל זה
+  // ומחזיר URLים לקריאה תקינה (אנגלית) — הפתרון מותאם להתנהגות הזו.
+  // הפיצול לאטומי-LTR (שניסיתי אז ביטלתי) שבר את הקריאות של ה-URLים.
+  return [...s].reverse().map(c => mirror[c] || c).join('');
 }
 
 // ציור שורת טקסט מימין (rightX = מיקום הקצה הימני של הטקסט במ"מ)
