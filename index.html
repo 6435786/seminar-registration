@@ -7151,7 +7151,8 @@ function _ec_renderModal() {
 }
 
 function _ec_confirmClose() {
-  if (EC_STATE.step > 1 && (EC_STATE.template || EC_STATE.recipients.length)) {
+  // אם פעולה כבר הושלמה (הדפסה / הורדה / שליחה) — סוגרים בלי שאלה. אין מה לאבד.
+  if (!EC_STATE._completed && EC_STATE.step > 1 && (EC_STATE.template || EC_STATE.recipients.length)) {
     if (!confirm('לסגור את החלון? הבחירות לא יישמרו.')) return;
   }
   document.getElementById('ec_scrim')?.remove();
@@ -7289,6 +7290,8 @@ async function _ec_openHistory() {
 async function _ec_renderStep() {
   const pop = document.getElementById('ec_pop');
   if (!pop) return;
+  // איפוס דגל ההשלמה בכל ניווט — אם המשתמש עשה תיקון בבחירות, מחזירים את האזהרה לסגירה.
+  EC_STATE._completed = false;
   if (EC_STATE.step === 1) return _ec_renderStep1(pop);
   if (EC_STATE.step === 2) return _ec_renderStep2(pop);
   if (EC_STATE.step === 3) {
@@ -7427,6 +7430,12 @@ async function _ec_renderParentsRecipients() {
 
   // === שלב 3: סינון לפי סמינר ===
   const matchingGirls = afterStatus.filter(g => g.placement_seminar && semSet.has(g.placement_seminar));
+  // === מיון אלפביתי עברי — משפחה, אז שם פרטי ===
+  matchingGirls.sort((a, b) => {
+    const fa = (a.family_name || '').localeCompare(b.family_name || '', 'he');
+    if (fa !== 0) return fa;
+    return (a.first_name || '').localeCompare(b.first_name || '', 'he');
+  });
 
   // === בנה HTML של הפילטרים ===
   const seminarFilterHtml = seminarOptions.length === 0 ? '' : `
@@ -7501,7 +7510,17 @@ async function _ec_renderParentsRecipients() {
   }
 
   function buildRows() {
-    return matchingGirls.map(g => {
+    const _q = (EC_STATE._parentSearch || '').trim().toLowerCase();
+    const _visible = _q
+      ? matchingGirls.filter(g => `${g.first_name || ''} ${g.family_name || ''}`.trim().toLowerCase().includes(_q))
+      : matchingGirls;
+    // עדכון ספירה בכותרת אם קיימת ב-DOM
+    const _countEl = document.getElementById('ec_parent_sel_count');
+    if (_countEl) _countEl.textContent = `${EC_STATE._parentSel.size}/${_visible.length} נבחרו`;
+    if (!_visible.length) {
+      return `<tr><td colspan="4" style="padding:14px; text-align:center; color:var(--muted); font-size:12px;">אין בנות שתואמות לחיפוש</td></tr>`;
+    }
+    return _visible.map(g => {
       const fullName = `${g.first_name || ''} ${g.family_name || ''}`.trim();
       const hasEmail = !!g.email;
       const addrStreet = (g.address_street || '').trim();
@@ -7551,6 +7570,8 @@ async function _ec_renderParentsRecipients() {
 
   list.innerHTML = `
     ${sentNoticeHtml}
+    <input type="text" id="ec_parent_search" placeholder="🔍 חיפוש שם בת..." value="${_esc(EC_STATE._parentSearch || '')}"
+      style="width:100%; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:13px; margin-bottom:6px;">
     <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
       <span style="font-size:12px; color:var(--muted);">בחירת בנות:</span>
       <button class="mini-btn" onclick="_ec_setAllGirls(true)" style="padding:2px 8px; font-size:11px;">בחר הכל</button>
@@ -7587,13 +7608,23 @@ async function _ec_renderParentsRecipients() {
   }
   document.getElementById('ec_parent_all').onchange = (e) => {
     const all = e.target.checked;
-    matchingGirls.forEach(g => {
+    const _q = (EC_STATE._parentSearch || '').trim().toLowerCase();
+    const _visible = _q
+      ? matchingGirls.filter(g => `${g.first_name || ''} ${g.family_name || ''}`.trim().toLowerCase().includes(_q))
+      : matchingGirls;
+    _visible.forEach(g => {
       // במוד הדפסה: בחר/נקה את כולן. במוד שליחה: רק עם מייל.
       if (_printMode || g.email) {
         if (all) EC_STATE._parentSel.add(g.id);
         else EC_STATE._parentSel.delete(g.id);
       }
     });
+    refreshRows();
+  };
+  // חיפוש חופשי לפי שם — מעדכן state ומרענן רק את שורות הטבלה (focus נשמר)
+  const _searchInput = document.getElementById('ec_parent_search');
+  if (_searchInput) _searchInput.oninput = (e) => {
+    EC_STATE._parentSearch = e.target.value;
     refreshRows();
   };
   bindCbs();
@@ -7666,13 +7697,19 @@ function _ec_setAllSeminars(on) {
 // === בחירה מרובה של בנות ===
 function _ec_setAllGirls(on) {
   // במוד שליחה: רק עם מייל. במוד הדפסה: כולן.
+  // אם פעיל חיפוש — פועל רק על הגלויות. אחרת — על כולן.
   const girls = EC_STATE._parentGirls || [];
   const printMode = (EC_STATE.mode === 'print');
+  const _q = (EC_STATE._parentSearch || '').trim().toLowerCase();
+  const visible = _q
+    ? girls.filter(g => `${g.first_name || ''} ${g.family_name || ''}`.trim().toLowerCase().includes(_q))
+    : girls;
   if (!EC_STATE._parentSel) EC_STATE._parentSel = new Set();
   if (on) {
-    girls.forEach(g => { if (printMode || g.email) EC_STATE._parentSel.add(g.id); });
+    visible.forEach(g => { if (printMode || g.email) EC_STATE._parentSel.add(g.id); });
   } else {
-    EC_STATE._parentSel = new Set();
+    if (_q) visible.forEach(g => EC_STATE._parentSel.delete(g.id));
+    else    EC_STATE._parentSel = new Set();
   }
   _ec_renderParentsRecipients();
 }
@@ -8627,6 +8664,7 @@ async function _ec_actionPrint() {
     }
     w.addEventListener('load', () => { try { w.focus(); w.print(); } catch (_) {} });
     setTimeout(() => URL.revokeObjectURL(url), 60000);
+    EC_STATE._completed = true;
     toast(`✓ ${ok} מכתבים נשלחו להדפסה${fail ? ` (${fail} נכשלו)` : ''}`);
   } catch (e) {
     console.error(e);
@@ -8655,6 +8693,7 @@ async function _ec_actionMergedPdf() {
     a.download = `מכתבים-${slug}-${ts}.pdf`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    EC_STATE._completed = true;
     toast(`✓ הורד PDF מאוחד עם ${ok} מכתבים${fail ? ` (${fail} נכשלו)` : ''}`);
   } catch (e) {
     console.error(e);
@@ -8690,6 +8729,7 @@ async function _ec_actionZip() {
     a.download = `מכתבים-${slug}-${ts}.zip`;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    EC_STATE._completed = true;
     toast(`✓ הורד ZIP עם ${ok} מכתבים${fail ? ` (${fail} נכשלו)` : ''}`);
   } catch (e) {
     console.error(e);
