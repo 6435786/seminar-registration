@@ -7675,6 +7675,7 @@ function _ec_syncParentRecipients() {
       family_name: g.family_name || '',
       address_street: g.address_street || '',
       address_number: g.address_number || '',
+      city: g.city || 'ביתר עילית',
       letter_data: {
         girl_full_name: fullName,
         parent_email: g.email || '',
@@ -8819,7 +8820,7 @@ async function _ec_actionLabels() {
       pdf.setFont('David', 'normal');
       pdf.text('‏' + bidi(addressLine), rightX, y, { align: 'right' });
       y += LINE_H;
-      pdf.text('‏' + bidi('ביתר עילית'), rightX, y, { align: 'right' });
+      pdf.text('‏' + bidi((r.city || 'ביתר עילית').trim()), rightX, y, { align: 'right' });
     }
 
     const blob = pdf.output('blob');
