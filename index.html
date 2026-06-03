@@ -6762,6 +6762,8 @@ const TEMPLATE_SECTION_LABELS = {
     table_title:      { label: 'כותרת רשימת התלמידות' },
   },
 };
+// 'parents_no_inquiry' — אותה תבנית פיזית כמו parents (תוכן שונה ב-DB).
+TEMPLATE_SECTION_LABELS.parents_no_inquiry = TEMPLATE_SECTION_LABELS.parents;
 
 // משתנים זמינים לכל סוג תבנית (להצגה למשתמש)
 const TEMPLATE_PLACEHOLDERS = {
@@ -6783,6 +6785,7 @@ const TEMPLATE_PLACEHOLDERS = {
     { tag: '{{school_year}}',    desc: 'שנת לימודים' },
   ],
 };
+TEMPLATE_PLACEHOLDERS.parents_no_inquiry = TEMPLATE_PLACEHOLDERS.parents;
 
 // תוכן ברירת מחדל לכל תבנית — לשחזור באמצעות כפתור "↻ אפס לברירת מחדל".
 // חייב להישאר מסונכרן עם migrate_14_template_content.py + תיקונים בהמשך.
@@ -6850,6 +6853,8 @@ const TEMPLATE_DEFAULT_CONTENT = {
     table_title:      'רשימת תלמידות לשיבוץ — {{seminar_name}}',
   } },
 };
+// ברירת מחדל ל-'parents_no_inquiry' זהה ל-parents (כך שכפתור '↻ אפס לברירת מחדל' עובד).
+TEMPLATE_DEFAULT_CONTENT.parents_no_inquiry = TEMPLATE_DEFAULT_CONTENT.parents;
 
 async function openTemplateEditor(templateId) {
   if (!isAdmin()) {
