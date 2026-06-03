@@ -6931,6 +6931,19 @@ async function openTemplateEditor(templateId) {
       ` : ''}
     </div>
     <div style="padding:16px 22px; overflow-y:auto; flex:1;" id="tpl_editor_body">
+      <div style="margin-bottom:20px; padding:12px; background:#f8fafc; border:1px solid var(--border); border-radius:8px;">
+        <div style="font-weight:700; color:var(--deep); font-size:13px; margin-bottom:8px;">פרטי הטופס</div>
+        <div style="margin-bottom:10px;">
+          <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:3px;">שם הטופס</label>
+          <input type="text" id="tpl_meta_name" value="${_esc(template.name || '')}"
+            style="width:100%; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+        </div>
+        <div>
+          <label style="display:block; font-size:12px; color:var(--muted); margin-bottom:3px;">הסבר</label>
+          <input type="text" id="tpl_meta_description" value="${_esc(template.description || '')}"
+            style="width:100%; padding:6px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px;">
+        </div>
+      </div>
       ${sectionsHtml}
     </div>
     <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
@@ -6940,10 +6953,14 @@ async function openTemplateEditor(templateId) {
   `;
 
   function confirmClose() {
-    // אם יש שינויים — לבקש אישור
+    // אם יש שינויים — לבקש אישור (גם בקטעי המכתב וגם בשם/הסבר)
     const dirty = collectChanges();
-    const hasDirty = Object.entries(dirty).some(([k, v]) => v !== (current[k] || ''));
-    if (hasDirty && !confirm('יש שינויים שלא נשמרו. לסגור בכל זאת?')) return;
+    const hasSectionsDirty = Object.entries(dirty).some(([k, v]) => v !== (current[k] || ''));
+    const nameEl = document.getElementById('tpl_meta_name');
+    const descEl = document.getElementById('tpl_meta_description');
+    const hasMetaDirty = (nameEl && nameEl.value !== (template.name || ''))
+                     || (descEl && descEl.value !== (template.description || ''));
+    if ((hasSectionsDirty || hasMetaDirty) && !confirm('יש שינויים שלא נשמרו. לסגור בכל זאת?')) return;
     scrim.remove();
   }
   function collectChanges() {
@@ -6960,9 +6977,14 @@ async function openTemplateEditor(templateId) {
 
   document.getElementById('tpl_editor_cancel').onclick = confirmClose;
   document.getElementById('tpl_editor_save').onclick = async () => {
+    const newName = document.getElementById('tpl_meta_name').value.trim();
+    if (!newName) { toast('שם הטופס לא יכול להיות ריק', 'warn'); return; }
+    const newDesc = document.getElementById('tpl_meta_description').value.trim();
     const sections = collectChanges();
     const newContent = { ...(template.content_json || {}), sections };
     const { error } = await sb.from('form_templates').update({
+      name: newName,
+      description: newDesc || null,
       content_json: newContent,
       updated_at: new Date().toISOString(),
     }).eq('id', templateId);
