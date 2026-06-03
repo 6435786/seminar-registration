@@ -9336,8 +9336,8 @@ function drawParentsLetter(pdf, data, slug = 'parents') {
   const _footer = T('footer_appeal', 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך');
   let _footerY = 248;
   for (const _ln of _footer.split(/\r?\n/)) {
-    if (_ln.trim()) drawCenteredRTL(pdf, _ln, 105, _footerY, { size: 11 });
-    _footerY += 5;
+    if (_ln.trim()) drawCenteredRTL(pdf, _ln, 105, _footerY, { size: 12 });
+    _footerY += 5.5;
   }
   return y;
 }
