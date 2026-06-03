@@ -7675,7 +7675,7 @@ function _ec_syncParentRecipients() {
       family_name: g.family_name || '',
       address_street: g.address_street || '',
       address_number: g.address_number || '',
-      city: g.city || 'ביתר עילית',
+      city: g.city || '',   // ריק = ריק; לא ממציאים 'ביתר עילית'
       letter_data: {
         girl_full_name: fullName,
         parent_email: g.email || '',
@@ -8773,14 +8773,15 @@ async function _ec_actionLabels() {
   btn.disabled = true;
   const label = btn.innerHTML;
   try {
-    const withAddr = EC_STATE.recipients.filter(r =>
-      (r.address_street || '').trim() || (r.address_number || '').trim()
-    );
-    const skipped = EC_STATE.recipients.length - withAddr.length;
-    if (!withAddr.length) {
-      toast('אין בנות עם כתובת — אין מדבקות להפיק', 'warn');
+    // מדפיסים מדבקה לכל נמען נבחר, גם אם חסרים פרטים. השורות החסרות יישארו ריקות.
+    const all = EC_STATE.recipients;
+    if (!all.length) {
+      toast('אין נמענים', 'warn');
       return;
     }
+    const missingNames = all
+      .filter(r => !((r.address_street || '').trim() || (r.address_number || '').trim()))
+      .map(r => (r.display_name || '').replace(/^הורי /, ''));
     btn.textContent = '🏷 מייצר מדבקות...';
 
     const { jsPDF } = window.jspdf;
@@ -8794,8 +8795,8 @@ async function _ec_actionLabels() {
     const PAD_RIGHT = 5, PAD_TOP = 6;   // ריווח פנימי במ"מ
     const LINE_H = 6;                   // גובה שורה במ"מ
 
-    for (let i = 0; i < withAddr.length; i++) {
-      const r = withAddr[i];
+    for (let i = 0; i < all.length; i++) {
+      const r = all[i];
       const idxOnPage = i % PER_PAGE;
       if (i > 0 && idxOnPage === 0) pdf.addPage();
       const row = Math.floor(idxOnPage / COLS);
@@ -8818,9 +8819,10 @@ async function _ec_actionLabels() {
       pdf.text('‏' + bidi(`משפחת ${r.family_name || ''}`), rightX, y, { align: 'right' });
       y += LINE_H;
       pdf.setFont('David', 'normal');
-      pdf.text('‏' + bidi(addressLine), rightX, y, { align: 'right' });
+      if (addressLine) pdf.text('‏' + bidi(addressLine), rightX, y, { align: 'right' });
       y += LINE_H;
-      pdf.text('‏' + bidi((r.city || 'ביתר עילית').trim()), rightX, y, { align: 'right' });
+      const cityLine = (r.city || '').trim();
+      if (cityLine) pdf.text('‏' + bidi(cityLine), rightX, y, { align: 'right' });
     }
 
     const blob = pdf.output('blob');
@@ -8832,9 +8834,12 @@ async function _ec_actionLabels() {
     setTimeout(() => URL.revokeObjectURL(a.href), 2000);
 
     EC_STATE._completed = true;
-    let msg = `✓ הופקו ${withAddr.length} מדבקות`;
-    if (skipped) msg += ` (${skipped} ללא כתובת — לא הופקו)`;
+    let msg = `✓ הופקו ${all.length} מדבקות`;
+    if (missingNames.length) msg += ` (${missingNames.length} עם כתובת חסרה — הודפסו ריקות)`;
     toast(msg);
+    if (missingNames.length) {
+      console.warn('מדבקות עם כתובת חסרה:', missingNames);
+    }
   } catch (e) {
     console.error(e);
     toast('שגיאה: ' + e.message, 'warn');
@@ -8869,7 +8874,7 @@ async function _ec_renderStep3Print(pop) {
       </div>
       ${noAddress.length ? `
         <div style="background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:#92400e;">
-          ⚠ <b>${noAddress.length}</b> ${noAddress.length === 1 ? 'בת' : 'בנות'} ללא כתובת — המכתב יוצר עבורה רגיל, אבל מדבקה לא תופק (יטופל ידנית).<br>
+          ⚠ <b>${noAddress.length}</b> ${noAddress.length === 1 ? 'בת' : 'בנות'} ללא כתובת — המכתב והמדבקה ייווצרו בלי שורת הכתובת (טיפול ידני).<br>
           <span style="font-size:12px; font-weight:400;">${_esc(noAddrNames)}</span>
         </div>
       ` : ''}
