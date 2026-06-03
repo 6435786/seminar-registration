@@ -8762,6 +8762,85 @@ async function _ec_actionZip() {
   }
 }
 
+// מדבקות: יוצר PDF להדפסה על יריעת FANTA STICK (A4, 3×8 = 24 מדבקות 70×35 מ"מ).
+// סדר RTL: ימין → מרכז → שמאל, אז שורה הבאה. בנות ללא כתובת מדולגות.
+async function _ec_actionLabels() {
+  const btn = document.getElementById('ec_print_labels_btn');
+  if (!btn) return;
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  try {
+    const withAddr = EC_STATE.recipients.filter(r =>
+      (r.address_street || '').trim() || (r.address_number || '').trim()
+    );
+    const skipped = EC_STATE.recipients.length - withAddr.length;
+    if (!withAddr.length) {
+      toast('אין בנות עם כתובת — אין מדבקות להפיק', 'warn');
+      return;
+    }
+    btn.textContent = '🏷 מייצר מדבקות...';
+
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    await embedDavidFont(pdf);
+
+    // תצורת FANTA STICK (≈ Avery L7159): A4 210×297, 3 עמודות × 8 שורות = 24 מדבקות 70×35.
+    const LABEL_W = 70, LABEL_H = 35;
+    const TOP_MARGIN = 8.5;             // (297 − 8×35) / 2 = 8.5 לכל צד אנכי
+    const COLS = 3, ROWS = 8, PER_PAGE = COLS * ROWS;
+    const PAD_RIGHT = 5, PAD_TOP = 6;   // ריווח פנימי במ"מ
+    const LINE_H = 6;                   // גובה שורה במ"מ
+
+    for (let i = 0; i < withAddr.length; i++) {
+      const r = withAddr[i];
+      const idxOnPage = i % PER_PAGE;
+      if (i > 0 && idxOnPage === 0) pdf.addPage();
+      const row = Math.floor(idxOnPage / COLS);
+      const colInRow = idxOnPage % COLS;
+      // RTL: עמודה 0 (הראשונה) בקצה ימין, עמודה 2 (השלישית) בקצה שמאל.
+      const xLeft = (COLS - 1 - colInRow) * LABEL_W;
+      const yTop = TOP_MARGIN + row * LABEL_H;
+      const rightX = xLeft + LABEL_W - PAD_RIGHT;
+      let y = yTop + PAD_TOP + 4;
+
+      const street = (r.address_street || '').trim();
+      const number = (r.address_number || '').trim();
+      const addressLine = (street && number) ? `${street} ${number}` : (street || number);
+
+      pdf.setFont('David', 'normal');
+      pdf.setFontSize(11);
+      pdf.text('‏' + bidi('לכבוד:'), rightX, y, { align: 'right' });
+      y += LINE_H;
+      pdf.setFont('David', 'bold');
+      pdf.text('‏' + bidi(`משפחת ${r.family_name || ''}`), rightX, y, { align: 'right' });
+      y += LINE_H;
+      pdf.setFont('David', 'normal');
+      pdf.text('‏' + bidi(addressLine), rightX, y, { align: 'right' });
+      y += LINE_H;
+      pdf.text('‏' + bidi('ביתר עילית'), rightX, y, { align: 'right' });
+    }
+
+    const blob = pdf.output('blob');
+    const ts = new Date().toISOString().substring(0, 19).replace(/[:T]/g, '-');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `מדבקות-${ts}.pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+
+    EC_STATE._completed = true;
+    let msg = `✓ הופקו ${withAddr.length} מדבקות`;
+    if (skipped) msg += ` (${skipped} ללא כתובת — לא הופקו)`;
+    toast(msg);
+  } catch (e) {
+    console.error(e);
+    toast('שגיאה: ' + e.message, 'warn');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+}
+
 async function _ec_renderStep3Print(pop) {
   const kind = EC_STATE.template ? EC_STATE.template.recipient_kind : null;
   const isParents = (kind === 'parents');
@@ -8804,12 +8883,13 @@ async function _ec_renderStep3Print(pop) {
           🗜 &nbsp; הורד ZIP &nbsp;
           <span style="font-weight:400; color:var(--muted); font-size:12px;">(קובץ ZIP עם PDF נפרד לכל ${perItemNounSingle})</span>
         </button>
+        ${isParents ? `
+          <button id="ec_print_labels_btn" class="cancel-btn" style="font-size:15px; padding:14px 18px; text-align:right; background:#fef3c7; border-color:#fcd34d;">
+            🏷 &nbsp; הדפס מדבקות &nbsp;
+            <span style="font-weight:400; color:#92400e; font-size:12px;">(PDF לדף מדבקות FANTA 24×70×35 מ"מ. הדפס ב-"גודל אמיתי" ללא scaling)</span>
+          </button>
+        ` : ''}
       </div>
-      ${isParents ? `
-        <div style="margin-top:14px; font-size:12px; color:var(--muted); padding:8px 12px; background:#f8fafc; border-radius:6px;">
-          💡 מדבקות לכתובות יהיו זמינות בשלב הבא של הפיתוח.
-        </div>
-      ` : ''}
     </div>
     <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
       <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();">← חזור</button>
@@ -8819,6 +8899,8 @@ async function _ec_renderStep3Print(pop) {
   document.getElementById('ec_print_btn').onclick = _ec_actionPrint;
   document.getElementById('ec_print_merged_btn').onclick = _ec_actionMergedPdf;
   document.getElementById('ec_print_zip_btn').onclick = _ec_actionZip;
+  const labelsBtn = document.getElementById('ec_print_labels_btn');
+  if (labelsBtn) labelsBtn.onclick = _ec_actionLabels;
 }
 
 // ============================================================
