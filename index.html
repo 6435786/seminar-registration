@@ -9004,16 +9004,18 @@ function bidi(s) {
 }
 
 // ציור שורת טקסט מימין (rightX = מיקום הקצה הימני של הטקסט במ"מ)
-// מוסיף RLM (‏) בהתחלה כדי לאלץ זיהוי כיוון RTL בעת רינדור.
+// מוסיף RLM (‏) בהתחלה כדי לאלץ זיהוי כיוון RTL — רק כשיש עברית.
+// שורה שהיא רק לטינית/מספרים (URL וכד') מצוירת כמו שהיא, בלי bidi.
+const HAS_HEBREW = /[֐-׿]/;
 function drawRTL(pdf, text, rightX, y, opts = {}) {
   pdf.setFont('David', opts.bold ? 'bold' : 'normal');
   pdf.setFontSize(opts.size || 11);
-  pdf.text('‏' + bidi(text), rightX, y, { align: 'right' });
+  pdf.text(HAS_HEBREW.test(text) ? '‏' + bidi(text) : text, rightX, y, { align: 'right' });
 }
 function drawCenteredRTL(pdf, text, centerX, y, opts = {}) {
   pdf.setFont('David', opts.bold ? 'bold' : 'normal');
   pdf.setFontSize(opts.size || 11);
-  pdf.text('‏' + bidi(text), centerX, y, { align: 'center' });
+  pdf.text(HAS_HEBREW.test(text) ? '‏' + bidi(text) : text, centerX, y, { align: 'center' });
 }
 // ציור פסקה עם wrap; מחזיר את ה־y אחרי הפסקה
 function drawWrappedRTL(pdf, text, rightX, leftX, y, opts = {}) {
@@ -9031,15 +9033,18 @@ function drawWrappedRTL(pdf, text, rightX, leftX, y, opts = {}) {
       const line = lines[i];
       const isLast = (i === lines.length - 1);
       const words = line.split(/\s+/).filter(w => w);
-      if (!justify || isLast || words.length < 2) {
-        pdf.text('‏' + bidi(line), rightX, y, { align: 'right' });
+      const lineHasHebrew = HAS_HEBREW.test(line);
+      if (!justify || isLast || words.length < 2 || !lineHasHebrew) {
+        // שורה עברית/מעורבת — מיושרת לימין דרך bidi. שורה רק LTR — כמו שהיא.
+        pdf.text(lineHasHebrew ? '‏' + bidi(line) : line, rightX, y, { align: 'right' });
       } else {
         const widths = words.map(w => pdf.getTextWidth(w));
         const totalW = widths.reduce((a, b) => a + b, 0);
         const gap = (maxW - totalW) / (words.length - 1);
         let x = rightX;
         for (let j = 0; j < words.length; j++) {
-          pdf.text('‏' + bidi(words[j]), x, y, { align: 'right' });
+          const w = words[j];
+          pdf.text(HAS_HEBREW.test(w) ? '‏' + bidi(w) : w, x, y, { align: 'right' });
           x -= widths[j] + gap;
         }
       }
@@ -9698,15 +9703,17 @@ function drawWrappedRTL_paginated(pdf, text, rightX, leftX, startY, opts, addLet
       }
       const isLast = (i === lines.length - 1);
       const words = line.split(/\s+/).filter(w => w);
-      if (!justify || isLast || words.length < 2) {
-        pdf.text('‏' + bidi(line), rightX, y, { align: 'right' });
+      const lineHasHebrew = HAS_HEBREW.test(line);
+      if (!justify || isLast || words.length < 2 || !lineHasHebrew) {
+        pdf.text(lineHasHebrew ? '‏' + bidi(line) : line, rightX, y, { align: 'right' });
       } else {
         const widths = words.map(w => pdf.getTextWidth(w));
         const totalW = widths.reduce((a, b) => a + b, 0);
         const gap = (maxW - totalW) / (words.length - 1);
         let x = rightX;
         for (let j = 0; j < words.length; j++) {
-          pdf.text('‏' + bidi(words[j]), x, y, { align: 'right' });
+          const w = words[j];
+          pdf.text(HAS_HEBREW.test(w) ? '‏' + bidi(w) : w, x, y, { align: 'right' });
           x -= widths[j] + gap;
         }
       }
