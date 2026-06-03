@@ -6722,7 +6722,7 @@ const TEMPLATE_SECTION_LABELS = {
     copies_line3:     { label: 'העתקים — שורה 3' },
     copies_line4:     { label: 'העתקים — שורה 4' },
     copies_line5:     { label: 'העתקים — שורה 5',         short: true },
-    footer_appeal:    { label: 'הערה תחתונה (ערעור)' },
+    footer_appeal:    { label: 'הערה תחתונה (ערעור) — אנטר ירד שורה', textarea: true },
   },
   seminar_initial: {
     greeting:         { label: 'פתיחה (לכבוד)',          short: true },
@@ -8997,7 +8997,23 @@ function bidi(s) {
   if (!s) return '';
   // הפוך את הסוגריים (mirror bidi chars): '(' ↔ ')', '[' ↔ ']', '{' ↔ '}', '<' ↔ '>'
   const mirror = { '(':')',')':'(','[':']',']':'[','{':'}','}':'{','<':'>','>':'<' };
-  return [...s].reverse().map(c => mirror[c] || c).join('');
+  // אטומי-LTR (URLים, אימיילים, מספרים, רצפי אנגלית) — שומרים את הסדר הפנימי שלהם.
+  // בלי הטיפול הזה, היפוך תו-תו היה משבש URL כמו https://example.com/477/.
+  const ltrAtomRegex = /[a-zA-Z][a-zA-Z0-9._\-+:/?#&=%@]*|[0-9]+(?:\.[0-9]+)*/g;
+  const parts = [];
+  let last = 0;
+  let m;
+  while ((m = ltrAtomRegex.exec(s)) !== null) {
+    if (m.index > last) {
+      for (const c of s.slice(last, m.index)) parts.push({ a: false, v: c });
+    }
+    parts.push({ a: true, v: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < s.length) {
+    for (const c of s.slice(last)) parts.push({ a: false, v: c });
+  }
+  return parts.reverse().map(p => p.a ? p.v : (mirror[p.v] || p.v)).join('');
 }
 
 // ציור שורת טקסט מימין (rightX = מיקום הקצה הימני של הטקסט במ"מ)
@@ -9316,8 +9332,13 @@ function drawParentsLetter(pdf, data, slug = 'parents') {
 
   // הערה משפטית בתחתית — תמיד מצוירת. ההערה החד־פעמית (appendShortNote)
   // מציבה את עצמה מעל ה־footer כדי לא לחפוף.
-  // היסטוריה: 268 → 233 (3.5 ס"מ למעלה) → 248 (חזרה 1.5 ס"מ למטה, לפנות מקום לבלוק העתקים).
-  drawCenteredRTL(pdf, T('footer_appeal', 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך'), 105, 248, { size: 10 });
+  // היסטוריה: 268 → 233 → 248. תמיכה ב-multiline (פיצול לפי \n) וגופן 11 (היה 10).
+  const _footer = T('footer_appeal', 'על פי חוק ניתן לערער למנהל המחוז במשרד החינוך');
+  let _footerY = 248;
+  for (const _ln of _footer.split(/\r?\n/)) {
+    if (_ln.trim()) drawCenteredRTL(pdf, _ln, 105, _footerY, { size: 11 });
+    _footerY += 5;
+  }
   return y;
 }
 
