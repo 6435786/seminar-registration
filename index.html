@@ -8488,7 +8488,7 @@ async function _ec_generateAllPdfsForPrint(progressCb) {
     const r = EC_STATE.recipients[i];
     if (progressCb) progressCb(i + 1, EC_STATE.recipients.length, r);
     try {
-      const blob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
+      const blob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter, print_mode: true });
       const buf = await blob.arrayBuffer();
       out.push({ recipient: r, bytes: new Uint8Array(buf), blob });
     } catch (e) {
@@ -8989,7 +8989,10 @@ function drawParentsLetter(pdf, data) {
 
   drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, T('addressee', 'הורי התלמידה {{girl_full_name}}'), RIGHT_X, y, { size: 12, bold: true });  y += 6;
-  drawRTL(pdf, T('email_line', 'בדוא"ל {{parent_email}}'), RIGHT_X, y, { size: 12 });  y += 9;
+  // במוד הדפסה (PDF להורדה/הדפסה) — מדלגים על שורת המייל לגמרי, כל היתר זז למעלה ב-9px.
+  if (!data.print_mode) {
+    drawRTL(pdf, T('email_line', 'בדוא"ל {{parent_email}}'), RIGHT_X, y, { size: 12 });  y += 9;
+  }
   drawRTL(pdf, T('shalom', 'שלום וברכה,'), RIGHT_X, y, { size: 12 });  y += 9;
 
   // הנדון — ממורכז
