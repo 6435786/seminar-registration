@@ -1629,7 +1629,7 @@
     <button class="hdr-btn" id="btn_hdr_views">🔖 תצוגות שמורות</button>
     <button class="hdr-btn" id="btn_report">📄 דוח לוועדה</button>
     <button class="hdr-btn" id="btn_hdr_print">הדפסה</button>
-    <button class="hdr-btn" id="btn_hdr_email" title="שליחת מיילים לפי תבנית">✉ דוא"ל</button>
+    <button class="hdr-btn" id="btn_hdr_email" title="שליחת מכתבים לפי תבנית">✉ מכתבים</button>
     <button class="hdr-btn" id="btn_export_table">📊 יצוא</button>
   </div>
   <!-- מובייל בלבד -->
@@ -7064,7 +7064,7 @@ const EC_STATE = {
 
 async function openEmailComposer() {
   if (!isAdmin()) {
-    alert('מערכת המיילים זמינה רק למנהלים.');
+    alert('מערכת המכתבים זמינה רק למנהלים.');
     return;
   }
   // אתחל state
@@ -7124,7 +7124,7 @@ function _ec_stepHeader() {
     <div style="padding:14px 22px; border-bottom:1px solid var(--border); background:linear-gradient(to bottom, #f8fafc, white); display:flex; align-items:center; gap:10px;">
       <div style="font-size:22px;">✉</div>
       <div style="flex:1;">
-        <div style="font-weight:700; color:var(--deep); font-size:17px;">שליחת מיילים</div>
+        <div style="font-weight:700; color:var(--deep); font-size:17px;">מכתבים</div>
         <div style="color:var(--muted); font-size:12px; margin-top:2px;">
           ${stepNames.map((n, i) => {
             const stepNum = i + 1;
@@ -7160,7 +7160,7 @@ async function _ec_openHistory() {
       <div style="font-size:20px;">📋</div>
       <div style="flex:1;">
         <div style="font-weight:700; color:var(--deep); font-size:17px;">היסטוריית שליחות</div>
-        <div style="color:var(--muted); font-size:12px;">כל המיילים שיוצאו, מקובצים לפי אצוות שליחה</div>
+        <div style="color:var(--muted); font-size:12px;">כל המכתבים שנשלחו במייל, מקובצים לפי אצוות שליחה</div>
       </div>
       <button class="close" onclick="document.getElementById('ec_hist_scrim').remove();">×</button>
     </div>
