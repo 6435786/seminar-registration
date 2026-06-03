@@ -1920,6 +1920,7 @@ const ALL_COLS = [
   // כתובת
   { group: 'כתובת', key: 'address_street',   label: 'רחוב',    width: 130, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'address_street' } },
   { group: 'כתובת', key: 'address_number',   label: "מס'",     width: 50,  default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'address_number' } },
+  { group: 'כתובת', key: 'city',             label: 'עיר',     width: 100, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'city' } },
   // הורים
   { group: 'הורים', key: 'mother_name',      label: 'שם אם',   width: 120, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'mother_name' } },
   { group: 'הורים', key: 'mother_phone',     label: 'טלפון אם',width: 110, default: false, edit: { type: 'text', warn: true, table: 'girls', dbField: 'mother_phone' } },
@@ -3619,6 +3620,7 @@ function renderModalBody() {
         ${fld('קהילה', 'community', r.community)}
         ${fld('רחוב', 'address_street', r.address_street)}
         ${fld('מס\' בית', 'address_number', r.address_number)}
+        ${fld('עיר', 'city', r.city)}
         ${fld('שם אם', 'mother_name', r.mother_name)}
         ${fld('ת.ז אם', 'mother_national_id', r.mother_national_id)}
         ${fld('טלפון אם', 'mother_phone', r.mother_phone)}
@@ -3722,7 +3724,7 @@ async function _createNewGirl(pending) {
     throw new Error('חובה למלא: ת.ז, שם, משפחה');
   }
   // girls insert
-  const girlFields = ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes','inquiry_made'];
+  const girlFields = ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','city','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes','inquiry_made'];
   const girlRow = {};
   girlFields.forEach(k => {
     if (pending[k] !== undefined) girlRow[k] = pending[k];
@@ -3738,7 +3740,7 @@ async function _createNewGirl(pending) {
 async function _applyModalChanges(row, pending) {
   // עדכוני girls
   const girlUpdate = {};
-  ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes','inquiry_made'].forEach(k => {
+  ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','city','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes','inquiry_made'].forEach(k => {
     if (pending[k] !== undefined) girlUpdate[k] = pending[k];
   });
   const oldValues = {};
