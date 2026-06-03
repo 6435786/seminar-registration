@@ -1937,6 +1937,8 @@ const ALL_COLS = [
   // שיבוץ — ללא warn (שגרה)
   { group: 'שיבוץ', key: 'placement_seminar',label: 'שיבוץ',   width: 110, default: true, bold: true, edit: { type: 'seminar', table: 'placements' } },
   { group: 'שיבוץ', key: 'placement_status', label: 'סטטוס',   width: 100, default: true, badge: true, edit: { type: 'enum', values: ENUM_STATUS, table: 'placements', dbField: 'status' } },
+  // פניה — האם ההורים פנו לוועדת השיבוץ. קובע אוטומטית איזה נוסח מכתב יווצר.
+  { group: 'שיבוץ', key: 'inquiry_made',     label: 'פניה',    width: 60,  default: true,  edit: { type: 'bool', table: 'girls', dbField: 'inquiry_made' } },
   // מכתב הורים — מוסתר כברירת מחדל. מתמלא אוטומטית בשליחה אמיתית; ניתן לאיפוס ידני.
   { group: 'שיבוץ', key: 'parent_letter_sent_at', label: 'מכתב הורים', width: 90, default: false, edit: { type: 'parent_letter', table: 'placements', dbField: 'parent_letter_sent_at' } },
   { group: 'שיבוץ', key: 'notes',            label: 'הערה',      width: 150, default: true,  edit: { type: 'text', table: 'girls', dbField: 'notes' } },
@@ -2466,6 +2468,12 @@ function renderCell(col, r) {
     if (!r.sibling_count) return '<span style="color:var(--muted)">—</span>';
     return `<span class="sib-cell" data-nid="${r.national_id}" title="לחץ לפרטי אחים">${v || ''} <span style="color:var(--muted); font-size:11px;">👥</span></span>`;
   }
+  // תיבת סימון bool — ✓ אם true, — אם false. לחיצה בעריכה = toggle.
+  if (col.edit && col.edit.type === 'bool') {
+    return v
+      ? '<span style="color:#059669; font-weight:700;">✓</span>'
+      : '<span style="color:var(--muted)">—</span>';
+  }
   // מכתב הורים — checkmark אם נשלח, ריק אם לא. ריחוף = תאריך + שעה
   if (col.edit && col.edit.type === 'parent_letter') {
     if (!v) return '<span style="color:var(--muted)">—</span>';
@@ -2991,6 +2999,26 @@ async function startEdit(td, nid) {
     if (!confirm(`⚠️ אתה עומד לשנות את תעודת הזהות של ${row.family_name} ${row.first_name}.\n\nזהו שדה זיהוי קריטי. טעות כאן יכולה לנתק את התלמידה מהרישומים והאחים שלה.\n\nלהמשיך?`)) return;
   }
 
+  // bool — toggle ישיר בלחיצה (בלי control מוצג).
+  if (col.edit.type === 'bool') {
+    const currentVal = !!row[key];
+    const newVal = !currentVal;
+    td.innerHTML = `<span class="save-indicator saving">⏳</span>`;
+    try {
+      await saveEdit(row, col, newVal);
+      await auditLog(col.edit.table || 'girls', row.id, 'update',
+        { [col.key]: currentVal }, { [col.key]: newVal });
+      await refreshRow(row.national_id);
+      const updated = ROWS.find(r => r.national_id === row.national_id) || row;
+      td.innerHTML = renderCell(col, updated);
+      toast(newVal ? 'סומן ✓' : 'הסימון הוסר');
+    } catch (e) {
+      console.error('save failed:', e);
+      toast('שגיאה: ' + (e.message || e), 'warn');
+      td.innerHTML = renderCell(col, row);
+    }
+    return;
+  }
   // מכתב הורים — toggle ישיר בלחיצה (בלי control). מחיקה ידנית מאפסת ל־NULL,
   // ושליחה אמיתית הבאה תמלא מחדש.
   if (col.edit.type === 'parent_letter') {
@@ -3611,6 +3639,7 @@ function renderModalBody() {
         ${fld('א-ו 2',   'reg_pref_2_class',    p2.class_type,               { type: 'enum', values: ENUM_CLASS })}
         ${fld('שיבוץ',   'plc_seminar',  semNameFromId(plc.seminar_id), { type: 'seminar' })}
         ${fld('סטטוס',   'plc_status',   plc.status,                    { type: 'enum', values: ENUM_STATUS })}
+        ${fld('פניה',    'inquiry_made', r.inquiry_made,                { type: 'checkbox' })}
         ${fld('סופי',    'plc_is_final', plc.is_final,                  { type: 'checkbox' })}
         ${fld('מקדמת',   'reg_advance_seminar', semNameFromId(pa.seminar_id), { type: 'seminar' })}
       </div>
@@ -3693,7 +3722,7 @@ async function _createNewGirl(pending) {
     throw new Error('חובה למלא: ת.ז, שם, משפחה');
   }
   // girls insert
-  const girlFields = ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes'];
+  const girlFields = ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes','inquiry_made'];
   const girlRow = {};
   girlFields.forEach(k => {
     if (pending[k] !== undefined) girlRow[k] = pending[k];
@@ -3709,7 +3738,7 @@ async function _createNewGirl(pending) {
 async function _applyModalChanges(row, pending) {
   // עדכוני girls
   const girlUpdate = {};
-  ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes'].forEach(k => {
+  ['national_id','first_name','family_name','source_school_id','sector','community','address_street','address_number','mother_name','mother_national_id','mother_phone','father_name','father_national_id','father_phone','email','notes','inquiry_made'].forEach(k => {
     if (pending[k] !== undefined) girlUpdate[k] = pending[k];
   });
   const oldValues = {};
@@ -7578,6 +7607,8 @@ function _ec_syncParentRecipients() {
       ref_id: g.id,
       email: g.email || null,
       display_name: 'הורי ' + fullName,
+      // האם ההורים פנו לוועדה — קובע איזו תבנית פיזית תיווצר (parents / parents_no_inquiry)
+      inquiry_made: !!g.inquiry_made,
       // שדות כתובת — לשימוש מדבקות / זיהוי "ללא כתובת" במוד הדפסה
       family_name: g.family_name || '',
       address_street: g.address_street || '',
@@ -8227,7 +8258,7 @@ async function _ec_send() {
     const r = EC_STATE.recipients[i];
     btn.textContent = `מייצר ${i+1}/${EC_STATE.recipients.length}...`;
     try {
-      const pdfBlob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
+      const pdfBlob = await generateLetterPDF(_ec_effectiveSlugFor(r, slug), { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
       const fname = _ec_recipientFilename(r, 'pdf');
       folder.file(fname, pdfBlob);
       // עטוף ב־.eml פשוט (לעתיד — לפי אסטרטגיית גרירה ל־Drafts)
@@ -8306,6 +8337,15 @@ function _ec_safeFilename(name) {
   return name.replace(/[\/\\:*?"<>|]/g, '_').substring(0, 100);
 }
 
+// בוחר את ה-slug האפקטיבי פר-נמען: למכתב הורים, אם המשפחה לא פנתה — תבנית 'parents_no_inquiry'.
+// בכל סוג אחר — נשאר ה-slug המקורי של התבנית.
+function _ec_effectiveSlugFor(r, baseSlug) {
+  if (r && r.kind === 'parents' && baseSlug === 'parents') {
+    return r.inquiry_made ? 'parents' : 'parents_no_inquiry';
+  }
+  return baseSlug;
+}
+
 // שם קובץ ה־PDF המצורף — לסמינר: רק שם הסמינר. להורים: שם התלמידה.
 function _ec_recipientFilename(r, ext) {
   let base;
@@ -8365,7 +8405,7 @@ async function _ec_sendViaGmail() {
     const r = EC_STATE.recipients[i];
     btn.textContent = `שולח ${i+1}/${EC_STATE.recipients.length}...`;
     try {
-      const pdfBlob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
+      const pdfBlob = await generateLetterPDF(_ec_effectiveSlugFor(r, slug), { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
       // CC = גלוי לכולם: עוזרי הסמינר (משרד/נוסף) + CC ידני + ccContacts
       const realCc = _ec_collectAllCcEmails(r.cc_emails);
       // BCC = נסתר מכולם: שדה bcc הידני + bccContacts
@@ -8528,7 +8568,7 @@ async function _ec_generateAllPdfsForPrint(progressCb) {
     const r = EC_STATE.recipients[i];
     if (progressCb) progressCb(i + 1, EC_STATE.recipients.length, r);
     try {
-      const blob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter, print_mode: true });
+      const blob = await generateLetterPDF(_ec_effectiveSlugFor(r, slug), { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter, print_mode: true });
       const buf = await blob.arrayBuffer();
       out.push({ recipient: r, bytes: new Uint8Array(buf), blob });
     } catch (e) {
@@ -9029,11 +9069,12 @@ function invalidateFormTemplateCache(slug) {
 // ============================================================
 // תבניות מכתבים — ציור ישיר ל־PDF (טקסט נטיב, חד לחלוטין)
 // ============================================================
-function drawParentsLetter(pdf, data) {
+function drawParentsLetter(pdf, data, slug = 'parents') {
   const RIGHT_X = 190;   // קצה ימין של הטקסט
   const LEFT_X = 20;     // קצה שמאל (עבור wrap)
   let y = 65;  // 3 שורות מתחת ל"אגף החינוך" בניירת
-  const T = (id, fb) => tpl('parents', id, data, fb);
+  // slug יכול להיות 'parents' (פנו) או 'parents_no_inquiry' (לא פנו) — אותו ציור, תוכן אחר מה-DB.
+  const T = (id, fb) => tpl(slug, id, data, fb);
 
   drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, T('addressee', 'הורי התלמידה {{girl_full_name}}'), RIGHT_X, y, { size: 12, bold: true });  y += 6;
@@ -9378,9 +9419,9 @@ async function generateLetterPDF(template, data) {
   };
 
   let lastY = 65;
-  if (template === 'parents') {
+  if (template === 'parents' || template === 'parents_no_inquiry') {
     addLetterheadPage(true);
-    lastY = drawParentsLetter(pdf, data);
+    lastY = drawParentsLetter(pdf, data, template);
   } else if (template === 'seminar_initial') {
     addLetterheadPage(true);
     drawSeminarInitialLetter(pdf, data);
