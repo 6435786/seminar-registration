@@ -7256,8 +7256,9 @@ async function _ec_renderStep() {
   if (EC_STATE.step === 1) return _ec_renderStep1(pop);
   if (EC_STATE.step === 2) return _ec_renderStep2(pop);
   if (EC_STATE.step === 3) {
-    // print mode נתמך כרגע רק להורים — בכל מקרה אחר נופלים חזרה למסך השליחה.
-    const usePrint = (EC_STATE.mode === 'print') && EC_STATE.template && EC_STATE.template.recipient_kind === 'parents';
+    // print mode נתמך להורים ולסמינר. בכל מקרה אחר נופלים חזרה למסך השליחה.
+    const kind = EC_STATE.template ? EC_STATE.template.recipient_kind : null;
+    const usePrint = (EC_STATE.mode === 'print') && (kind === 'parents' || kind === 'seminar');
     return usePrint ? _ec_renderStep3Print(pop) : _ec_renderStep3(pop);
   }
 }
@@ -7319,8 +7320,8 @@ async function _ec_pickTemplate(templateId) {
 async function _ec_renderStep2(pop) {
   const t = EC_STATE.template;
   const kind = t.recipient_kind;
-  // מוד "הדפסת מכתבים" כרגע נתמך רק להורים, וגלוי רק ל-super_admin בשלב הבנייה.
-  const showModeToggle = (isSuperAdmin() && kind === 'parents');
+  // מוד "הדפסת מכתבים" נתמך להורים ולסמינר. גלוי רק ל-super_admin בשלב הבנייה.
+  const showModeToggle = (isSuperAdmin() && (kind === 'parents' || kind === 'seminar'));
   const isPrint = (EC_STATE.mode === 'print');
   pop.innerHTML = `${_ec_stepHeader()}
     <div id="ec_body" style="padding:14px 20px 0; overflow-y:auto; flex:1; display:flex; flex-direction:column;">
@@ -7638,11 +7639,12 @@ function _ec_setAllGirls(on) {
   _ec_renderParentsRecipients();
 }
 
-// === החלפת מוד (שליחה/הדפסה) — מאפס בחירת בנות כי ברירת המחדל שונה בכל מוד ===
+// === החלפת מוד (שליחה/הדפסה) — מאפס בחירות כי ברירת המחדל שונה בכל מוד ===
 function _ec_setMode(newMode) {
   if (EC_STATE.mode === newMode) return;
   EC_STATE.mode = newMode;
   EC_STATE._parentSel = null;
+  EC_STATE._semSel = null;
   _ec_renderStep();
 }
 
@@ -7684,8 +7686,10 @@ async function _ec_renderSeminarRecipients() {
   }
 
   EC_STATE._semData = { bySeminar, seminarsWithGirls };
-  // single-select: אל תבחר אף סמינר ב־default; המשתמש בוחר אחד
+  // ברירת מחדל: ריק. בשליחה — בחירה יחידה (radio). בהדפסה — בחירה מרובה (checkbox).
   if (!EC_STATE._semSel) EC_STATE._semSel = new Set();
+
+  const _semPrintMode = (EC_STATE.mode === 'print');
 
   function buildSeminarRows() {
     return seminarsWithGirls.map(name => {
@@ -7694,10 +7698,14 @@ async function _ec_renderSeminarRecipients() {
       const isSelected = EC_STATE._semSel.has(name);
       const girls = bySeminar[name];
       const ccCount = sem ? [sem.office_email, sem.secondary_email].filter(Boolean).length : 0;
+      // במוד הדפסה: checkboxes רב-בחירה, אין disabled. במוד שליחה: radio יחיד, disabled אם אין מייל.
+      const inputType = _semPrintMode ? 'checkbox' : 'radio';
+      const cbDisabled = _semPrintMode ? '' : (!hasEmail ? 'disabled' : '');
+      const rowCursor  = (_semPrintMode || hasEmail) ? 'pointer' : 'not-allowed';
       return `
-        <tr style="background:${isSelected ? '#dbeafe' : 'white'}; cursor:${hasEmail ? 'pointer' : 'not-allowed'};" data-sname="${_esc(name)}" class="ec_sem_row">
+        <tr style="background:${isSelected ? '#dbeafe' : 'white'}; cursor:${rowCursor};" data-sname="${_esc(name)}" class="ec_sem_row">
           <td style="padding:5px 8px; text-align:center; width:28px;">
-            <input type="radio" name="ec_sem_pick" ${isSelected ? 'checked' : ''} ${!hasEmail ? 'disabled' : ''}
+            <input type="${inputType}" name="ec_sem_pick" ${isSelected ? 'checked' : ''} ${cbDisabled}
               data-sname="${_esc(name)}" class="ec_sem_radio">
           </td>
           <td style="padding:5px 8px;">${_esc(name)}</td>
@@ -7710,10 +7718,22 @@ async function _ec_renderSeminarRecipients() {
     }).join('');
   }
 
+  const _semTipHtml = _semPrintMode
+    ? `<div style="background:#dbeafe; border:1px solid #93c5fd; border-radius:6px; padding:6px 10px; font-size:11px; color:#1e40af; margin-bottom:6px;">
+         💡 לכל סמינר נבחר ייווצר PDF נפרד עם רשימת הבנות שלו. אפשר לבחור כמה שתרצה.
+       </div>
+       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+         <span style="font-size:12px; color:var(--muted);">בחירת סמינרים:</span>
+         <button class="mini-btn" onclick="_ec_setAllSems(true)" style="padding:2px 8px; font-size:11px;">בחר הכל</button>
+         <button class="mini-btn" onclick="_ec_setAllSems(false)" style="padding:2px 8px; font-size:11px;">נקה הכל</button>
+         <span style="font-size:11px; color:var(--muted); margin-right:auto;">${EC_STATE._semSel.size}/${seminarsWithGirls.length} נבחרו</span>
+       </div>`
+    : `<div style="background:#fef9c3; border:1px solid #fde047; border-radius:6px; padding:6px 10px; font-size:11px; color:#854d0e; margin-bottom:6px;">
+         💡 שליחה לסמינר אחד בכל פעם — למניעת בלבול. כדי לשלוח ליותר מאחד, פשוט תפעיל את התהליך בשנית.
+       </div>`;
+
   list.innerHTML = `
-    <div style="background:#fef9c3; border:1px solid #fde047; border-radius:6px; padding:6px 10px; font-size:11px; color:#854d0e; margin-bottom:6px;">
-      💡 שליחה לסמינר אחד בכל פעם — למניעת בלבול. כדי לשלוח ליותר מאחד, פשוט תפעיל את התהליך בשנית.
-    </div>
+    ${_semTipHtml}
     <table style="width:100%; border-collapse:collapse; font-size:13px;">
       <thead>
         <tr style="background:#eff6ff;">
@@ -7732,10 +7752,14 @@ async function _ec_renderSeminarRecipients() {
     _ec_syncSeminarRecipients();
   }
   function bindEvents() {
-    // single-select: בחירה ברדיו OR בלחיצה על השורה
     document.querySelectorAll('.ec_sem_radio').forEach(rb => {
       rb.onchange = () => {
-        EC_STATE._semSel = new Set([rb.dataset.sname]);
+        if (_semPrintMode) {
+          if (rb.checked) EC_STATE._semSel.add(rb.dataset.sname);
+          else            EC_STATE._semSel.delete(rb.dataset.sname);
+        } else {
+          EC_STATE._semSel = new Set([rb.dataset.sname]);
+        }
         refresh();
       };
     });
@@ -7743,9 +7767,14 @@ async function _ec_renderSeminarRecipients() {
       row.onclick = (e) => {
         if (e.target.tagName === 'INPUT') return;
         const name = row.dataset.sname;
-        const sem = (DATA.seminars || []).find(s => s.name === name);
-        if (!sem || !sem.contact_email) return;  // disabled
-        EC_STATE._semSel = new Set([name]);
+        if (_semPrintMode) {
+          if (EC_STATE._semSel.has(name)) EC_STATE._semSel.delete(name);
+          else                            EC_STATE._semSel.add(name);
+        } else {
+          const sem = (DATA.seminars || []).find(s => s.name === name);
+          if (!sem || !sem.contact_email) return;  // disabled
+          EC_STATE._semSel = new Set([name]);
+        }
         refresh();
       };
     });
@@ -7758,11 +7787,14 @@ function _ec_syncSeminarRecipients() {
   const { bySeminar, seminarsWithGirls } = EC_STATE._semData || {};
   if (!seminarsWithGirls) return;
   const sel = EC_STATE._semSel || new Set();
+  const printMode = (EC_STATE.mode === 'print');
   const out = [];
   seminarsWithGirls.forEach(name => {
     if (!sel.has(name)) return;
     const sem = (DATA.seminars || []).find(s => s.name === name);
-    if (!sem || !sem.contact_email) return;  // ללא מייל ראשי — לא נשלח כלל
+    if (!sem) return;
+    // במוד שליחה — חובה מייל ראשי. במוד הדפסה — אין דרישת מייל.
+    if (!printMode && !sem.contact_email) return;
     const girls = bySeminar[name].map(g => ({
       national_id: g.national_id, family_name: g.family_name, first_name: g.first_name,
       source_school: g.source_school_name || '',
@@ -7773,9 +7805,9 @@ function _ec_syncSeminarRecipients() {
     if (sem.office_email)    ccFromSeminar.push({ email: sem.office_email,    label: 'מייל משרד', enabled: true });
     if (sem.secondary_email) ccFromSeminar.push({ email: sem.secondary_email, label: 'מייל נוסף', enabled: true });
     out.push({
-      kind: 'seminar', ref_id: sem.id, email: sem.contact_email,
+      kind: 'seminar', ref_id: sem.id, email: sem.contact_email || null,
       cc_emails: ccFromSeminar,  // יתווסף ל־CC הגלובלי בעת השליחה
-      display_name: `${name} — ${contactFull || sem.contact_email}`,
+      display_name: `${name} — ${contactFull || sem.contact_email || '—'}`,
       letter_data: {
         contact_full: contactFull, seminar_name: name,
         school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
@@ -7794,6 +7826,14 @@ function _ec_toggleStatusFilterSem(status, checked) {
     EC_STATE.statusFilters = EC_STATE.statusFilters.filter(s => s !== status);
   }
   EC_STATE._semSel = null;
+  _ec_renderSeminarRecipients();
+}
+
+// === בחר הכל / נקה הכל סמינרים (רלוונטי רק במוד הדפסה) ===
+function _ec_setAllSems(on) {
+  const { seminarsWithGirls } = EC_STATE._semData || {};
+  if (!seminarsWithGirls) return;
+  EC_STATE._semSel = on ? new Set(seminarsWithGirls) : new Set();
   _ec_renderSeminarRecipients();
 }
 
@@ -8614,19 +8654,25 @@ async function _ec_actionZip() {
 }
 
 async function _ec_renderStep3Print(pop) {
-  // ספירת בנות בלי כתובת (לאזהרה)
-  const noAddress = EC_STATE.recipients.filter(r => {
+  const kind = EC_STATE.template ? EC_STATE.template.recipient_kind : null;
+  const isParents = (kind === 'parents');
+
+  // אזהרת "ללא כתובת" רלוונטית רק להורים (לסמינר אין כתובת בית)
+  const noAddress = isParents ? EC_STATE.recipients.filter(r => {
     const s = (r.address_street || '').trim();
     const n = (r.address_number || '').trim();
     return !(s || n);
-  });
+  }) : [];
   const noAddrNames = noAddress.map(r => (r.display_name || '').replace(/^הורי /, '')).join(', ');
+
+  const itemNounPlural   = isParents ? 'מכתבים' : 'מכתבים לסמינרים';
+  const perItemNounSingle = isParents ? 'בת' : 'סמינר';
 
   pop.innerHTML = `${_ec_stepHeader()}
     <div id="ec_body" style="padding:20px; overflow-y:auto; flex:1;">
       <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:14px 16px; margin-bottom:14px;">
         <div style="font-weight:700; color:var(--deep); font-size:15px; margin-bottom:6px;">
-          📨 ${EC_STATE.recipients.length} מכתבים מוכנים להדפסה
+          📨 ${EC_STATE.recipients.length} ${itemNounPlural} מוכנים להדפסה
         </div>
         <div style="color:var(--muted); font-size:13px;">תבנית: ${_esc(EC_STATE.template.name)}</div>
       </div>
@@ -8647,12 +8693,14 @@ async function _ec_renderStep3Print(pop) {
         </button>
         <button id="ec_print_zip_btn" class="cancel-btn" style="font-size:15px; padding:14px 18px; text-align:right; background:#f0f9ff;">
           🗜 &nbsp; הורד ZIP &nbsp;
-          <span style="font-weight:400; color:var(--muted); font-size:12px;">(קובץ ZIP עם PDF נפרד לכל בת)</span>
+          <span style="font-weight:400; color:var(--muted); font-size:12px;">(קובץ ZIP עם PDF נפרד לכל ${perItemNounSingle})</span>
         </button>
       </div>
-      <div style="margin-top:14px; font-size:12px; color:var(--muted); padding:8px 12px; background:#f8fafc; border-radius:6px;">
-        💡 מדבקות לכתובות יהיו זמינות בשלב הבא של הפיתוח.
-      </div>
+      ${isParents ? `
+        <div style="margin-top:14px; font-size:12px; color:var(--muted); padding:8px 12px; background:#f8fafc; border-radius:6px;">
+          💡 מדבקות לכתובות יהיו זמינות בשלב הבא של הפיתוח.
+        </div>
+      ` : ''}
     </div>
     <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
       <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();">← חזור</button>
