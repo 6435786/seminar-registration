@@ -22,6 +22,8 @@
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
 <!-- JSZip — לבניית ZIP של PDFים לשליחת מיילים -->
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+<!-- pdf-lib — למיזוג PDFים במוד הדפסת מכתבים (PDF מאוחד) -->
+<script src="https://cdn.jsdelivr.net/npm/pdf-lib@1.17.1/dist/pdf-lib.min.js"></script>
 <!-- שליחת מיילים: דרך Supabase Edge Function (send-email) שמתחזה לחשבון shibutz@chinuchb.co.il
      באמצעות Service Account + Domain-Wide Delegation. הלקוח לא מתחבר ל־Google ישירות. -->
 <style>
@@ -7045,7 +7047,8 @@ async function sendGmailMessage({ from, to, cc, bcc, replyTo, subject, bodyText,
 // ============================================================
 
 const EC_STATE = {
-  step: 1,                      // 1=template, 2=recipients, 3=compose+send
+  step: 1,                      // 1=template, 2=recipients, 3=compose+send  (או 3=פעולות הדפסה)
+  mode: 'send',                 // 'send' = שליחה במיילים (ברירת מחדל). 'print' = הדפסת מכתבים. ה-toggle גלוי כעת ל-super_admin בלבד.
   template: null,               // { id, slug, name, recipient_kind, ... }
   recipients: [],               // array of { kind, ref_id, email, display_name, letter_data, cc_emails? }
   statusFilters: ['ועדת רבנים'], // ברירת מחדל לפילטר סטטוס
@@ -7076,7 +7079,7 @@ async function openEmailComposer() {
   catch (e) { lastCopiesDefaults = {}; }
 
   Object.assign(EC_STATE, {
-    step: 1, template: null, recipients: [],
+    step: 1, mode: 'send', template: null, recipients: [],
     statusFilters: ['ועדת רבנים'],
     _parentSemSet: null,       // Set של סמינרים מסומנים, null = יאותחל ל"הכל"
     _parentSel: null,          // בחירת בנות (Set של ids), null = יאותחל אוטומטית
@@ -7252,7 +7255,11 @@ async function _ec_renderStep() {
   if (!pop) return;
   if (EC_STATE.step === 1) return _ec_renderStep1(pop);
   if (EC_STATE.step === 2) return _ec_renderStep2(pop);
-  if (EC_STATE.step === 3) return _ec_renderStep3(pop);
+  if (EC_STATE.step === 3) {
+    // print mode נתמך כרגע רק להורים — בכל מקרה אחר נופלים חזרה למסך השליחה.
+    const usePrint = (EC_STATE.mode === 'print') && EC_STATE.template && EC_STATE.template.recipient_kind === 'parents';
+    return usePrint ? _ec_renderStep3Print(pop) : _ec_renderStep3(pop);
+  }
 }
 
 // =============== Step 1: template picker ===============
@@ -7302,6 +7309,9 @@ async function _ec_pickTemplate(templateId) {
   EC_STATE.step = 2;
   // ברירת מחדל לנושא — לפי שם התבנית
   EC_STATE.subject = data.name;
+  // כשמחליפים תבנית — להחזיר את המוד לברירת המחדל ולנקות בחירת בנות (כי בוחר חדש = נתונים שונים)
+  EC_STATE.mode = 'send';
+  EC_STATE._parentSel = null;
   await _ec_renderStep();
 }
 
@@ -7309,6 +7319,9 @@ async function _ec_pickTemplate(templateId) {
 async function _ec_renderStep2(pop) {
   const t = EC_STATE.template;
   const kind = t.recipient_kind;
+  // מוד "הדפסת מכתבים" כרגע נתמך רק להורים, וגלוי רק ל-super_admin בשלב הבנייה.
+  const showModeToggle = (isSuperAdmin() && kind === 'parents');
+  const isPrint = (EC_STATE.mode === 'print');
   pop.innerHTML = `${_ec_stepHeader()}
     <div id="ec_body" style="padding:14px 20px 0; overflow-y:auto; flex:1; display:flex; flex-direction:column;">
       <div style="display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;">
@@ -7316,6 +7329,12 @@ async function _ec_renderStep2(pop) {
         <span style="color:var(--accent); font-weight:600;">${_esc(t.name)}</span>
         <button class="cancel-btn" onclick="EC_STATE.step=1; _ec_renderStep();" style="padding:3px 10px; font-size:11px;">↺ שנה</button>
       </div>
+      ${showModeToggle ? `
+        <div style="display:flex; gap:4px; margin-bottom:10px; padding:4px; background:#f1f5f9; border:1px solid var(--border); border-radius:10px; max-width:fit-content;">
+          <button onclick="_ec_setMode('send')" style="border:none; padding:6px 14px; border-radius:7px; cursor:pointer; font-family:inherit; font-size:13px; font-weight:600; transition:all 0.15s; ${!isPrint ? 'background:white; color:var(--deep); box-shadow:0 1px 2px rgba(0,0,0,0.08);' : 'background:transparent; color:var(--muted);'}">✉ שליחה במיילים</button>
+          <button onclick="_ec_setMode('print')" style="border:none; padding:6px 14px; border-radius:7px; cursor:pointer; font-family:inherit; font-size:13px; font-weight:600; transition:all 0.15s; ${isPrint ? 'background:white; color:var(--deep); box-shadow:0 1px 2px rgba(0,0,0,0.08);' : 'background:transparent; color:var(--muted);'}">🖨 הדפסת מכתבים</button>
+        </div>
+      ` : ''}
       <div id="ec_recip_filter" style="margin-bottom:10px;"></div>
       <div id="ec_recip_list" style="flex:1; overflow-y:auto; border:1px solid var(--border); border-radius:8px; padding:8px; background:#fafbfc;">
         <div style="color:var(--muted); text-align:center; padding:30px;">טוען...</div>
@@ -7422,10 +7441,12 @@ async function _ec_renderParentsRecipients() {
     return;
   }
 
-  // ברירת מחדל — כל הבנות הגלויות עם מייל מסומנות.
-  // **כלל יסוד: מה שלא גלוי — לא נבחר ולא נשלח.** כל שינוי סינון מאפס בחירה.
+  // ברירת מחדל — כל הבנות הגלויות מסומנות. במוד שליחה — רק עם מייל; במוד הדפסה — כולן.
+  // **כלל יסוד: מה שלא גלוי — לא נבחר ולא נשלח/נדפס.** כל שינוי סינון מאפס בחירה.
+  const _printMode = (EC_STATE.mode === 'print');
   if (!EC_STATE._parentSel) {
-    EC_STATE._parentSel = new Set(matchingGirls.filter(g => g.email).map(g => g.id));
+    const pool = _printMode ? matchingGirls : matchingGirls.filter(g => g.email);
+    EC_STATE._parentSel = new Set(pool.map(g => g.id));
   } else {
     // קיים — סנן רק את הגלויים (נקנה שמסתננת מגנה מבחירות "מתות")
     const visibleIds = new Set(matchingGirls.map(g => g.id));
@@ -7446,6 +7467,10 @@ async function _ec_renderParentsRecipients() {
     return matchingGirls.map(g => {
       const fullName = `${g.first_name || ''} ${g.family_name || ''}`.trim();
       const hasEmail = !!g.email;
+      const addrStreet = (g.address_street || '').trim();
+      const addrNumber = (g.address_number || '').trim();
+      const addrText = (addrStreet || addrNumber) ? `${addrStreet} ${addrNumber}`.trim() : '';
+      const hasAddress = !!addrText;
       const isSelected = EC_STATE._parentSel.has(g.id);
       const seminarText = g.placement_seminar || '—';
       const alreadySent = !!g.parent_letter_sent_at;
@@ -7455,15 +7480,21 @@ async function _ec_renderParentsRecipients() {
         : (isSelected ? '#dbeafe' : 'white');
       const sentTip = alreadySent ? `title="קיבלה מכתב: ${_fmtSent(g.parent_letter_sent_at)}"` : '';
       const sentBadge = alreadySent ? ` <span style="color:#dc2626; font-size:11px; font-weight:600;" ${sentTip}>✉ נשלח</span>` : '';
+      // checkbox: במוד הדפסה — תמיד פעיל; במוד שליחה — מושבת אם אין מייל.
+      const cbDisabled = _printMode ? '' : (!hasEmail ? 'disabled' : '');
+      // עמודה אחרונה: במוד שליחה = מייל; במוד הדפסה = כתובת.
+      const lastCell = _printMode
+        ? `<td style="padding:4px 8px; font-size:12px; ${hasAddress ? '' : 'color:var(--bad);'}">${hasAddress ? _esc(addrText) : '⛔ ללא כתובת'}</td>`
+        : `<td style="padding:4px 8px; font-size:12px; ${hasEmail ? '' : 'color:var(--bad);'}">${hasEmail ? _esc(g.email) : '⛔ ללא מייל'}</td>`;
       return `
         <tr style="background:${bg};">
           <td style="padding:4px 8px; text-align:center; width:28px;">
-            <input type="checkbox" ${isSelected ? 'checked' : ''} ${!hasEmail ? 'disabled' : ''}
+            <input type="checkbox" ${isSelected ? 'checked' : ''} ${cbDisabled}
               data-gid="${g.id}" class="ec_parent_cb">
           </td>
           <td style="padding:4px 8px;">${_esc(fullName)}${sentBadge}</td>
           <td style="padding:4px 8px; color:var(--muted); font-size:12px;">${_esc(seminarText)}</td>
-          <td style="padding:4px 8px; font-size:12px; ${hasEmail ? '' : 'color:var(--bad);'}">${hasEmail ? _esc(g.email) : '⛔ ללא מייל'}</td>
+          ${lastCell}
         </tr>
       `;
     }).join('');
@@ -7495,7 +7526,7 @@ async function _ec_renderParentsRecipients() {
           <th style="padding:6px 8px; width:28px;"><input type="checkbox" id="ec_parent_all"></th>
           <th style="padding:6px 8px; text-align:right;">שם תלמידה</th>
           <th style="padding:6px 8px; text-align:right;">סמינר</th>
-          <th style="padding:6px 8px; text-align:right;">מייל</th>
+          <th style="padding:6px 8px; text-align:right;">${_printMode ? 'כתובת' : 'מייל'}</th>
         </tr>
       </thead>
       <tbody id="ec_parent_rows">${buildRows()}</tbody>
@@ -7520,7 +7551,8 @@ async function _ec_renderParentsRecipients() {
   document.getElementById('ec_parent_all').onchange = (e) => {
     const all = e.target.checked;
     matchingGirls.forEach(g => {
-      if (g.email) {
+      // במוד הדפסה: בחר/נקה את כולן. במוד שליחה: רק עם מייל.
+      if (_printMode || g.email) {
         if (all) EC_STATE._parentSel.add(g.id);
         else EC_STATE._parentSel.delete(g.id);
       }
@@ -7534,18 +7566,24 @@ async function _ec_renderParentsRecipients() {
 function _ec_syncParentRecipients() {
   const girls = EC_STATE._parentGirls || [];
   const sel = EC_STATE._parentSel || new Set();
-  EC_STATE.recipients = girls.filter(g => sel.has(g.id) && g.email).map(g => {
+  const printMode = (EC_STATE.mode === 'print');
+  // במוד שליחה — דורש מייל. במוד הדפסה — כל הנבחרות כולל בלי מייל.
+  EC_STATE.recipients = girls.filter(g => sel.has(g.id) && (printMode || g.email)).map(g => {
     const fullName = `${g.first_name || ''} ${g.family_name || ''}`.trim();
     const seminarName = g.placement_seminar || '';
     const seminar = (DATA.seminars || []).find(s => s.name === seminarName);
     return {
       kind: 'parents',
       ref_id: g.id,
-      email: g.email,
+      email: g.email || null,
       display_name: 'הורי ' + fullName,
+      // שדות כתובת — לשימוש מדבקות / זיהוי "ללא כתובת" במוד הדפסה
+      family_name: g.family_name || '',
+      address_street: g.address_street || '',
+      address_number: g.address_number || '',
       letter_data: {
         girl_full_name: fullName,
-        parent_email: g.email,
+        parent_email: g.email || '',
         seminar_name: seminarName,
         seminar_code: seminar ? seminar.institution_code : '',
         school_year: ((SEASONS.find(s => s.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
@@ -7588,15 +7626,24 @@ function _ec_setAllSeminars(on) {
 
 // === בחירה מרובה של בנות ===
 function _ec_setAllGirls(on) {
-  // בחר/נקה את כל הבנות הגלויות (רק עם מייל)
+  // במוד שליחה: רק עם מייל. במוד הדפסה: כולן.
   const girls = EC_STATE._parentGirls || [];
+  const printMode = (EC_STATE.mode === 'print');
   if (!EC_STATE._parentSel) EC_STATE._parentSel = new Set();
   if (on) {
-    girls.forEach(g => { if (g.email) EC_STATE._parentSel.add(g.id); });
+    girls.forEach(g => { if (printMode || g.email) EC_STATE._parentSel.add(g.id); });
   } else {
     EC_STATE._parentSel = new Set();
   }
   _ec_renderParentsRecipients();
+}
+
+// === החלפת מוד (שליחה/הדפסה) — מאפס בחירת בנות כי ברירת המחדל שונה בכל מוד ===
+function _ec_setMode(newMode) {
+  if (EC_STATE.mode === newMode) return;
+  EC_STATE.mode = newMode;
+  EC_STATE._parentSel = null;
+  _ec_renderStep();
 }
 
 // === Recipients for seminar template ===
@@ -8426,6 +8473,195 @@ function _ec_buildEml(r, pdfBlob, attachName) {
     testInfo = `\n\n--- 🧪 מצב בדיקה ---\nנמען אמיתי: ${r.email}\nCC אמיתי: ${realCc.join(', ') || '(אין)'}\nBCC אמיתי: ${EC_STATE.bcc || '(אין)'}\n---\n`;
   }
   return `${headers.join('\n')}\n\n${body}${testInfo}\n[Attachment: ${attachName}]\n`;
+}
+
+// ============================================================
+// מוד הדפסה — שלב 3 חלופי + פעולות (הדפסה / PDF מאוחד / ZIP)
+// כרגע נתמך רק לתבניות הורים. גלוי ל-super_admin בלבד בשלב הבנייה.
+// ============================================================
+
+// מייצר PDF לכל נמען ברצף; מחזיר מערך { recipient, bytes (Uint8Array), blob } או { recipient, error }.
+async function _ec_generateAllPdfsForPrint(progressCb) {
+  const slug = EC_STATE.template.slug;
+  const out = [];
+  for (let i = 0; i < EC_STATE.recipients.length; i++) {
+    const r = EC_STATE.recipients[i];
+    if (progressCb) progressCb(i + 1, EC_STATE.recipients.length, r);
+    try {
+      const blob = await generateLetterPDF(slug, { ...r.letter_data, short_note: EC_STATE.shortNote, extra_letter: EC_STATE.extraLetter });
+      const buf = await blob.arrayBuffer();
+      out.push({ recipient: r, bytes: new Uint8Array(buf), blob });
+    } catch (e) {
+      console.error('PDF gen failed for', r, e);
+      out.push({ recipient: r, error: e });
+    }
+  }
+  return out;
+}
+
+// ממזג מערך PDFים (Uint8Array) ל-PDF אחד באמצעות pdf-lib. מחזיר Uint8Array.
+async function _ec_mergePdfBytes(pdfs) {
+  if (!window.PDFLib) throw new Error('pdf-lib not loaded');
+  const merged = await PDFLib.PDFDocument.create();
+  let ok = 0, fail = 0;
+  for (const p of pdfs) {
+    if (p.error || !p.bytes) { fail++; continue; }
+    try {
+      const src = await PDFLib.PDFDocument.load(p.bytes);
+      const pages = await merged.copyPages(src, src.getPageIndices());
+      pages.forEach(pg => merged.addPage(pg));
+      ok++;
+    } catch (e) {
+      console.error('merge page failed for', p.recipient, e);
+      fail++;
+    }
+  }
+  const bytes = await merged.save();
+  return { bytes, ok, fail };
+}
+
+async function _ec_actionPrint() {
+  const btn = document.getElementById('ec_print_btn');
+  if (!btn) return;
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  try {
+    btn.textContent = '⏳ מייצר PDFים...';
+    const pdfs = await _ec_generateAllPdfsForPrint((i, n) => { btn.textContent = `מייצר ${i}/${n}...`; });
+    btn.textContent = 'ממזג...';
+    const { bytes, ok, fail } = await _ec_mergePdfBytes(pdfs);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const url = URL.createObjectURL(blob);
+    const w = window.open(url, '_blank');
+    if (!w) {
+      toast('הדפדפן חסם פתיחת חלון. אשר חלונות קופצים ונסה שוב.', 'warn');
+      URL.revokeObjectURL(url);
+      return;
+    }
+    w.addEventListener('load', () => { try { w.focus(); w.print(); } catch (_) {} });
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    toast(`✓ ${ok} מכתבים נשלחו להדפסה${fail ? ` (${fail} נכשלו)` : ''}`);
+  } catch (e) {
+    console.error(e);
+    toast('שגיאה: ' + e.message, 'warn');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+}
+
+async function _ec_actionMergedPdf() {
+  const btn = document.getElementById('ec_print_merged_btn');
+  if (!btn) return;
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  try {
+    btn.textContent = '⏳ מייצר PDFים...';
+    const pdfs = await _ec_generateAllPdfsForPrint((i, n) => { btn.textContent = `מייצר ${i}/${n}...`; });
+    btn.textContent = 'ממזג...';
+    const { bytes, ok, fail } = await _ec_mergePdfBytes(pdfs);
+    const blob = new Blob([bytes], { type: 'application/pdf' });
+    const ts = new Date().toISOString().substring(0, 19).replace(/[:T]/g, '-');
+    const slug = EC_STATE.template.slug;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `מכתבים-${slug}-${ts}.pdf`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast(`✓ הורד PDF מאוחד עם ${ok} מכתבים${fail ? ` (${fail} נכשלו)` : ''}`);
+  } catch (e) {
+    console.error(e);
+    toast('שגיאה: ' + e.message, 'warn');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+}
+
+async function _ec_actionZip() {
+  const btn = document.getElementById('ec_print_zip_btn');
+  if (!btn) return;
+  btn.disabled = true;
+  const label = btn.innerHTML;
+  try {
+    btn.textContent = '⏳ מייצר PDFים...';
+    const pdfs = await _ec_generateAllPdfsForPrint((i, n) => { btn.textContent = `מייצר ${i}/${n}...`; });
+    btn.textContent = 'בונה ZIP...';
+    const zip = new JSZip();
+    let ok = 0, fail = 0;
+    for (const p of pdfs) {
+      if (p.error || !p.blob) { fail++; continue; }
+      const fname = _ec_recipientFilename(p.recipient, 'pdf');
+      zip.file(fname, p.blob);
+      ok++;
+    }
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const ts = new Date().toISOString().substring(0, 19).replace(/[:T]/g, '-');
+    const slug = EC_STATE.template.slug;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `מכתבים-${slug}-${ts}.zip`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    toast(`✓ הורד ZIP עם ${ok} מכתבים${fail ? ` (${fail} נכשלו)` : ''}`);
+  } catch (e) {
+    console.error(e);
+    toast('שגיאה: ' + e.message, 'warn');
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = label;
+  }
+}
+
+async function _ec_renderStep3Print(pop) {
+  // ספירת בנות בלי כתובת (לאזהרה)
+  const noAddress = EC_STATE.recipients.filter(r => {
+    const s = (r.address_street || '').trim();
+    const n = (r.address_number || '').trim();
+    return !(s || n);
+  });
+  const noAddrNames = noAddress.map(r => (r.display_name || '').replace(/^הורי /, '')).join(', ');
+
+  pop.innerHTML = `${_ec_stepHeader()}
+    <div id="ec_body" style="padding:20px; overflow-y:auto; flex:1;">
+      <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:14px 16px; margin-bottom:14px;">
+        <div style="font-weight:700; color:var(--deep); font-size:15px; margin-bottom:6px;">
+          📨 ${EC_STATE.recipients.length} מכתבים מוכנים להדפסה
+        </div>
+        <div style="color:var(--muted); font-size:13px;">תבנית: ${_esc(EC_STATE.template.name)}</div>
+      </div>
+      ${noAddress.length ? `
+        <div style="background:#fef3c7; border:1px solid #fcd34d; border-radius:8px; padding:10px 14px; margin-bottom:14px; font-size:13px; color:#92400e;">
+          ⚠ <b>${noAddress.length}</b> ${noAddress.length === 1 ? 'בת' : 'בנות'} ללא כתובת — המכתב יוצר עבורה רגיל, אבל מדבקה לא תופק (יטופל ידנית).<br>
+          <span style="font-size:12px; font-weight:400;">${_esc(noAddrNames)}</span>
+        </div>
+      ` : ''}
+      <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
+        <button id="ec_print_btn" class="apply-big" style="font-size:15px; padding:14px 18px; text-align:right;">
+          🖨 &nbsp; הדפס למדפסת &nbsp;
+          <span style="font-weight:400; color:#dbeafe; font-size:12px;">(פותח את דיאלוג ההדפסה של הדפדפן)</span>
+        </button>
+        <button id="ec_print_merged_btn" class="cancel-btn" style="font-size:15px; padding:14px 18px; text-align:right; background:#f0f9ff;">
+          📄 &nbsp; הורד PDF מאוחד &nbsp;
+          <span style="font-weight:400; color:var(--muted); font-size:12px;">(קובץ אחד עם כל המכתבים אחד אחרי השני)</span>
+        </button>
+        <button id="ec_print_zip_btn" class="cancel-btn" style="font-size:15px; padding:14px 18px; text-align:right; background:#f0f9ff;">
+          🗜 &nbsp; הורד ZIP &nbsp;
+          <span style="font-weight:400; color:var(--muted); font-size:12px;">(קובץ ZIP עם PDF נפרד לכל בת)</span>
+        </button>
+      </div>
+      <div style="margin-top:14px; font-size:12px; color:var(--muted); padding:8px 12px; background:#f8fafc; border-radius:6px;">
+        💡 מדבקות לכתובות יהיו זמינות בשלב הבא של הפיתוח.
+      </div>
+    </div>
+    <div style="padding:12px 22px; border-top:1px solid var(--border); display:flex; gap:8px; background:#f8fafc;">
+      <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();">← חזור</button>
+      <div style="flex:1;"></div>
+    </div>
+  `;
+  document.getElementById('ec_print_btn').onclick = _ec_actionPrint;
+  document.getElementById('ec_print_merged_btn').onclick = _ec_actionMergedPdf;
+  document.getElementById('ec_print_zip_btn').onclick = _ec_actionZip;
 }
 
 // ============================================================
