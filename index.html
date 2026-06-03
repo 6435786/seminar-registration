@@ -6709,6 +6709,7 @@ const TEMPLATE_SECTION_LABELS = {
     rabanim_note:     { label: 'הערת ועדת רבנים' },
     registration_note:{ label: 'הערת רישום וקבלה' },
     blessing:         { label: 'ברכה (איחולי הצלחה)',     short: true },
+    clarification:    { label: 'הבהרה (אופציונלי — ריק = מדלגים)', textarea: true },
     signature_open:   { label: 'פתיחת חתימה (בברכה)',     short: true },
     signer_name:      { label: 'שם החותם',                short: true },
     signer_role:      { label: 'תפקיד החותם',             short: true },
@@ -6800,6 +6801,7 @@ const TEMPLATE_DEFAULT_CONTENT = {
     rabanim_note:      'החלטה זו הינה על דעת וועדת הרבנים העירונית.',
     registration_note: 'הקבלה לסמינר מותנית ברישום לסמינר ועמידה בכללי הקבלה.',
     blessing:          'באיחולי הצלחה ורוב נחת',
+    clarification:     '',
     signature_open:    'בברכה,',
     signer_name:       'יהודה קורנבליט',
     signer_role:       'מנהל אגף החינוך',
@@ -9102,6 +9104,12 @@ function drawParentsLetter(pdf, data, slug = 'parents') {
 
   // חתימה
   drawRTL(pdf, T('blessing', 'באיחולי הצלחה ורוב נחת'), RIGHT_X, y, { size: 12 });  y += 9;
+  // הבהרה (אופציונלי) — ריק = מדלגים בלי לזוז. עם תוכן = wrap + דוחף את החתימה למטה.
+  const _clar = T('clarification', '');
+  if (_clar && _clar.trim()) {
+    y = drawWrappedRTL(pdf, _clar, RIGHT_X, LEFT_X, y, { size: 12, lineHeight: 6 });
+    y += 5;
+  }
   drawRTL(pdf, T('signature_open', 'בברכה,'), RIGHT_X, y, { size: 12 });  y += 6;
   drawRTL(pdf, T('signer_name', 'יהודה קורנבליט'), RIGHT_X, y, { size: 12, bold: true });  y += 5;
   drawRTL(pdf, T('signer_role', 'מנהל אגף החינוך'), RIGHT_X, y, { size: 12 });  y += 5;
