@@ -8305,6 +8305,23 @@ async function _ec_renderStep3(pop) {
   const t = EC_STATE.template;
   const count = EC_STATE.recipients.length;
   const todayIso = new Date().toISOString().substring(0, 10);
+  // תצוגה בולטת של המוסד הנבחר + איש הקשר האוטומטי (לסמינר / מוסד יסודי)
+  const _instKinds = (t.recipient_kind === 'seminar' || t.recipient_kind === 'source_school');
+  const _recipBox = _instKinds ? `
+    <div style="background:#fffbeb; border:1px solid #fcd34d; border-radius:8px; padding:10px 14px; margin-bottom:14px;">
+      <div style="font-size:12px; font-weight:700; color:#92400e; margin-bottom:6px;">📬 ${EC_STATE.recipients.length > 1 ? 'המכתב יישלח אל המוסדות:' : 'המכתב יישלח אל:'}</div>
+      ${EC_STATE.recipients.map(r => {
+        const _inst = (r.letter_data && (r.letter_data.institution_name || r.letter_data.seminar_name)) || (r.display_name || '—');
+        const _contact = (r.letter_data && r.letter_data.contact_full) || '';
+        const _email = r.email || '';
+        return `<div style="display:flex; flex-wrap:wrap; gap:4px 16px; align-items:center; padding:3px 0;">
+          <span style="font-weight:700; color:var(--deep); font-size:14px;">🏛 ${_esc(_inst)}</span>
+          <span style="color:#374151; font-size:13px;">👤 ${_contact ? _esc(_contact) : '<span style="color:#b45309;">ללא איש קשר אוטומטי</span>'}</span>
+          <span style="font-size:12px; ${_email ? 'color:#065f46;' : 'color:#b45309;'}">✉ ${_email ? _esc(_email) : 'אין מייל — הדפסה בלבד'}</span>
+        </div>`;
+      }).join('')}
+    </div>
+  ` : '';
   pop.innerHTML = `${_ec_stepHeader()}
     <div id="ec_body" style="padding:14px 22px; overflow-y:auto; flex:1;">
       <div style="display:flex; gap:14px; align-items:center; padding:8px 12px; background:#f0f9ff; border-radius:8px; margin-bottom:14px; flex-wrap:wrap;">
@@ -8312,6 +8329,8 @@ async function _ec_renderStep3(pop) {
         <div style="color:var(--muted); font-size:13px;">→ <b style="color:var(--accent);">${count}</b> נמענים</div>
         <button class="cancel-btn" onclick="EC_STATE.step=2; _ec_renderStep();" style="padding:3px 10px; font-size:11px; margin-right:auto;">↺ ערוך נמענים</button>
       </div>
+
+      ${_recipBox}
 
       <div style="display:grid; grid-template-columns: 1fr 200px; gap:10px; margin-bottom:12px;">
         <div>
