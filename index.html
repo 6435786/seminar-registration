@@ -7202,6 +7202,7 @@ const EC_STATE = {
   letterDate: null,             // ISO string; null = today
   shortNote: '',                // הערה חד־פעמית — תופיע בסוף המכתב (אחרי הטבלה / החתימה)
   extraLetter: '',              // מכתב נוסף — מודפס בעמוד חדש עם ניירת
+  useNameInitial: false,        // source_school: קיצור שם פרטי המנהלת לאות ("ר. כהן")
   testMode: true,               // 🧪 ברירת מחדל: ON — בטוח. עד שתבטל ידנית.
   testEmail: '',                // כתובת לבדיקות — כל המיילים יעברו לשם במצב test
 };
@@ -7232,6 +7233,7 @@ async function openEmailComposer() {
     letterDate: null,
     shortNote: '',             // איפוס בכל פתיחה — זה חד־פעמי, לא נשמר
     extraLetter: '',
+    useNameInitial: false,     // איפוס בכל פתיחה
     // מצב בדיקה — נשמר ב־localStorage. ברירת מחדל: ON (בטוח)
     testMode: localStorage.getItem('ec_test_mode') !== 'off',
     testEmail: localStorage.getItem('ec_test_email') || (CURRENT_USER && CURRENT_USER.email) || '',
@@ -8281,6 +8283,15 @@ async function _ec_renderStep3(pop) {
         </div>
       </div>
 
+      ${t.recipient_kind === 'source_school' ? `
+      <div style="margin-bottom:12px; padding:8px 12px; background:#f0fdf4; border:1px solid #86efac; border-radius:6px;">
+        <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--deep);">
+          <input type="checkbox" ${EC_STATE.useNameInitial ? 'checked' : ''} onchange="EC_STATE.useNameInitial = this.checked;" style="width:16px; height:16px; cursor:pointer;">
+          <span><b>שם פרטי כאות בלבד</b> — "לכבוד גברת ר. כהן" (במקום רחל כהן)</span>
+        </label>
+      </div>
+      ` : ''}
+
       <div style="margin-bottom:12px;">
         <label style="display:block; font-size:13px; font-weight:600; color:var(--deep); margin-bottom:3px;">גוף המייל (קצר — המכתב המעוצב יישלח כקובץ מצורף)</label>
         <textarea id="ec_body_text" rows="3" style="width:100%; padding:8px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:14px; resize:vertical;">${_esc(EC_STATE.bodyText || 'שלום רב,\n\nמצ"ב מכתב שיבוץ. נא לעיין בקובץ המצורף.\n\nבברכה,\nאגף החינוך — עיריית ביתר עילית')}</textarea>
@@ -9194,6 +9205,14 @@ async function _ec_renderStep3Print(pop) {
           <span style="font-size:12px; font-weight:400;">${_esc(noAddrNames)}</span>
         </div>
       ` : ''}
+      ${kind === 'source_school' ? `
+        <div style="margin-bottom:14px; padding:8px 12px; background:#f0fdf4; border:1px solid #86efac; border-radius:6px;">
+          <label style="display:flex; align-items:center; gap:8px; cursor:pointer; font-size:13px; color:var(--deep);">
+            <input type="checkbox" ${EC_STATE.useNameInitial ? 'checked' : ''} onchange="EC_STATE.useNameInitial = this.checked;" style="width:16px; height:16px; cursor:pointer;">
+            <span><b>שם פרטי כאות בלבד</b> — "לכבוד גברת ר. כהן"</span>
+          </label>
+        </div>
+      ` : ''}
       <div style="display:flex; flex-direction:column; gap:10px; margin-top:8px;">
         <button id="ec_print_btn" class="apply-big" style="font-size:15px; padding:14px 18px; text-align:right;">
           🖨 &nbsp; הדפס למדפסת &nbsp;
@@ -9750,7 +9769,8 @@ function drawSourceSchoolLetter(pdf, data) {
   // שם המנהלת לפנייה — עם אופציית קיצור שם פרטי לאות ("ר. כהן") אם data.use_initial
   const _fn = (data.contact_first_name || '').trim();
   const _ln = (data.contact_last_name || '').trim();
-  const _fnDisp = (data.use_initial && _fn) ? (_fn.charAt(0) + '.') : _fn;
+  const _useInitial = data.use_initial || (typeof EC_STATE !== 'undefined' && EC_STATE && EC_STATE.useNameInitial);
+  const _fnDisp = (_useInitial && _fn) ? (_fn.charAt(0) + '.') : _fn;
   data.contact_full = `${data.contact_title || ''} ${_fnDisp} ${_ln}`.replace(/\s+/g, ' ').trim();
   const hasContact = !!(_fn || _ln);
 
