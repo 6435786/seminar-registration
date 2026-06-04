@@ -6796,6 +6796,27 @@ const TEMPLATE_SECTION_LABELS = {
 };
 // 'parents_no_inquiry' — אותה תבנית פיזית כמו parents (תוכן שונה ב-DB).
 TEMPLATE_SECTION_LABELS.parents_no_inquiry = TEMPLATE_SECTION_LABELS.parents;
+// 'source_school' — מכתב למוסד יסודי (מקביל ל-seminar_final).
+TEMPLATE_SECTION_LABELS.source_school = {
+  greeting:         { label: 'פתיחה (לכבוד)',          short: true },
+  contact_name:     { label: 'שורת שם המנהלת',         short: true },
+  contact_role:     { label: 'שורת המוסד (הנהלת ...)' },
+  shalom:           { label: 'ברכת פתיחה',              short: true },
+  subject:          { label: 'הנדון (ממורכז, מודגש)' },
+  para1:            { label: 'פסקה 1', textarea: true },
+  para2:            { label: 'פסקה 2', textarea: true },
+  attachment_note:  { label: 'רצ"ב רשימה',              short: true },
+  signature_open:   { label: 'פתיחת חתימה',             short: true },
+  signer_name:      { label: 'שם החותם',                short: true },
+  signer_role:      { label: 'תפקיד החותם',             short: true },
+  copies_label:     { label: 'כותרת העתקים',            short: true },
+  copies_line1:     { label: 'העתקים — שורה 1' },
+  copies_line2:     { label: 'העתקים — שורה 2' },
+  copies_line3:     { label: 'העתקים — שורה 3' },
+  copies_line4:     { label: 'העתקים — שורה 4' },
+  copies_line5:     { label: 'העתקים — שורה 5',         short: true },
+  table_title:      { label: 'כותרת רשימת הבוגרות' },
+};
 
 // משתנים זמינים לכל סוג תבנית (להצגה למשתמש)
 const TEMPLATE_PLACEHOLDERS = {
@@ -6818,6 +6839,11 @@ const TEMPLATE_PLACEHOLDERS = {
   ],
 };
 TEMPLATE_PLACEHOLDERS.parents_no_inquiry = TEMPLATE_PLACEHOLDERS.parents;
+TEMPLATE_PLACEHOLDERS.source_school = [
+  { tag: '{{contact_full}}',     desc: 'שם המנהלת (תואר + שם)' },
+  { tag: '{{institution_name}}', desc: 'שם המוסד (שם שימושי)' },
+  { tag: '{{school_year}}',      desc: 'שנת לימודים' },
+];
 
 // תוכן ברירת מחדל לכל תבנית — לשחזור באמצעות כפתור "↻ אפס לברירת מחדל".
 // חייב להישאר מסונכרן עם migrate_14_template_content.py + תיקונים בהמשך.
@@ -6894,6 +6920,26 @@ const TEMPLATE_DEFAULT_CONTENT = {
 };
 // ברירת מחדל ל-'parents_no_inquiry' זהה ל-parents (כך שכפתור '↻ אפס לברירת מחדל' עובד).
 TEMPLATE_DEFAULT_CONTENT.parents_no_inquiry = TEMPLATE_DEFAULT_CONTENT.parents;
+TEMPLATE_DEFAULT_CONTENT.source_school = { sections: {
+  greeting:         'לכבוד',
+  contact_name:     '{{contact_full}}',
+  contact_role:     'הנהלת {{institution_name}}',
+  shalom:           'שלום רב,',
+  subject:          'הנדון: שיבוץ בוגרות מוסדכם לשנה"ל {{school_year}}',
+  para1:            'בהמשך לתהליך הרישום והשיבוץ לסמינרים לשנה"ל {{school_year}}, מצורפת בזאת רשימת בוגרות מוסדכם והשיבוץ שנקבע לכל אחת מהן.',
+  para2:            'נודה לכם על שיתוף הפעולה, ונשמח לעמוד לרשותכם בכל שאלה.',
+  attachment_note:  'רצ"ב רשימת הבוגרות ושיבוצן.',
+  signature_open:   'בברכה,',
+  signer_name:      'יהודה קורנבליט',
+  signer_role:      'מנהל אגף החינוך',
+  copies_label:     'העתקים:',
+  copies_line1:     '',
+  copies_line2:     '',
+  copies_line3:     '',
+  copies_line4:     '',
+  copies_line5:     '',
+  table_title:      'רשימת בוגרות מוסדכם ושיבוצן — {{institution_name}}',
+} };
 
 async function openTemplateEditor(templateId) {
   if (!isAdmin()) {
@@ -7371,13 +7417,15 @@ async function _ec_renderStep1(pop) {
       </div>
     </div>
   `;
-  const { data, error } = await sb.from('form_templates')
+  const { data: _allTpls, error } = await sb.from('form_templates')
     .select('*')
     .eq('is_active', true)
-    .eq('show_in_picker', true)
     .order('sort_order');
   const list = document.getElementById('ec_tpl_list');
   if (error) { list.innerHTML = `<div style="color:var(--bad);">שגיאה: ${error.message}</div>`; return; }
+  // גידור בנייה: 'מכתב למוסד יסודי' (show_in_picker=false) מוצג כרגע רק לסופר-אדמין,
+  // עד שיתייצב. כשנרחיב — נעדכן show_in_picker=true והוא יופיע לכל המנהלים.
+  const data = (_allTpls || []).filter(t => t.show_in_picker || (t.slug === 'source_school' && isSuperAdmin()));
   if (!data || !data.length) { list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:20px;">אין תבניות זמינות. הגדר תבניות ב"רשימות → טפסי דוא"ל".</div>`; return; }
 
   const kindLabel = { parents: '👨‍👩‍👧 הורים', seminar: '🏫 סמינר', source_school: '🏛 מוסד יסודי' };
@@ -8688,6 +8736,8 @@ function _ec_recipientFilename(r, ext) {
     base = r.letter_data.seminar_name;
   } else if (r.kind === 'parents' && r.letter_data && r.letter_data.girl_full_name) {
     base = r.letter_data.girl_full_name;
+  } else if (r.kind === 'source_school' && r.letter_data && r.letter_data.institution_name) {
+    base = r.letter_data.institution_name;
   } else {
     base = r.display_name || 'letter';
   }
@@ -9692,6 +9742,133 @@ function drawStudentsListPage(pdf, data, isFinal, addLetterheadPage) {
   return drawStudentsTable(pdf, data.girls, 68, { onNewPage });
 }
 
+// ============================================================
+// מכתב למוסד יסודי — ציור ל-PDF (מקביל ל-seminar_final)
+// ============================================================
+function drawSourceSchoolLetter(pdf, data) {
+  const RIGHT_X = 190, LEFT_X = 20;
+  // שם המנהלת לפנייה — עם אופציית קיצור שם פרטי לאות ("ר. כהן") אם data.use_initial
+  const _fn = (data.contact_first_name || '').trim();
+  const _ln = (data.contact_last_name || '').trim();
+  const _fnDisp = (data.use_initial && _fn) ? (_fn.charAt(0) + '.') : _fn;
+  data.contact_full = `${data.contact_title || ''} ${_fnDisp} ${_ln}`.replace(/\s+/g, ' ').trim();
+  const hasContact = !!(_fn || _ln);
+
+  const T = (id, fb) => tpl('source_school', id, data, fb);
+  const dt = _twoDates(data.letter_date ? new Date(data.letter_date) : new Date());
+  drawRTL(pdf, dt.hebrew, RIGHT_X, 50, { size: 10 });
+  drawRTL(pdf, dt.latin,  RIGHT_X, 55, { size: 10 });
+
+  let y = 68;
+  drawRTL(pdf, T('greeting', 'לכבוד'), RIGHT_X, y, { size: 12 });  y += 6;
+  // אם אין שם מנהלת — מדלגים על שורת השם, והפנייה היא "הנהלת [מוסד]".
+  if (hasContact) { drawRTL(pdf, T('contact_name', '{{contact_full}}'), RIGHT_X, y, { size: 12, bold: true });  y += 5; }
+  drawRTL(pdf, T('contact_role', 'הנהלת {{institution_name}}'), RIGHT_X, y, { size: 12 });  y += 9;
+  drawRTL(pdf, T('shalom', 'שלום רב,'), RIGHT_X, y, { size: 12 });  y += 10;
+
+  drawCenteredRTL(pdf, T('subject', 'הנדון: שיבוץ בוגרות מוסדכם לשנה"ל {{school_year}}'), 105, y, { size: 13, bold: true });
+  y += 11;
+
+  y = drawWrappedRTL(pdf, T('para1', 'בהמשך לתהליך הרישום והשיבוץ לסמינרים לשנה"ל {{school_year}}, מצורפת בזאת רשימת בוגרות מוסדכם והשיבוץ שנקבע לכל אחת מהן.'),
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  y = drawWrappedRTL(pdf, T('para2', 'נודה לכם על שיתוף הפעולה, ונשמח לעמוד לרשותכם בכל שאלה.'),
+    RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
+  y += 2;
+  drawRTL(pdf, T('attachment_note', 'רצ"ב רשימת הבוגרות ושיבוצן.'), RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
+  drawSeminarSignature(pdf, y, 'source_school', data);
+}
+
+// עמוד רשימת הבוגרות (טבלה) — מקביל ל-drawStudentsListPage
+function drawSchoolGirlsListPage(pdf, data, addLetterheadPage) {
+  const title = tpl('source_school', 'table_title', data, 'רשימת בוגרות מוסדכם ושיבוצן — {{institution_name}}');
+  drawCenteredRTL(pdf, title, 105, 58, { size: 14, bold: true });
+  const onNewPage = addLetterheadPage ? () => {
+    addLetterheadPage(false);
+    drawCenteredRTL(pdf, `${title} (המשך)`, 105, 58, { size: 14, bold: true });
+    return 68;
+  } : null;
+  return drawSchoolGirlsTable(pdf, data.girls, 68, { onNewPage });
+}
+
+// טבלת בוגרות למכתב מוסד יסודי — עמודות: סמינר שובצה | שם פרטי | שם משפחה | מס'
+// (מקביל ל-drawStudentsTable, אך מציג את הסמינר במקום מוסד, וללא ת.ז)
+function drawSchoolGirlsTable(pdf, girls, startY, opts = {}) {
+  const tableW = 178;
+  const leftX = (210 - tableW) / 2;
+  // index 0 = הקצה השמאלי (סמינר), index 3 = הקצה הימני (מס')
+  const colsW   = [78,            42,          46,           12];
+  const headers = ['סמינר שובצה', 'שם פרטי', 'שם משפחה', 'מס\''];
+  const rowH = 7, headH = 8;
+  const PAGE_BOTTOM = 251;
+  const onNewPage = opts.onNewPage;
+
+  function drawHeader(yTop) {
+    pdf.setFont('David', 'bold');
+    pdf.setFontSize(11);
+    pdf.setDrawColor(30, 58, 138);
+    pdf.setLineWidth(0.4);
+    pdf.setFillColor(219, 234, 254);
+    pdf.rect(leftX, yTop, tableW, headH, 'FD');
+    let x = leftX;
+    for (let c = 0; c < colsW.length; c++) {
+      const w = colsW[c];
+      if (c < colsW.length - 1) pdf.line(x + w, yTop, x + w, yTop + headH);
+      pdf.text(bidi(headers[c]), x + w / 2, yTop + 5.5, { align: 'center' });
+      x += w;
+    }
+    return yTop + headH;
+  }
+
+  let pageTopY = startY;
+  let y = drawHeader(startY);
+  pdf.setFont('David', 'normal');
+  pdf.setFontSize(10.5);
+  const rows = [...(girls || [])].sort((a, b) => {
+    const f = (a.family_name || '').localeCompare(b.family_name || '', 'he');
+    if (f !== 0) return f;
+    return (a.first_name || '').localeCompare(b.first_name || '', 'he');
+  });
+
+  if (rows.length === 0) {
+    pdf.line(leftX, y, leftX + tableW, y);
+    pdf.text(bidi('אין תלמידות'), leftX + tableW / 2, y + 5.5, { align: 'center' });
+    y += rowH;
+    pdf.line(leftX, y, leftX + tableW, y);
+    pdf.rect(leftX, pageTopY, tableW, y - pageTopY);
+    return y;
+  }
+
+  for (let r = 0; r < rows.length; r++) {
+    if (y + rowH > PAGE_BOTTOM && onNewPage) {
+      pdf.line(leftX, y, leftX + tableW, y);
+      pdf.rect(leftX, pageTopY, tableW, y - pageTopY);
+      const newY = onNewPage();
+      pageTopY = newY;
+      y = drawHeader(newY);
+      pdf.setFont('David', 'normal');
+      pdf.setFontSize(10.5);
+    }
+    const g = rows[r];
+    pdf.line(leftX, y, leftX + tableW, y);
+    let cx = leftX;
+    const values = [g.placement_seminar || '', g.first_name || '', g.family_name || '', String(r + 1)];
+    const isHebCol = [true, true, true, false];
+    for (let c = 0; c < colsW.length; c++) {
+      const w = colsW[c];
+      if (c < colsW.length - 1) pdf.line(cx + w, y, cx + w, y + rowH);
+      const v = values[c];
+      if (isHebCol[c]) pdf.text(bidi(v), cx + w / 2, y + 5, { align: 'center' });
+      else             pdf.text(v,       cx + w / 2, y + 5, { align: 'center' });
+      cx += w;
+    }
+    y += rowH;
+  }
+  pdf.line(leftX, y, leftX + tableW, y);
+  pdf.rect(leftX, pageTopY, tableW, y - pageTopY);
+  return y;
+}
+
 // בונה את ה־HTML של המכתב לפי תבנית + נתונים  [נשמר לתאימות; לא בשימוש בגנרטור החדש]
 function buildLetterHTML(template, data, letterheadDataUrl) {
   const A4_W = 794, A4_H = 1123;
@@ -9917,6 +10094,11 @@ async function generateLetterPDF(template, data) {
     drawSeminarFinalLetter(pdf, data);
     addLetterheadPage(false);
     lastY = drawStudentsListPage(pdf, data, true, addLetterheadPage);
+  } else if (template === 'source_school') {
+    addLetterheadPage(true);
+    drawSourceSchoolLetter(pdf, data);
+    addLetterheadPage(false);
+    lastY = drawSchoolGirlsListPage(pdf, data, addLetterheadPage);
   } else {
     throw new Error('תבנית לא מוכרת: ' + template);
   }
