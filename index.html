@@ -7356,7 +7356,7 @@ async function _ec_renderStep() {
   if (EC_STATE.step === 3) {
     // print mode נתמך להורים ולסמינר. בכל מקרה אחר נופלים חזרה למסך השליחה.
     const kind = EC_STATE.template ? EC_STATE.template.recipient_kind : null;
-    const usePrint = (EC_STATE.mode === 'print') && (kind === 'parents' || kind === 'seminar');
+    const usePrint = (EC_STATE.mode === 'print') && (kind === 'parents' || kind === 'seminar' || kind === 'source_school');
     return usePrint ? _ec_renderStep3Print(pop) : _ec_renderStep3(pop);
   }
 }
@@ -7419,7 +7419,7 @@ async function _ec_renderStep2(pop) {
   const t = EC_STATE.template;
   const kind = t.recipient_kind;
   // מוד "הדפסת מכתבים" נתמך להורים ולסמינר. נפתח ל-admin אחרי בדיקה חיה של super_admin (2026-06-03).
-  const showModeToggle = (isAdmin() && (kind === 'parents' || kind === 'seminar'));
+  const showModeToggle = (isAdmin() && (kind === 'parents' || kind === 'seminar' || kind === 'source_school'));
   const isPrint = (EC_STATE.mode === 'print');
   pop.innerHTML = `${_ec_stepHeader()}
     <div id="ec_body" style="padding:14px 20px 0; overflow-y:auto; flex:1; display:flex; flex-direction:column;">
@@ -8001,10 +8001,212 @@ function _ec_setAllSems(on) {
   _ec_renderSeminarRecipients();
 }
 
+// שם תצוגה למוסד יסודי במכתב/בוחר: 'שם שימושי' אם קיים, אחרת השם הרגיל.
+function _ec_schoolDispName(s) { return (s && (s.usable_name || s.name)) || '—'; }
+
 async function _ec_renderSchoolRecipients() {
-  // דומה לסמינר — אבל לפי source_school
-  document.getElementById('ec_recip_filter').innerHTML = '';
-  document.getElementById('ec_recip_list').innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">בקרוב — שליחה למוסדות לימוד יסודי</div>`;
+  // סינון בנות לפי סטטוס שיבוץ (זהה לסמינר)
+  const filtersHtml = `
+    <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:8px 12px;">
+      <div style="font-size:12px; font-weight:600; color:var(--deep); margin-bottom:6px;">סנן בנות לפי סטטוס שיבוץ:</div>
+      <div style="display:flex; flex-wrap:wrap; gap:4px;">
+        ${(ENUM_STATUS || []).map(s => {
+          const checked = EC_STATE.statusFilters.includes(s);
+          return `<label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:white; border-radius:6px; border:1px solid var(--border); cursor:pointer; font-size:12px; ${checked ? 'border-color:var(--accent); background:#dbeafe;' : ''}">
+            <input type="checkbox" ${checked ? 'checked' : ''} onchange="_ec_toggleStatusFilterSchool('${_esc(s)}', this.checked)" style="margin:0;">
+            <span>${s}</span>
+          </label>`;
+        }).join('')}
+      </div>
+    </div>
+  `;
+  document.getElementById('ec_recip_filter').innerHTML = filtersHtml;
+
+  // מוסדות יסודי מסומנים בלבד, ממופתחים לפי סמל מוסד
+  const elementaryByCode = {};
+  (DATA.source_schools || []).forEach(s => {
+    if (s.is_elementary && s.institution_code != null && String(s.institution_code).trim() !== '')
+      elementaryByCode[String(s.institution_code).trim()] = s;
+  });
+
+  // קבץ בנות (בסטטוסים שנבחרו) לפי סמל המוסד שלהן — רק למוסדות יסודי מסומנים
+  const matchingGirls = (ROWS || []).filter(r => EC_STATE.statusFilters.includes(r.placement_status));
+  const byCode = {};
+  for (const g of matchingGirls) {
+    const code = (g.source_school_code != null ? String(g.source_school_code).trim() : '');
+    if (!code || !elementaryByCode[code]) continue;
+    (byCode[code] = byCode[code] || []).push(g);
+  }
+  const codes = Object.keys(byCode).sort((a, b) =>
+    _ec_schoolDispName(elementaryByCode[a]).localeCompare(_ec_schoolDispName(elementaryByCode[b]), 'he'));
+
+  const list = document.getElementById('ec_recip_list');
+  if (!codes.length) {
+    list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">לא נמצאו מוסדות יסודי <b>מסומנים</b> עם בנות בסטטוסים שנבחרו.<br><span style="font-size:12px;">(ודא ש'מוסד יסודי' מסומן ב'רשימות → מוסדות'.)</span></div>`;
+    EC_STATE.recipients = [];
+    _ec_updateRecipientCount();
+    return;
+  }
+
+  EC_STATE._schoolData = { byCode, codes, elementaryByCode };
+  if (!EC_STATE._schoolSel) EC_STATE._schoolSel = new Set();
+
+  const _printMode = (EC_STATE.mode === 'print');
+
+  function buildSchoolRows() {
+    return codes.map(code => {
+      const s = elementaryByCode[code];
+      const hasEmail = !!s.contact_email;
+      const isSelected = EC_STATE._schoolSel.has(code);
+      const girls = byCode[code];
+      const ccCount = [s.office_email, s.secondary_email].filter(Boolean).length;
+      const inputType = _printMode ? 'checkbox' : 'radio';
+      const cbDisabled = _printMode ? '' : (!hasEmail ? 'disabled' : '');
+      const rowCursor  = (_printMode || hasEmail) ? 'pointer' : 'not-allowed';
+      return `
+        <tr style="background:${isSelected ? '#dbeafe' : 'white'}; cursor:${rowCursor};" data-code="${_esc(code)}" class="ec_school_row">
+          <td style="padding:5px 8px; text-align:center; width:28px;">
+            <input type="${inputType}" name="ec_school_pick" ${isSelected ? 'checked' : ''} ${cbDisabled}
+              data-code="${_esc(code)}" class="ec_school_radio">
+          </td>
+          <td style="padding:5px 8px;">${_esc(_ec_schoolDispName(s))}</td>
+          <td style="padding:5px 8px; text-align:center; color:var(--accent); font-weight:600;">${girls.length}</td>
+          <td style="padding:5px 8px; font-size:12px; ${hasEmail ? '' : 'color:var(--bad);'}">
+            ${hasEmail ? _esc(s.contact_email) : '⛔ אין מייל מנהלת'}${ccCount ? ` <span style="color:var(--muted);">+${ccCount} CC</span>` : ''}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  const _tipHtml = _printMode
+    ? `<div style="background:#dbeafe; border:1px solid #93c5fd; border-radius:6px; padding:6px 10px; font-size:11px; color:#1e40af; margin-bottom:6px;">
+         💡 לכל מוסד נבחר ייווצר PDF נפרד עם רשימת הבנות שלו. אפשר לבחור כמה שתרצה.
+       </div>
+       <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+         <span style="font-size:12px; color:var(--muted);">בחירת מוסדות:</span>
+         <button class="mini-btn" onclick="_ec_setAllSchools(true)" style="padding:2px 8px; font-size:11px;">בחר הכל</button>
+         <button class="mini-btn" onclick="_ec_setAllSchools(false)" style="padding:2px 8px; font-size:11px;">נקה הכל</button>
+         <span style="font-size:11px; color:var(--muted); margin-right:auto;">${EC_STATE._schoolSel.size}/${codes.length} נבחרו</span>
+       </div>`
+    : `<div style="background:#fef9c3; border:1px solid #fde047; border-radius:6px; padding:6px 10px; font-size:11px; color:#854d0e; margin-bottom:6px;">
+         💡 שליחה למוסד אחד בכל פעם — למניעת בלבול. כדי לשלוח ליותר מאחד, פשוט תפעיל את התהליך בשנית.
+       </div>`;
+
+  list.innerHTML = `
+    ${_tipHtml}
+    <table style="width:100%; border-collapse:collapse; font-size:13px;">
+      <thead>
+        <tr style="background:#eff6ff;">
+          <th style="padding:6px 8px; width:28px;"></th>
+          <th style="padding:6px 8px; text-align:right;">מוסד יסודי</th>
+          <th style="padding:6px 8px; text-align:center;">בנות</th>
+          <th style="padding:6px 8px; text-align:right;">מייל מנהלת</th>
+        </tr>
+      </thead>
+      <tbody id="ec_school_rows">${buildSchoolRows()}</tbody>
+    </table>
+  `;
+  function refresh() {
+    document.getElementById('ec_school_rows').innerHTML = buildSchoolRows();
+    bindEvents();
+    _ec_syncSchoolRecipients();
+  }
+  function bindEvents() {
+    document.querySelectorAll('.ec_school_radio').forEach(rb => {
+      rb.onchange = () => {
+        if (_printMode) {
+          if (rb.checked) EC_STATE._schoolSel.add(rb.dataset.code);
+          else            EC_STATE._schoolSel.delete(rb.dataset.code);
+        } else {
+          EC_STATE._schoolSel = new Set([rb.dataset.code]);
+        }
+        refresh();
+      };
+    });
+    document.querySelectorAll('.ec_school_row').forEach(row => {
+      row.onclick = (e) => {
+        if (e.target.tagName === 'INPUT') return;
+        const code = row.dataset.code;
+        if (_printMode) {
+          if (EC_STATE._schoolSel.has(code)) EC_STATE._schoolSel.delete(code);
+          else                               EC_STATE._schoolSel.add(code);
+        } else {
+          const s = (EC_STATE._schoolData.elementaryByCode || {})[code];
+          if (!s || !s.contact_email) return;  // disabled
+          EC_STATE._schoolSel = new Set([code]);
+        }
+        refresh();
+      };
+    });
+  }
+  bindEvents();
+  _ec_syncSchoolRecipients();
+}
+
+function _ec_syncSchoolRecipients() {
+  const { byCode, codes, elementaryByCode } = EC_STATE._schoolData || {};
+  if (!codes) return;
+  const sel = EC_STATE._schoolSel || new Set();
+  const printMode = (EC_STATE.mode === 'print');
+  const out = [];
+  codes.forEach(code => {
+    if (!sel.has(code)) return;
+    const s = elementaryByCode[code];
+    if (!s) return;
+    // במוד שליחה — חובה מייל מנהלת. במוד הדפסה — אין דרישת מייל.
+    if (!printMode && !s.contact_email) return;
+    const girls = byCode[code].map(g => ({
+      id: g.id, national_id: g.national_id, family_name: g.family_name, first_name: g.first_name,
+      placement_seminar: g.placement_seminar || '',
+    }));
+    const firstName = s.contact_first_name || '';
+    const lastName  = s.contact_last_name || '';
+    const contactFull = `${s.contact_title || ''} ${firstName} ${lastName}`.replace(/\s+/g, ' ').trim();
+    // CC אוטומטי: מייל משרד + מייל נוסף (אם קיימים) — תוויות + ברירת מחדל enabled=true
+    const ccFromSchool = [];
+    if (s.office_email)    ccFromSchool.push({ email: s.office_email,    label: 'מייל משרד', enabled: true });
+    if (s.secondary_email) ccFromSchool.push({ email: s.secondary_email, label: 'מייל נוסף', enabled: true });
+    out.push({
+      kind: 'source_school', ref_id: s.id, email: s.contact_email || null,
+      cc_emails: ccFromSchool,
+      display_name: `${_ec_schoolDispName(s)} — ${contactFull || s.contact_email || '—'}`,
+      letter_data: {
+        institution_name: _ec_schoolDispName(s),
+        institution_code: code,
+        contact_title: s.contact_title || '',
+        contact_first_name: firstName,
+        contact_last_name: lastName,
+        contact_full: contactFull,
+        address_street: s.address_street || '',
+        address_number: s.address_number || '',
+        city: s.city || '',
+        school_year: ((SEASONS.find(x => x.id === CURRENT_SEASON_ID) || {}).name) || 'תשפ"ז',
+        letter_date: EC_STATE.letterDate,
+        girls,
+      },
+    });
+  });
+  EC_STATE.recipients = out;
+  _ec_updateRecipientCount();
+}
+
+function _ec_toggleStatusFilterSchool(status, checked) {
+  if (checked) {
+    if (!EC_STATE.statusFilters.includes(status)) EC_STATE.statusFilters.push(status);
+  } else {
+    EC_STATE.statusFilters = EC_STATE.statusFilters.filter(s => s !== status);
+  }
+  EC_STATE._schoolSel = null;
+  _ec_renderSchoolRecipients();
+}
+
+// === בחר הכל / נקה הכל מוסדות (רלוונטי רק במוד הדפסה) ===
+function _ec_setAllSchools(on) {
+  const { codes } = EC_STATE._schoolData || {};
+  if (!codes) return;
+  EC_STATE._schoolSel = on ? new Set(codes) : new Set();
+  _ec_renderSchoolRecipients();
 }
 
 // =============== Step 3: compose + send ===============
