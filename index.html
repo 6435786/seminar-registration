@@ -7461,6 +7461,14 @@ async function _ec_pickTemplate(templateId) {
   // כשמחליפים תבנית — להחזיר את המוד לברירת המחדל ולנקות בחירת בנות (כי בוחר חדש = נתונים שונים)
   EC_STATE.mode = 'send';
   EC_STATE._parentSel = null;
+  // מכתב מוסד יסודי: ברירת מחדל = כל המשובצות (כל סטטוס + ריק) — המכתב מיידע על כל הבוגרות.
+  // שאר הסוגים: ברירת המחדל הרגילה (ועדת רבנים), כדי שהחלפת תבנית לא תגרור הגדרה שגויה.
+  if (data.recipient_kind === 'source_school') {
+    EC_STATE.statusFilters = [...(ENUM_STATUS || []), EC_STATUS_EMPTY];
+    EC_STATE._schoolSel = null;
+  } else {
+    EC_STATE.statusFilters = ['ועדת רבנים'];
+  }
   await _ec_renderStep();
 }
 
@@ -8051,14 +8059,21 @@ function _ec_setAllSems(on) {
   _ec_renderSeminarRecipients();
 }
 
+// ערך סנטינל ל"בנות ללא סטטוס שיבוץ" בסינון בוחר מוסד יסודי.
+const EC_STATUS_EMPTY = '__ריק__';
 // שם תצוגה למוסד יסודי במכתב/בוחר: 'שם שימושי' אם קיים, אחרת השם הרגיל.
 function _ec_schoolDispName(s) { return (s && (s.usable_name || s.name)) || '—'; }
 
 async function _ec_renderSchoolRecipients() {
   // סינון בנות לפי סטטוס שיבוץ (זהה לסמינר)
+  const _emptyChecked = EC_STATE.statusFilters.includes(EC_STATUS_EMPTY);
   const filtersHtml = `
     <div style="background:#f0f9ff; border:1px solid #bae6fd; border-radius:8px; padding:8px 12px;">
-      <div style="font-size:12px; font-weight:600; color:var(--deep); margin-bottom:6px;">סנן בנות לפי סטטוס שיבוץ:</div>
+      <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; flex-wrap:wrap;">
+        <span style="font-size:12px; font-weight:600; color:var(--deep);">סנן בנות לפי סטטוס שיבוץ:</span>
+        <button class="mini-btn" onclick="_ec_setAllStatusSchool(true)" style="padding:2px 8px; font-size:11px;">בחר הכל</button>
+        <button class="mini-btn" onclick="_ec_setAllStatusSchool(false)" style="padding:2px 8px; font-size:11px;">נקה</button>
+      </div>
       <div style="display:flex; flex-wrap:wrap; gap:4px;">
         ${(ENUM_STATUS || []).map(s => {
           const checked = EC_STATE.statusFilters.includes(s);
@@ -8067,6 +8082,10 @@ async function _ec_renderSchoolRecipients() {
             <span>${s}</span>
           </label>`;
         }).join('')}
+        <label style="display:inline-flex; align-items:center; gap:4px; padding:3px 8px; background:white; border-radius:6px; border:1px dashed var(--muted); cursor:pointer; font-size:12px; ${_emptyChecked ? 'border-color:var(--accent); background:#dbeafe;' : ''}">
+          <input type="checkbox" ${_emptyChecked ? 'checked' : ''} onchange="_ec_toggleStatusFilterSchool('${EC_STATUS_EMPTY}', this.checked)" style="margin:0;">
+          <span>(ללא סטטוס)</span>
+        </label>
       </div>
     </div>
   `;
@@ -8079,8 +8098,13 @@ async function _ec_renderSchoolRecipients() {
       elementaryByCode[String(s.institution_code).trim()] = s;
   });
 
-  // קבץ בנות (בסטטוסים שנבחרו) לפי סמל המוסד שלהן — רק למוסדות יסודי מסומנים
-  const matchingGirls = (ROWS || []).filter(r => EC_STATE.statusFilters.includes(r.placement_status));
+  // קבץ בנות (בסטטוסים שנבחרו) לפי סמל המוסד שלהן — רק למוסדות יסודי מסומנים.
+  // רק משובצות (יש סמינר). סטטוס ריק נכלל אם '(ללא סטטוס)' מסומן.
+  const _wantEmpty = EC_STATE.statusFilters.includes(EC_STATUS_EMPTY);
+  const matchingGirls = (ROWS || []).filter(r => {
+    if (!r.placement_seminar || !String(r.placement_seminar).trim()) return false;
+    return r.placement_status ? EC_STATE.statusFilters.includes(r.placement_status) : _wantEmpty;
+  });
   const byCode = {};
   for (const g of matchingGirls) {
     const code = (g.source_school_code != null ? String(g.source_school_code).trim() : '');
@@ -8256,6 +8280,13 @@ function _ec_setAllSchools(on) {
   const { codes } = EC_STATE._schoolData || {};
   if (!codes) return;
   EC_STATE._schoolSel = on ? new Set(codes) : new Set();
+  _ec_renderSchoolRecipients();
+}
+
+// === בחר הכל / נקה כל סטטוסי השיבוץ (כולל "ללא סטטוס") ===
+function _ec_setAllStatusSchool(on) {
+  EC_STATE.statusFilters = on ? [...(ENUM_STATUS || []), EC_STATUS_EMPTY] : [];
+  EC_STATE._schoolSel = null;
   _ec_renderSchoolRecipients();
 }
 
