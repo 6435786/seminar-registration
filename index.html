@@ -4818,16 +4818,22 @@ const LIST_TABS = [
   { table: 'source_schools',    label: 'מוסדות',            isEntity: true, sortField: 'name',
     fields: [
       { key: 'name',             label: 'שם',         type: 'text' },
+      { key: 'usable_name',      label: 'שם שימושי',  type: 'text' },
+      { key: 'is_elementary',    label: 'מוסד יסודי', type: 'bool' },
       { key: 'institution_code', label: 'סמל',        type: 'text' },
       { key: 'sector',           label: 'קטגוריה',    type: 'enum', valuesRef: 'ENUM_INST_CAT' },
       { key: 'gender',           label: 'בנות/בנים',  type: 'enum', values: ['בנות', 'בנים'] },
-      { key: 'contact_title',    label: 'תואר',       type: 'text', group: 'contact' },
-      { key: 'contact_name',     label: 'איש קשר',    type: 'text', group: 'contact' },
+      { key: 'contact_title',      label: 'תואר',     type: 'text', group: 'contact' },
+      { key: 'contact_first_name', label: 'פרטי',     type: 'text', group: 'contact' },
+      { key: 'contact_last_name',  label: 'משפחה',    type: 'text', group: 'contact' },
       { key: 'contact_role',     label: 'תפקיד',      type: 'text', group: 'contact' },
       { key: 'contact_phone',    label: 'טלפון',      type: 'text', group: 'contact' },
-      { key: 'contact_email',    label: 'מייל',       type: 'text', group: 'contact' },
+      { key: 'contact_email',    label: 'מייל מנהלת', type: 'text', group: 'contact' },
       { key: 'office_email',     label: 'מייל משרד',  type: 'text', group: 'contact' },
       { key: 'secondary_email',  label: 'מייל נוסף',  type: 'text', group: 'contact' },
+      { key: 'address_street',   label: 'רחוב',       type: 'text', group: 'address' },
+      { key: 'address_number',   label: 'מס\'',       type: 'text', group: 'address' },
+      { key: 'city',             label: 'עיר',        type: 'text', group: 'address' },
     ] },
   { table: 'contacts',          label: 'אנשי קשר',          isEntity: true, sortField: 'name',
     fields: [
@@ -5288,11 +5294,20 @@ function openImportDialog(table, rows, filename) {
     }
 
     const dataRows = hasHeader ? parsedNoHdr.slice(1) : parsedNoHdr;
+    // מיפוי סוגי שדות — לטיפול נכון בבוליאני (תיבת סימון) בייבוא
+    const _fieldType = {};
+    tab.fields.forEach(f => { _fieldType[f.key] = f.type; });
+    const _TRUE_VALS = new Set(['true', '1', 'כן', '✓', 'v', 'x', 'yes', 'y', 'אמת', 'כ']);
     const records = dataRows.map(row => {
       const rec = {};
       Object.entries(mapping).forEach(([col, field]) => {
         const v = row[parseInt(col)];
-        rec[field] = (v == null || v === '') ? null : String(v).trim();
+        if (_fieldType[field] === 'bool') {
+          // בוליאני: ריק = false; אחרת לפי טבלת ערכי-אמת
+          rec[field] = _TRUE_VALS.has(String(v == null ? '' : v).trim().toLowerCase());
+        } else {
+          rec[field] = (v == null || v === '') ? null : String(v).trim();
+        }
       });
       return rec;
     }).filter(r => {
