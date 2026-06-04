@@ -6807,8 +6807,8 @@ TEMPLATE_SECTION_LABELS.source_school = {
   para2:            { label: 'פסקה 2', textarea: true },
   attachment_note:  { label: 'רצ"ב רשימה',              short: true },
   signature_open:   { label: 'פתיחת חתימה',             short: true },
-  signer_name:      { label: 'שם החותם',                short: true },
-  signer_role:      { label: 'תפקיד החותם',             short: true },
+  signer_name:      { label: 'חותם 1',                  short: true },
+  signer_role:      { label: 'חותם 2',                  short: true },
   copies_label:     { label: 'כותרת העתקים',            short: true },
   copies_line1:     { label: 'העתקים — שורה 1' },
   copies_line2:     { label: 'העתקים — שורה 2' },
@@ -9861,8 +9861,18 @@ function drawSourceSchoolLetter(pdf, data) {
   y = drawWrappedRTL(pdf, T('para2', 'נודה לכם על שיתוף הפעולה, ונשמח לעמוד לרשותכם בכל שאלה.'),
     RIGHT_X, LEFT_X, y, { size: 11.5, lineHeight: 5.5 });
   y += 2;
-  drawRTL(pdf, T('attachment_note', 'רצ"ב רשימת הבוגרות ושיבוצן.'), RIGHT_X, y, { size: 11.5, bold: true });  y += 7;
-  drawSeminarSignature(pdf, y, 'source_school', data);
+  drawRTL(pdf, T('attachment_note', 'רצ"ב רשימת הבוגרות ושיבוצן.'), RIGHT_X, y, { size: 11.5, bold: true });  y += 20;  // רווח ~3 שורות לפני החתימה
+  // חתימה — שני חותמים, שניהם לא מודגשים (התפקיד כבר משולב בשורה)
+  drawRTL(pdf, T('signature_open', 'בברכה מרובה'), RIGHT_X, y, { size: 12 });  y += 7;
+  drawRTL(pdf, T('signer_name', ''), RIGHT_X, y, { size: 12 });  y += 5;
+  drawRTL(pdf, T('signer_role', ''), RIGHT_X, y, { size: 12 });  y += 8;
+  // העתקים — מצוירים רק אם הוגדרו (במכתב הזה ריקים → לא מופיעים)
+  const _cl = T('copies_label', '');
+  if (_cl && _cl.trim()) { drawRTL(pdf, _cl, RIGHT_X, y, { size: 10, bold: true }); y += 5; }
+  for (let i = 1; i <= 5; i++) {
+    const _cp = T(`copies_line${i}`, '');
+    if (_cp && _cp.trim()) { drawRTL(pdf, _cp, RIGHT_X, y, { size: 10 }); y += 4.5; }
+  }
 }
 
 // עמוד רשימת הבוגרות (טבלה) — מקביל ל-drawStudentsListPage
