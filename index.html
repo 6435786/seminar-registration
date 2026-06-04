@@ -3615,6 +3615,7 @@ function renderModalBody() {
         ${fld('שם', 'first_name', r.first_name)}
         ${fld('ת.ז', 'national_id', r.national_id)}
         ${fld('יסודי', 'source_school_id', r.source_school_id, { type: 'source_school' })}
+        <label>סמל יסודי</label><div class="readonly${!r.source_school_code ? ' empty' : ''}">${r.source_school_code || '—'}</div>
         <label>קבוצה</label><div class="readonly${!r.sector_bucket ? ' empty' : ''}">${r.sector_bucket || '—'}</div>
         ${fld('שיוך', 'sector', r.sector, { type: 'enum', values: ENUM_AFFILIATION })}
         ${fld('קהילה', 'community', r.community)}
@@ -5346,8 +5347,15 @@ async function executeImport(table, records, mode) {
 
     // שלוף את מה שקיים עכשיו (לבדיקת כפילויות)
     const { data: currentItems } = await sb.from(table).select('*');
+    // התאמת כפילויות: מוסדות → לפי סמל מוסד בלבד (מזהה קנוני; מאפשר גם תיקון שמות בלי ליצור כפילויות).
+    // שאר הישויות → שם+סמל כמקודם. רשומה ללא סמל → נפילה לשם.
+    const CODE_KEYED_TABLES = new Set(['source_schools']);
     const keyOf = tab.isEntity
-      ? (r) => `${r.name || ''}||${r.institution_code || ''}`
+      ? (r) => {
+          const code = (r.institution_code != null ? String(r.institution_code).trim() : '');
+          if (CODE_KEYED_TABLES.has(table) && code) return 'code::' + code;
+          return 'nc::' + `${(r.name || '').trim()}||${code}`;
+        }
       : (r) => r.value || '';
     const existingMap = {};
     (currentItems || []).forEach(it => { existingMap[keyOf(it)] = it; });
