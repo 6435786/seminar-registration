@@ -6923,22 +6923,22 @@ TEMPLATE_DEFAULT_CONTENT.parents_no_inquiry = TEMPLATE_DEFAULT_CONTENT.parents;
 TEMPLATE_DEFAULT_CONTENT.source_school = { sections: {
   greeting:         'לכבוד',
   contact_name:     '{{contact_full}}',
-  contact_role:     'הנהלת {{institution_name}}',
+  contact_role:     'מנהלת בית הספר {{institution_name}}',
   shalom:           'שלום רב,',
-  subject:          'הנדון: שיבוץ בוגרות מוסדכם לשנה"ל {{school_year}}',
-  para1:            'בהמשך לתהליך הרישום והשיבוץ לסמינרים לשנה"ל {{school_year}}, מצורפת בזאת רשימת בוגרות מוסדכם והשיבוץ שנקבע לכל אחת מהן.',
-  para2:            'נודה לכם על שיתוף הפעולה, ונשמח לעמוד לרשותכם בכל שאלה.',
-  attachment_note:  'רצ"ב רשימת הבוגרות ושיבוצן.',
-  signature_open:   'בברכה,',
-  signer_name:      'יהודה קורנבליט',
-  signer_role:      'מנהל אגף החינוך',
-  copies_label:     'העתקים:',
+  subject:          'הנידון: שיבוץ תלמידות הלומדות במוסדכם לסמינרים לשנת הלימודים {{school_year}}',
+  para1:            'עם סיום תקופת השיבוץ של תלמידות כיתות ח\' בסמינרים לשנה"ל {{school_year}}',
+  para2:            'הננו להודות על שיתוף הפעולה המועיל, ולעדכן על החלטות ועדת הרבנים לשיבוץ הבנות',
+  attachment_note:  'מצורפת רשימת השיבוץ העדכנית.',
+  signature_open:   'בברכה מרובה',
+  signer_name:      'דוד זלץ – מ"מ רה"ע ומחזיק תיק חינוך',
+  signer_role:      'יהודה קורנבליט – מנהל אגף חינוך',
+  copies_label:     '',
   copies_line1:     '',
   copies_line2:     '',
   copies_line3:     '',
   copies_line4:     '',
   copies_line5:     '',
-  table_title:      'רשימת בוגרות מוסדכם ושיבוצן — {{institution_name}}',
+  table_title:      'רשימת תלמידות לשיבוץ — {{institution_name}}',
 } };
 
 async function openTemplateEditor(templateId) {
@@ -7419,15 +7419,13 @@ async function _ec_renderStep1(pop) {
       </div>
     </div>
   `;
-  const { data: _allTpls, error } = await sb.from('form_templates')
+  const { data, error } = await sb.from('form_templates')
     .select('*')
     .eq('is_active', true)
+    .eq('show_in_picker', true)
     .order('sort_order');
   const list = document.getElementById('ec_tpl_list');
   if (error) { list.innerHTML = `<div style="color:var(--bad);">שגיאה: ${error.message}</div>`; return; }
-  // גידור בנייה: 'מכתב למוסד יסודי' (show_in_picker=false) מוצג כרגע רק לסופר-אדמין,
-  // עד שיתייצב. כשנרחיב — נעדכן show_in_picker=true והוא יופיע לכל המנהלים.
-  const data = (_allTpls || []).filter(t => t.show_in_picker || (t.slug === 'source_school' && isSuperAdmin()));
   if (!data || !data.length) { list.innerHTML = `<div style="color:var(--muted); text-align:center; padding:20px;">אין תבניות זמינות. הגדר תבניות ב"רשימות → טפסי דוא"ל".</div>`; return; }
 
   const kindLabel = { parents: '👨‍👩‍👧 הורים', seminar: '🏫 סמינר', source_school: '🏛 מוסד יסודי' };
