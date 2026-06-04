@@ -7466,6 +7466,18 @@ async function _ec_pickTemplate(templateId) {
   if (data.recipient_kind === 'source_school') {
     EC_STATE.statusFilters = [...(ENUM_STATUS || []), EC_STATUS_EMPTY];
     EC_STATE._schoolSel = null;
+    // שחזור ברירות מחדל מהפעם האחרונה (שליחה/הדפסה): סטטוסים, נושא, גוף, "שם כאות", CC/BCC.
+    const _saved = _ec_loadLetterDefaults('source_school');
+    if (_saved) {
+      if (Array.isArray(_saved.statusFilters)) EC_STATE.statusFilters = _saved.statusFilters;
+      if (typeof _saved.subject === 'string' && _saved.subject) EC_STATE.subject = _saved.subject;
+      if (typeof _saved.bodyText === 'string') EC_STATE.bodyText = _saved.bodyText;
+      EC_STATE.useNameInitial = !!_saved.useNameInitial;
+      if (typeof _saved.cc === 'string') EC_STATE.cc = _saved.cc;
+      if (Array.isArray(_saved.ccContacts)) EC_STATE.ccContacts = _saved.ccContacts;
+      if (typeof _saved.bcc === 'string') EC_STATE.bcc = _saved.bcc;
+      if (Array.isArray(_saved.bccContacts)) EC_STATE.bccContacts = _saved.bccContacts;
+    }
   } else {
     EC_STATE.statusFilters = ['ועדת רבנים'];
   }
@@ -8959,6 +8971,28 @@ function _ec_saveCopiesDefaults() {
   } catch (e) {
     console.warn('save copies defaults failed:', e);
   }
+  _ec_persistLetterDefaults();
+}
+
+// === שמירה/שחזור ברירות מחדל פר-מכתב (כרגע: מכתב מוסד יסודי) — מהפעם האחרונה ===
+// נשמר בכל שליחה ובכל הדפסה: סטטוסים, נושא, גוף, תיבת "שם כאות", CC/BCC.
+function _ec_persistLetterDefaults() {
+  const slug = EC_STATE.template && EC_STATE.template.slug;
+  if (slug !== 'source_school') return;
+  try {
+    localStorage.setItem('ec_letterdef_' + slug, JSON.stringify({
+      statusFilters:  EC_STATE.statusFilters,
+      subject:        EC_STATE.subject,
+      bodyText:       EC_STATE.bodyText,
+      useNameInitial: EC_STATE.useNameInitial,
+      cc:  EC_STATE.cc,  ccContacts:  EC_STATE.ccContacts,
+      bcc: EC_STATE.bcc, bccContacts: EC_STATE.bccContacts,
+    }));
+  } catch (e) { console.warn('persist letter defaults failed:', e); }
+}
+function _ec_loadLetterDefaults(slug) {
+  try { return JSON.parse(localStorage.getItem('ec_letterdef_' + slug) || 'null'); }
+  catch (e) { return null; }
 }
 
 function _ec_buildEml(r, pdfBlob, attachName) {
@@ -8990,6 +9024,7 @@ function _ec_buildEml(r, pdfBlob, attachName) {
 // מייצר PDF לכל נמען ברצף; מחזיר מערך { recipient, bytes (Uint8Array), blob } או { recipient, error }.
 async function _ec_generateAllPdfsForPrint(progressCb) {
   const slug = EC_STATE.template.slug;
+  _ec_persistLetterDefaults();  // זכור ברירות מחדל פר-מכתב גם בהדפסה
   const out = [];
   for (let i = 0; i < EC_STATE.recipients.length; i++) {
     const r = EC_STATE.recipients[i];
