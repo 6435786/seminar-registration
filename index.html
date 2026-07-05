@@ -3490,7 +3490,14 @@ function closeModal() {
   closeSidePanel();
 }
 
-function _esc(v) { return String(v == null ? '' : v).replace(/"/g, '&quot;'); }
+function _esc(v) {
+  return String(v == null ? '' : v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 function renderModalBody() {
   if (!CURRENT_MODAL) return;
@@ -11115,9 +11122,9 @@ async function openManageUsers() {
         <tbody>
           ${pending.map(p => `
             <tr data-req-id="${p.id}">
-              <td><b>${p.email}</b></td>
-              <td>${p.full_name || '—'}</td>
-              <td style="font-size:12px; color:#334155;">${p.notes || '—'}</td>
+              <td><b>${_esc(p.email)}</b></td>
+              <td>${p.full_name ? _esc(p.full_name) : '—'}</td>
+              <td style="font-size:12px; color:#334155;">${p.notes ? _esc(p.notes) : '—'}</td>
               <td style="font-size:11px; color:var(--muted);">${fmt(p.requested_at)}</td>
               <td style="text-align:center">
                 <select id="role_${p.id}" style="padding:4px 8px; font-family:inherit; font-size:12px; border:1px solid var(--border); border-radius:4px;">
@@ -11140,11 +11147,11 @@ async function openManageUsers() {
     const selectDisabled = cannotTouch || isSelfRow;
 
     return `
-    <tr data-email="${u.email}" class="${u.is_active ? '' : 'inactive'} ${isSuperAdminRow ? 'super-admin-row' : ''}">
-      <td>${u.email}</td>
+    <tr data-email="${_esc(u.email)}" class="${u.is_active ? '' : 'inactive'} ${isSuperAdminRow ? 'super-admin-row' : ''}">
+      <td>${_esc(u.email)}</td>
       <td>
         <span class="user-name-edit" onclick="editUserName('${_esc(u.email)}', this)" style="cursor:pointer; padding:3px 8px; border-radius:4px;" title="לחץ לעריכה">
-          ${u.full_name || '<span style="color:var(--muted)">— לחץ להוספת שם</span>'}
+          ${u.full_name ? _esc(u.full_name) : '<span style="color:var(--muted)">— לחץ להוספת שם</span>'}
         </span>
       </td>
       <td>
