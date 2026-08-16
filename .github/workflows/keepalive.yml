@@ -1,0 +1,47 @@
+# Keep-Alive ל-Supabase — מונע השהיה אוטומטית של הפרויקט בתוכנית החינמית.
+#
+# למה: Supabase FREE משהה פרויקט אחרי ~שבוע ללא פעילות (קרה ב-2026-08-16,
+#      האפליקציה "מתה" עם DNS_PROBE_FINISHED_NXDOMAIN). קריאת API כל 3 ימים
+#      שומרת עליו ער.
+# הערה: המפתח כאן הוא ה-anon key הציבורי (כבר חשוף ב-config.js בכוונה) — לא סוד.
+# בנוסף: GitHub מכבה תזמונים אחרי 60 יום בלי פעילות ב-repo, לכן הצעד האחרון
+#      דוחף commit קטן לענף 'keepalive' (לא נוגע ב-main) כדי לאפס את הספירה.
+name: Supabase Keep-Alive
+
+on:
+  schedule:
+    - cron: '0 3 */3 * *'   # כל 3 ימים, 03:00 UTC
+  workflow_dispatch: {}      # מאפשר גם הרצה ידנית מהטאב Actions
+
+permissions:
+  contents: write
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Supabase REST + Auth
+        run: |
+          set -e
+          BASE="https://qntepxfcjgpijrovqmev.supabase.co"
+          KEY="sb_publishable_wn33JChf7dPtOTIWOFVRfA_EmESexE-"
+          # שאילתת REST קלה (RLS יחזיר ריק לאנונימי — אבל הבקשה נחשבת פעילות)
+          curl -sS -o /dev/null -w "REST: %{http_code}\n" \
+            "$BASE/rest/v1/seasons?select=id&limit=1" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
+          # בדיקת בריאות של שירות ה-Auth
+          curl -sS -o /dev/null -w "AUTH: %{http_code}\n" \
+            "$BASE/auth/v1/health" -H "apikey: $KEY"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Heartbeat commit (מונע כיבוי התזמון אחרי 60 יום)
+        run: |
+          git config user.name  "keepalive-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout -B keepalive
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > .keepalive
+          git add .keepalive
+          git commit -m "keepalive ping" || echo "nothing to commit"
+          git push -f origin keepalive
