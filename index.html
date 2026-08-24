@@ -7320,6 +7320,12 @@ async function _ec_openHistory() {
       </div>
       <button class="close" onclick="document.getElementById('ec_hist_scrim').remove();">×</button>
     </div>
+    <div style="padding:10px 22px; border-bottom:1px solid var(--border); display:flex; gap:8px; flex-wrap:wrap; align-items:center; background:#f8fafc;">
+      <input type="text" id="ec_hist_q" placeholder="🔍 חיפוש: שם בת / נמען / כתובת מייל / נושא" style="flex:1; min-width:220px; padding:7px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:13px;">
+      <select id="ec_hist_type" style="padding:7px 10px; border:1px solid var(--border); border-radius:6px; font-family:inherit; font-size:13px; background:white;">
+        <option value="">כל סוגי המכתבים</option>
+      </select>
+    </div>
     <div id="ec_hist_body" style="padding:14px 22px; overflow-y:auto; flex:1;">
       <div style="color:var(--muted); text-align:center; padding:30px;">טוען...</div>
     </div>
@@ -7327,14 +7333,19 @@ async function _ec_openHistory() {
   scrim.appendChild(pop);
   document.body.appendChild(scrim);
 
-  // טען את הלוג + קבץ לפי batch
-  const { data: rows, error } = await sb.from('email_send_log')
-    .select('*')
-    .order('exported_at', { ascending: false })
-    .limit(1000);
+  // טען את הלוג + שמות התבניות (להצגה עברית במקום slug טכני)
+  const [logRes, tplRes] = await Promise.all([
+    sb.from('email_send_log').select('*').order('exported_at', { ascending: false }).limit(1000),
+    sb.from('form_templates').select('slug, name'),
+  ]);
+  const rows = logRes.data, error = logRes.error;
   const body = document.getElementById('ec_hist_body');
   if (error) { body.innerHTML = `<div style="color:var(--bad);">שגיאה: ${error.message}</div>`; return; }
   if (!rows || !rows.length) { body.innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">עדיין לא נשלחו מיילים מהמערכת.</div>`; return; }
+
+  const slugName = {};
+  (tplRes.data || []).forEach(t => { slugName[t.slug] = t.name; });
+  const tplLabel = (slug) => slugName[slug] || slug || '—';
 
   // קיבוץ לפי batch_id
   const batches = {};
@@ -7347,19 +7358,48 @@ async function _ec_openHistory() {
     .map(([id, b]) => ({ id, ...b, count: b.rows.length }))
     .sort((a, b) => new Date(b.firstAt) - new Date(a.firstAt));
 
-  body.innerHTML = batchList.map(b => {
-    const dt = new Date(b.firstAt);
-    const dtStr = dt.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
-    const mock = b.rows.some(r => r.metadata && r.metadata.mock);
-    return `
-      <details style="border:1px solid var(--border); border-radius:8px; padding:0; margin-bottom:8px; background:white;">
+  // מילוי בורר הסוגים — רק סוגים שקיימים בלוג
+  const typeSel = document.getElementById('ec_hist_type');
+  const slugsPresent = [...new Set(rows.map(r => r.template_slug).filter(Boolean))];
+  typeSel.innerHTML = '<option value="">כל סוגי המכתבים</option>' +
+    slugsPresent.map(s => `<option value="${_esc(s)}">${_esc(tplLabel(s))}</option>`).join('');
+
+  // האם שורת נמען תואמת לחיפוש (שם בת/נמען, כתובות, נושא)
+  function rowMatches(r, q) {
+    const md = r.metadata || {};
+    const hay = [r.recipient_name, r.recipient_email, r.subject, md.real_recipient_email]
+      .filter(Boolean).join(' ').toLowerCase();
+    return hay.includes(q);
+  }
+
+  function renderList() {
+    const q = (document.getElementById('ec_hist_q').value || '').trim().toLowerCase();
+    const type = typeSel.value;
+    const filtered = batchList
+      .filter(b => !type || b.template_slug === type)
+      .map(b => ({ ...b, matchRows: q ? b.rows.filter(r => rowMatches(r, q)) : b.rows }))
+      .filter(b => b.matchRows.length);
+
+    if (!filtered.length) {
+      body.innerHTML = `<div style="color:var(--muted); text-align:center; padding:30px;">לא נמצאו שליחות תואמות לחיפוש.</div>`;
+      return;
+    }
+
+    body.innerHTML = filtered.map(b => {
+      const dt = new Date(b.firstAt);
+      const dtStr = dt.toLocaleString('he-IL', { dateStyle: 'short', timeStyle: 'short' });
+      const mock = b.rows.some(r => r.metadata && r.metadata.mock);
+      // בזמן חיפוש: פותחים את האצווה ומציגים רק שורות תואמות, עם ספירה "תואמות/סה"כ"
+      const countLabel = q ? `${b.matchRows.length}/${b.count}` : `${b.count} נמענים`;
+      return `
+      <details ${q ? 'open' : ''} style="border:1px solid var(--border); border-radius:8px; padding:0; margin-bottom:8px; background:white;">
         <summary style="padding:10px 14px; cursor:pointer; list-style:none; display:flex; gap:12px; align-items:center;">
           <div style="font-size:11px; color:var(--muted); min-width:120px;">${dtStr}</div>
           <div style="flex:1;">
-            <div style="font-weight:600; color:var(--deep);">${_esc(b.template_slug || '—')}</div>
+            <div style="font-weight:600; color:var(--deep);">${_esc(tplLabel(b.template_slug))}</div>
             <div style="font-size:11px; color:var(--muted);">נשלח ע"י ${_esc(b.sent_by_email || '—')}</div>
           </div>
-          <div style="background:var(--accent); color:white; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600;">${b.count} נמענים</div>
+          <div style="background:var(--accent); color:white; padding:3px 10px; border-radius:999px; font-size:12px; font-weight:600;">${countLabel}</div>
           ${mock ? `<span style="background:#fde68a; color:#92400e; padding:2px 8px; border-radius:6px; font-size:11px; font-weight:600;" title="לא נשלח בפועל — רק יוצא ZIP">MOCK</span>` : ''}
           <div style="color:var(--muted); font-size:16px;">▼</div>
         </summary>
@@ -7373,18 +7413,20 @@ async function _ec_openHistory() {
               </tr>
             </thead>
             <tbody>
-              ${b.rows.map(r => {
+              ${b.matchRows.map(r => {
                 // אסוף את כל הכתובות לתצוגה
                 const md = r.metadata || {};
                 const testMode = !!md.test_mode;
-                // ב־test mode מציגים את ה־real_*; ב־real מציגים מה שנשלח בפועל
+                // ב־test mode מציגים את ה־real_*; ב־real מציגים מה שנשלח בפועל.
+                // תאימות מפתחות: נתיב Gmail כותב cc_list/bcc_list, נתיב ה-mock כותב cc/bcc — קוראים את שניהם.
                 const toEmail = testMode ? (md.real_recipient_email || r.recipient_email) : r.recipient_email;
-                const ccList  = testMode ? (md.real_cc || []) : (md.cc || []);
-                const bccVal  = testMode ? (md.real_bcc || null) : (md.bcc || null);
+                const ccList  = testMode ? (md.real_cc_list || md.real_cc || []) : (md.cc_list || md.cc || []);
+                const bccRaw  = testMode ? (md.real_bcc_list || md.real_bcc || null) : (md.bcc_list || md.bcc || null);
+                const bccList = Array.isArray(bccRaw) ? bccRaw : (bccRaw ? [bccRaw] : []);
                 const emails = [
                   `<div><b>TO:</b> ${_esc(toEmail || '')}</div>`,
                   ...((ccList || []).filter(Boolean).map(c => `<div style="color:#0284c7;"><b>CC:</b> ${_esc(c)}</div>`)),
-                  bccVal ? `<div style="color:#7c3aed;"><b>BCC:</b> ${_esc(bccVal)}</div>` : '',
+                  ...(bccList.filter(Boolean).map(bc => `<div style="color:#7c3aed;"><b>BCC:</b> ${_esc(bc)}</div>`)),
                   testMode ? `<div style="color:#92400e; font-size:10px; margin-top:3px;">🧪 בדיקה — נשלח בפועל ל: ${_esc(r.recipient_email || '')}</div>` : '',
                 ].filter(Boolean).join('');
                 return `
@@ -7400,7 +7442,12 @@ async function _ec_openHistory() {
         </div>
       </details>
     `;
-  }).join('');
+    }).join('');
+  }
+
+  document.getElementById('ec_hist_q').oninput = renderList;
+  typeSel.onchange = renderList;
+  renderList();
 }
 
 async function _ec_renderStep() {
