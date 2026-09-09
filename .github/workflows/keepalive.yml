@@ -3,6 +3,14 @@
 # למה: Supabase FREE משהה פרויקט אחרי ~שבוע ללא פעילות (קרה ב-2026-08-16,
 #      האפליקציה "מתה" עם DNS_PROBE_FINISHED_NXDOMAIN). קריאת API כל 3 ימים
 #      שומרת עליו ער.
+#
+# ⚠️ לקח 2026-09-09: "פעילות" = בקשת API שמצליחה (200) ונוגעת ב-DB.
+#      הגרסה הקודמת פינגה REST שהחזיר 401 (RLS דוחה אנונימי) + /auth/v1/health —
+#      ושניהם לא נספרו: התראת "going to be paused" הגיעה למרות פינגים ירוקים
+#      כל 3 ימים. לכן עברנו ל-RPC ייעודי keepalive_ping (מיגרציה 30) שמחזיר
+#      רק timestamp — 200 אמיתי דרך השער. ה-workflow נכשל אם אין 200, כדי
+#      שמייל הכישלון של GitHub ישמש אזעקה.
+#
 # הערה: המפתח כאן הוא ה-anon key הציבורי (כבר חשוף ב-config.js בכוונה) — לא סוד.
 # בנוסף: GitHub מכבה תזמונים אחרי 60 יום בלי פעילות ב-repo, לכן הצעד האחרון
 #      דוחף commit קטן לענף 'keepalive' (לא נוגע ב-main) כדי לאפס את הספירה.
@@ -20,18 +28,20 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping Supabase REST + Auth
+      - name: Ping keepalive_ping RPC (חייב 200 — פעילות אמיתית שנספרת)
         run: |
           set -e
           BASE="https://qntepxfcjgpijrovqmev.supabase.co"
           KEY="sb_publishable_wn33JChf7dPtOTIWOFVRfA_EmESexE-"
-          # שאילתת REST קלה (RLS יחזיר ריק לאנונימי — אבל הבקשה נחשבת פעילות)
-          curl -sS -o /dev/null -w "REST: %{http_code}\n" \
-            "$BASE/rest/v1/seasons?select=id&limit=1" \
-            -H "apikey: $KEY" -H "Authorization: Bearer $KEY"
-          # בדיקת בריאות של שירות ה-Auth
-          curl -sS -o /dev/null -w "AUTH: %{http_code}\n" \
-            "$BASE/auth/v1/health" -H "apikey: $KEY"
+          CODE=$(curl -sS -o /tmp/ping.out -w "%{http_code}" -X POST \
+            "$BASE/rest/v1/rpc/keepalive_ping" \
+            -H "apikey: $KEY" -H "Authorization: Bearer $KEY" \
+            -H "Content-Type: application/json" -d '{}')
+          echo "RPC: $CODE ($(cat /tmp/ping.out))"
+          if [ "$CODE" != "200" ]; then
+            echo "::error::keepalive_ping החזיר $CODE — הפרויקט מושהה או שה-RPC נשבר!"
+            exit 1
+          fi
 
       - name: Checkout
         uses: actions/checkout@v4
